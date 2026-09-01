@@ -2,10 +2,8 @@
 
 **Date:** 2026-09-01
 **Status:** draft, pending approval
-**Supersedes:** the external `GH_Archive_Data_Platform_Project_Guide.md`.
-Where the two disagree, this document wins — see §11 for the specific
-departures. Drop the original into `docs/reference/` to keep it in-repo
-as a record of how the design evolved.
+**Scope:** authoritative. Architecture, phasing, and definition of done.
+Where anything else disagrees with this document, this document wins.
 
 ---
 
@@ -174,8 +172,8 @@ the fact already carries. → ADR-004.
 
 ### 4.4 Feature platform
 
-The part that does not exist in the original guide, and the reason this
-project is worth building.
+The layer that makes this an ML platform rather than a data platform,
+and the reason the project is worth building.
 
 - **Feature definitions** as declarative specs, versioned in git
 - **Offline store** in Delta, built by as-of joins that are correct by
@@ -293,9 +291,9 @@ a custom web frontend.
 ## 9. Phasing — built around the credit deadline
 
 **The binding constraint: $184 of Azure credit expires 2026-09-24, 23
-days from today.** The original guide puts cloud work in its Phase 4,
-weeks 4–5, which would land in early October — after the credits are
-gone. So the sequencing inverts.
+days from today.** The conventional sequencing — cloud work as a late
+phase, once everything is built and polished — would land in early
+October, after the credits are gone. So the sequencing inverts.
 
 **Credit allocation strategy: spend the free credits on the
 compute-hungry work, and pay for the cheap work later.** Processing a
@@ -358,25 +356,28 @@ flight.
 
 ---
 
-## 11. Departures from the original guide
+## 11. Deliberate scope decisions
 
-| Guide says | Almanac does | Why |
+Recorded so they are not silently re-litigated later. Each of these was
+an open choice with a defensible alternative.
+
+| Decision | Rejected alternative | Why |
 |---|---|---|
-| Target: Data Engineer / Analytics Engineer | Target: AI/ML platform engineer | Matches the actual role being pursued |
-| "❌ No machine learning models" | ML platform is the deliverable | The anti-goal directly contradicts the target role |
-| Cloud work in Phase 4 (weeks 4–5) | Azure burn in weeks 3–4 | Credits expire Sep 24 |
-| 4 Power BI pages | 3 pages | Drops the least differentiated page |
-| dbt optional, "only if the market asks" | dbt in, scoped to Gold | Market-demanded, cheap at this scope |
-| Streaming deferred to "Project 2" | Streaming is Phase 6 | Most-probed interview topic; a deferred project may never happen |
-| Data contract as a markdown file | Contract enforced as a CI test | A contract nothing enforces is a wish |
-| 6 weeks, ship regardless | ~13 weeks | Quality and structure chosen over speed, deliberately |
+| Target AI/ML platform engineering | Data engineering / analytics engineering | Matches the role actually being pursued; a DE-shaped project would re-prove capability already demonstrated elsewhere |
+| ML platform is the deliverable | Pure data platform, no models | Without a model there is no feature store, and without a feature store there is no point-in-time story — which is the whole reason to build this |
+| Azure spend front-loaded to weeks 3–4 | Cloud work late, as a final phase | Free credits expire 2026-09-24; a late cloud phase wastes them entirely |
+| Free credits fund the data-platform proof; ML serving paid for later | Split evenly, or save credits for serving | Spark backfill at volume is the expensive operation; training and serving are cheap |
+| 3 Power BI pages | 4+ pages | Beyond three, page count stops carrying signal and starts costing hours |
+| dbt included, scoped to Gold only | No dbt, or dbt through Silver | Market-demanded and cheap at Gold; rewriting Silver in dbt would discard the Spark work that is the point |
+| Streaming built in Phase 6 | Deferred to a future project | Most-probed interview topic, and a deferred project may never happen |
+| Data contract enforced as a CI test | Contract as a markdown document | A contract nothing enforces is a wish |
+| Feature store built, not bought | Managed feature store | The build is the demonstration; a managed store hides the exact skill being shown |
+| ~13 weeks | Hard 6-week ship | Quality and structure chosen over speed, deliberately and with eyes open |
 
-The attached stock Azure architecture image is **not** used: it contains
-typos ("Deta Lake", "ADS"/"ALS" for ADLS), it shows Azure Data Factory
-owning the medallion layers when ADF is an orchestrator, and it does not
-match this design. The architecture diagram will be drawn by hand.
-
----
+**Not used:** stock cloud-architecture diagrams. The architecture diagram
+is drawn by hand and matches the repo one-to-one — a diagram containing
+boxes that were never built is a liability, because interviewers ask
+about exactly the box you skipped.
 
 ## 12. Known traps in the data
 
