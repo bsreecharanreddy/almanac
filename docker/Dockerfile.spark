@@ -1,0 +1,36 @@
+# Reproducible local Spark. Dependencies are installed at BUILD time, not
+# at container start, or the environment is not reproducible.
+FROM python:3.12-slim
+
+# Spark needs a JVM. Java 21, not 17: the Debian release backing
+# python:3.12-slim no longer carries an openjdk-17 candidate at all
+# (`E: Package 'openjdk-21-jre-headless' has no installation candidate`,
+# hit for real on 2026-09-01). Spark 4.x supports both 17 and 21, so this
+# is a supported pair -- but note the host dev machine may still be on 17,
+# which is a deliberate, recorded divergence rather than an accident.
+#
+# JAVA_HOME is deliberately NOT set: Debian installs the JDK to
+# /usr/lib/jvm/java-17-openjdk-<arch>, so any hardcoded value is correct
+# on exactly one architecture and silently wrong on the other (arm64 on
+# Apple Silicon, amd64 on CI). PySpark falls back to `java` on PATH when
+# JAVA_HOME is unset, which is architecture-agnostic and one less thing
+# to keep in sync.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openjdk-21-jre-headless procps \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Dependency layer first, so source edits don't re-resolve the world.
+COPY pyproject.toml uv.lock README.md ./
+COPY src/almanac/__init__.py src/almanac/__init__.py
+RUN uv sync --all-extras --dev --frozen
+
+COPY . .
+
+# --all-extras is required here, not just at build time: `uv run`
+# re-syncs the environment, and without it the spark extra is dropped
+# and pyspark vanishes at runtime.
+CMD ["uv", "run", "--all-extras", "--frozen", "pytest", "-m", "not network", "-v"]
