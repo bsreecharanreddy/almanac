@@ -734,11 +734,29 @@ credit to expire unused, which is a waste, not thrift. Four additions
 absorb the surplus, each chosen because it converts an *assertion* in this
 document into a *measurement*:
 
+**Corrected 2026-09-01, same day.** An earlier draft of this table listed
+all four additions as funded by the expiring credit. **Two of them cannot
+be.** Live serving lands in Phase 4 and retrieval in Phase 5 — mid-October
+and later, weeks after the credit expires on **Sep 24**. The original
+strategy above was right and the correction restores it: *the credit funds
+the data platform proof; a bounded paid window funds the ML platform
+proof.*
+
+**Funded by the expiring credit** (must complete by Sep 24):
+
 | | Adds | Converts |
 |---|---|---|
-| **Tier 3 sized by calibration** (§4.5) | the bulk of the spend | "processed the real firehose" from a claimed span to a measured one |
+| **Calibration run** (§4.5) | ~1 day of data, one cluster-hour or two | throughput from unknown to measured — **gates every other cost figure** |
+| **Tier 3, sized by that calibration** (§4.5) | the bulk of the spend | "processed the real firehose" from a claimed span to a measured one |
 | **Photon A/B** (§8.2) | ~1 extra run of the calibration slice | an assumption about Photon into a per-layer number |
-| **Live serving window** (§8.1) | near-zero idle + invocations | a described endpoint into a URL that answers, with measured cold start |
+| **Re-run headroom** | ~60% of credit held back | one bug does not cost the whole claim |
+
+**Funded by a bounded paid window after Sep 24** (cheap, and not
+schedulable before it):
+
+| | Adds | Converts |
+|---|---|---|
+| **Live serving window** (§8.1) | near-zero idle at $0.07/DBU + invocations | a described endpoint into a URL that answers, with measured cold start |
 | **Retrieval at real scale** (§8.3) | index build + storage | a 5% toy sample into a sized, justified index choice |
 
 **Budget discipline, in force from 2026-09-01:** a subscription budget
@@ -747,23 +765,50 @@ plus a forecast breach. This exists because upgrading to pay-as-you-go
 **removes the Free Trial spending limit** — past the credit, the card is
 charged. The alerts double as a credit burn-down tracker.
 
-**The ordering is deliberate.** Tier 3's calibration runs *first*, because
-every other number depends on throughput; the Photon A/B reuses that same
-slice rather than paying for a new one; serving and retrieval come last and
-are the cheapest to abandon if the credit runs short. Nothing here is
-allowed to consume the budget the backfill needs.
+**The ordering is deliberate.** Calibration runs *first*, because every
+other number depends on throughput; the Photon A/B reuses that same slice
+rather than paying for a new one. Nothing is allowed to consume the budget
+the backfill needs.
+
+#### Resequenced 2026-09-01, after Phase 0
+
+Three things changed the schedule, and the revision is recorded rather
+than silently applied:
+
+1. **Phase 0 finished on Sep 1, not Sep 7** — six days of slack.
+2. **Infrastructure is already applied.** The old Phase 2 read "lift to
+   Azure" as future work; the workspace, lake, and containers exist now.
+3. **The old schedule put the Azure burn at Sep 15–24 — the last ten days
+   before expiry, with zero margin.** Phase 0's own record (four defects
+   in one task, three CI failures, a region that had to change) says that
+   is not a schedule, it is a hope. A one-week slip would have expired the
+   credit unused and left the project's most expensive claim unmade.
+
+**The slack is spent on the deadline, not on getting ahead elsewhere.**
+
+**The key structural change: calibration moves out of Phase 2 and into
+Phase 1.** It needs only working bronze ingest and one day of data — not
+the Gold layer Phase 2 assumed. Running it the moment bronze works retires
+the throughput unknown while there is still time to act on the answer,
+turning Sep 24 from a cliff into a planning input.
 
 | Phase | Window | Deliverable | Gate |
 |---|---|---|---|
-| **0 — Exploration** | Wk 1 (Sep 1–7) | Repo, CI skeleton, local Spark container. Download 2h from 2025 + 2h from 2014; **diff the schemas for real**; measure file size, rows/hour, event distribution, bot share, duplicate rate. Terraform-provision Azure early (clusters off) so there is no setup scramble later. | Measured numbers committed; schema diff documented from real data, not assumed |
-| **1 — Local pipeline** | Wk 2 (Sep 8–14) | Config-driven runner. Bronze ingest with missing-file handling and `replaceWhere`. Silver with dedup, quality rules, quarantine, dual schema handlers. | Rerun any hour twice → identical content. Null-handling regression test green. |
-| **2 — Gold + AZURE BURN** | Wk 3–4 (Sep 15–24) ⚠️ | SCD2 `dim_repo`, `fact_pull_request` accumulating snapshot, `agg_repo_daily`. **Lift to Azure Databricks: Unity Catalog, ADLS, Tier 3 (one unsampled month of 2025, ~62 GB gz) + Tier 2 (2014 month) at volume on job clusters — see §4.5.** Capture evidence — run metrics, UC lineage, cost per run, screenshots. Tear down. | Real backfill completed on Azure; evidence captured; `terraform destroy` leaves nothing |
-| **3 — Feature platform** | Wk 5–6 | Point-in-time-correct offline store, as-of joins, feature specs, leakage test suite. | The `as_of` demo works; leakage suite green |
-| **4 — Model + MLflow** | Wk 7–8 | Measured baseline, then the SLA-risk model. MLflow tracking + registry. Batch scoring, then a serving endpoint. Drift and training/serving skew monitoring. | Model beats baseline by a measured margin, or the null result is documented |
-| **5 — Embeddings + vector index** | Wk 9–10 | Incremental embedding pipeline, ANN index, similarity features, measured downstream lift. | Measured lift, or an honest documented null result |
-| **6 — Streaming** | Wk 10–11 | Live Events API ingest, watermarks, late-arrival and exactly-once handling, online feature freshness. | Live events land and update online features |
-| **7 — Governance, BI, docs** | Wk 12–13 | OpenLineage, contracts enforced in CI, 3 Power BI pages, ADRs, limitations, decision memo, postmortem. Second bounded (paid) Azure window for the final live demo. | A stranger clones and runs locally in <15 min |
-| **8 — Ship** | Wk 13 | Tag `v1.0`. Stop. | — |
+| **0 — Exploration** | **Sep 1 · DONE** | Repo, CI, local Spark + Delta container, ingestion edge, committed fixtures. Schema eras diffed against real files; dataset, label, bot-rule and rename measurements taken. Azure infrastructure applied in `westus3`. | ✅ Measured numbers committed; 69 tests green; infra live, no compute running |
+| **1 — Local pipeline + calibration** | Sep 2–8 | Config-driven runner. Bronze ingest with missing-file handling and `replaceWhere`. Silver with dedup, quality rules, quarantine, three schema-era handlers. **Ends with a calibration run on Azure: one day of data through bronze, measuring GB-gz per cluster-hour and dollars per day-of-data.** | Rerun any hour twice → byte-identical content. Null-handling regression green. **Throughput measured and Tier 3's span computed and committed to STATUS.md with its arithmetic** |
+| **2 — Gold + the Azure burn** ⚠️ | **Sep 9–20** | SCD2 `dim_repo`, `fact_pull_request` accumulating snapshot, `agg_repo_daily`. **Tier 3 at the span Phase 1 derived** (not a fixed month) + Tier 2 (2014) on job clusters. **Photon A/B on the calibration slice, hypothesis pre-registered (§8.2).** Capture run metrics, UC lineage, cost per run. Tear down. | Backfill completed at the derived span; Photon result published **including if negative**; `terraform destroy` leaves nothing |
+| **— credit expires —** | **Sep 24** | Everything above must be done. **Four days of deliberate slack** between Phase 2's end and expiry. | Credit spent on measured work, or explicitly and knowingly not spent |
+| **3 — Feature platform** | Sep 21 – Oct 4 | Point-in-time-correct offline store, as-of joins, feature specs, leakage test suite. | The `as_of` demo works; leakage suite green |
+| **4 — Model + MLflow** | Oct 5–18 | Measured baseline first, then the SLA-risk model. MLflow tracking + registry. Batch scoring, then a serving endpoint. Drift and training/serving skew monitoring. **Live serving window on bounded paid spend (§8.1)**, measuring cold start. | Model beats baseline by a measured margin, or the null result is documented |
+| **5 — Embeddings + vector index** | Oct 19 – Nov 1 | Incremental embedding pipeline, ANN index, similarity features, measured downstream lift. **Index choice decided by §8.3's rule, on measured vector count.** | Measured lift, or an honest documented null result |
+| **6 — Streaming** | Nov 2–8 | Live Events API ingest, watermarks, late-arrival and exactly-once handling, online feature freshness. | Live events land and update online features |
+| **7 — Governance, BI, docs** | Nov 9–22 | OpenLineage, contracts enforced in CI, 3 Power BI pages, ADRs, limitations, decision memo, postmortem. Second bounded paid window for the final live demo. | A stranger clones and runs locally in <15 min |
+| **8 — Ship** | Nov 23 | Tag `v1.0`. Stop. | — |
+
+**Only Phases 1 and 2 are deadline-bound.** Everything from Phase 3 on is
+schedule-flexible, because it runs on local compute or on cheap bounded
+paid windows. If anything slips, it must slip *there* — never into the
+credit window.
 
 **Start applying at Phase 4.** The repo is presentable once a model
 serves; the remaining phases improve it while interviews are already in
