@@ -2,20 +2,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pyspark.sql import DataFrame, Row, SparkSession
+from pyspark.sql import SparkSession
 
 from almanac.pipeline.bronze import add_ingestion_metadata, write_bronze
+from tests.helpers import one
 
 pytestmark = pytest.mark.spark
 
 INGESTED = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
-
-
-def one(df: DataFrame) -> Row:
-    """``first()`` is typed ``Row | None``; every call here expects a row."""
-    row = df.first()
-    assert row is not None
-    return row
 
 
 def test_raw_payload_is_preserved_verbatim(spark: SparkSession) -> None:
