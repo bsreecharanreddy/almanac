@@ -140,6 +140,41 @@ Faithful, replayable landing zone.
 `replaceWhere` on the partition columns, which is what makes replay
 idempotent.
 
+### 4.1a `event_id` across eras — the legacy era has none
+
+**Measured 2026-09-01:** 0 of 2,000 legacy events carry an `id` field;
+2,000 of 2,000 modern events do.
+
+This invalidates the original design as written — §4.1's "`event_id`,
+from `id`", §4.2's `event_id_not_null` rule, and §12 trap 4's dedup-on-
+`event_id` requirement are all impossible before 2015.
+
+**Resolution:** `event_id` carries the native id for modern events and a
+deterministic **content hash of the canonical raw record** for legacy
+ones, with a companion `event_id_source` column recording which.
+
+This is a better fit for the requirement rather than a workaround. Trap
+4's duplicates are the *same event repeated* across an hour-file
+boundary, so they are byte-identical, so a content hash collides exactly
+when it should and never otherwise. Gets an ADR.
+
+### 4.1b Legacy timestamps are not UTC
+
+**Measured 2026-09-01:** every one of 2,000 legacy events carries a
+`-07:00` offset (`2014-06-12T14:05:31-07:00`); every one of 2,000 modern
+events ends in `Z`.
+
+**Parsing a legacy timestamp as naive UTC shifts it seven hours** —
+silently, with no error, past every schema check. For a project whose
+entire premise is point-in-time correctness, this is the most dangerous
+property in the dataset.
+
+Timestamps are parsed offset-aware and normalized to UTC at the Bronze
+boundary. `spark.sql.session.timeZone=UTC` does **not** cover this: it
+governs computation and display, not how a string carrying an explicit
+offset is read. This gets an explicit regression test asserting a legacy
+timestamp lands at the correct UTC instant.
+
 ### 4.2 Silver
 
 Typed, deduped, validated, per-type flattened. One common `silver.events`
@@ -474,6 +509,8 @@ flight.
 
 ### Technical
 - [ ] Tier 3 (unsampled month of 2025) and Tier 2 (2014 month) ingested, both schema eras through the same framework
+- [ ] Legacy events carry a deterministic surrogate `event_id`, and duplicate legacy records dedup correctly (§4.1a)
+- [ ] A legacy `-07:00` timestamp is proven by test to land at the correct UTC instant (§4.1b)
 - [ ] Tier 4's 3-month repo-sampled span built, with a temporal train/test split
 - [ ] Rerunning any single hour produces identical results — idempotency proven, not claimed
 - [ ] Adding a source requires only a YAML file, zero new Python
@@ -557,17 +594,31 @@ Each of these is a real property of GH Archive, each goes in
 5. **Missing and truncated hours.** Ingestion must distinguish *file
    absent* / *file empty* / *job failed*.
 6. **Bots dominate volume.** Any unclassified metric is misleading.
-7. **The 2015 schema break.** Structurally different pre-2015 format —
-   `repository` instead of `repo`, different actor representation, event
-   types that no longer exist. This is the schema-evolution story, and it
-   is real. **Field names to be confirmed against real data in Phase 0,
-   not assumed.**
+7. **The 2015 schema break — MEASURED 2026-09-01**, see
+   `docs/findings/2026-09-01-schema-eras.md`. Confirmed real, and worse
+   than this doc originally described:
+   - `repository` (legacy) vs `repo` (modern) — as expected
+   - **`actor` is a bare string in legacy, an object in modern** — a type
+     change, not a rename. Legacy carries detail in `actor_attributes`,
+     and has **no numeric actor id at all**, so cross-era actor identity
+     rests on a mutable login
+   - **Legacy events have no `id` field — 0 of 2,000.** See §4.1a
+   - **Legacy `created_at` carries a `-07:00` offset, not `Z`** — 2,000 of
+     2,000. See §4.1b
+   - The legacy-only event type observed is **`TeamAddEvent`**, not
+     `DownloadEvent`/`FollowEvent`/`GistEvent` as previously assumed —
+     those were retired before mid-2014
+   - `repo_id` **is** stable across both eras (1,997/2,000 legacy,
+     2,000/2,000 modern), so the SCD2 natural key survives
 8. **Repos get renamed and transferred.** `repo.id` is stable,
    `repo.name` is not. The SCD2 arises naturally.
 9. **gzip is not splittable.** Parallelism is bounded by file count, not
    file size.
-10. **Language is absent from most events.** Nested in PR payloads only;
-    repo-language coverage is partial.
+10. **Language is absent from most modern events** — nested in PR
+    payloads only. **The reverse holds for legacy:** `repository.language`
+    is populated on 1,712 / 2,000 (85.6%) legacy events directly, so
+    pre-2015 language coverage is *better*, not worse. Measured
+    2026-09-01.
 11. **Deleted users and repos** appear as nulls or placeholders in later
     events.
 
