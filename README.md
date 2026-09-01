@@ -11,12 +11,12 @@ architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
-> (Bronze + Silver) in progress — 4 of 7.**
+> (Bronze + Silver) in progress — 5 of 7.**
 > Ingestion edge, local Spark + Delta, CI, cloud infrastructure, the
-> declarative source contract, Bronze ingest, hour-gap detection, and
-> normalization of all three schema eras exist and are green (103 tests).
-> **Silver is partial — no dedup, quality rules or quarantine yet, and no
-> model** — the rest of Phase 1, and later.
+> declarative source contract, Bronze ingest, hour-gap detection,
+> normalization of all three schema eras, and cross-hour deduplication
+> exist and are green (111 tests). **Silver is partial — no quality rules
+> or quarantine yet, and no model** — the rest of Phase 1, and later.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
