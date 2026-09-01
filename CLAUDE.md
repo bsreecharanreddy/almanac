@@ -59,10 +59,11 @@ a year later.**
 
 ## Current status
 
-**Design approved, implementation not started.** Phase 0 is next.
-`docs/STATUS.md` holds it at task granularity once work begins;
-deliberately not duplicated here, because two places recording the same
-thing means one of them is wrong.
+**Phase 0 complete; Phase 1 in progress.** `docs/STATUS.md` holds it at
+task granularity — deliberately not duplicated here, because two places
+recording the same thing means one of them is wrong, and this section
+proved that the hard way: it read *"implementation not started"* through
+all of Phase 0.
 
 ## Phase plan
 

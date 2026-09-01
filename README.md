@@ -10,10 +10,12 @@ real schema break — not because this project is about GitHub. The same
 architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
-> **Status: Phase 0 (Exploration) complete — 9 of 9 tasks.**
-> Ingestion edge, local Spark + Delta, CI, and cloud infrastructure exist
-> and are green (69 tests). **No transformation pipeline and no model
-> yet** — those are Phase 1 and later.
+> **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
+> (Bronze + Silver) in progress — 1 of 7.**
+> Ingestion edge, local Spark + Delta, CI, cloud infrastructure, and the
+> declarative source contract exist and are green (74 tests). **No
+> transformation pipeline and no model yet** — the rest of Phase 1, and
+> later.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
