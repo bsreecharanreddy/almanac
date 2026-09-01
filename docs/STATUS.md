@@ -6,12 +6,13 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase: 0 (Exploration), Task 4 of 9 complete.** Executing
+**Phase: 0 (Exploration), Task 5 of 9 complete.** Executing
 `docs/plans/2026-09-01-phase-0-exploration-plan.md` on branch
 `phase-0-exploration`.
 
-Scaffold, tooling, CI and a containerized local Spark + Delta environment
-exist and are green. No pipeline code, no cloud resources yet.
+Scaffold, tooling, CI, a containerized Spark + Delta environment, and the
+ingestion edge (URL construction, fetching, committed fixtures) exist and
+are green. No transformation code, no cloud resources yet.
 
 **Two measurement passes have been taken** (2026-09-01), both against
 real data, and both changed the design:
@@ -70,5 +71,6 @@ failures.
 | 2026-09-01 | Phase 0 CI — first real run | GitHub Actions on `ubuntu-24.04`/amd64, PR #1 | **Red, then fixed.** `Unable to resolve action astral-sh/setup-uv@v10`. Root cause is non-obvious and worth keeping: `gh api .../releases/latest` returns a **release tag**, which is not necessarily a resolvable **action ref**. `actions/checkout` publishes a floating major tag (`refs/tags/v7` exists); `astral-sh/setup-uv` does not — only `v10.0.1`. Confirmed with `git/ref/tags/<ref>` on both before changing anything. Pinned setup-uv exact. Vindicates pushing per task: this is a CI-only failure class that local `make test` and the container run structurally cannot catch. |
 | 2026-09-01 | Phase 0 Task 3 — archive URLs | `pytest tests/unit/test_urls.py`, plus a live `curl -sI` on a generated URL | **Green, 9 tests.** Live check returned `HTTP/2 200`, so the scheme is confirmed against the real host rather than merely self-consistent. The unpadded-hour/padded-date asymmetry is pinned by test: zero-padding the hour would 404 ten of every twenty-four files. |
 | 2026-09-01 | Phase 0 Task 4 — fetching | `make check` (ruff, mypy --strict, 29 tests) | **Green.** Four fetch outcomes distinguished and each pinned by test: 404 → ABSENT and never retried; 200-with-zero-bytes → EMPTY and never retried; 5xx/429 → FAILED and retried to the configured limit; transport error → FAILED leaving no file behind. Downloads land on `.part` and are renamed, so a crash mid-write cannot leave a truncated file a later run mistakes for complete. Ruff caught `class FetchStatus(str, Enum)` as superseded by `enum.StrEnum` on 3.11+; fixed rather than suppressed. |
+| 2026-09-01 | Phase 0 Task 5 — Tier 0 fixtures | `make fixtures` against the live host; `make check` (32 tests) | **Green.** Both fixtures built at **0.76 MB**, far under the 5 MB cap. Corroborating measurement: the 2014 hour carried **17,138 events** against 2025's **227,376** — a **13.3× growth in event count**, consistent with the ~15× file-size growth measured earlier, from an independent signal. Confirmed via `git check-ignore` that fixtures are tracked (`.jsonl.gz` sidesteps the `*.json.gz` rule) and that `data/` holding 89 MB of raw downloads is not. |
 | 2026-09-01 | Label validity probe | Downloaded and fully parsed `2025-03-15-14.json.gz` (227,376 events) | **Design-changing.** Expansion **7.17×** (83 MB gz → 597 MB). 6,352 PRs opened/hour, 6,015 closed (77.8% merged), but only **1,574 distinct PRs received a review event** — formal review reaches ~1 PR in 4, so "time to first review" was undefined for most of the population. Label redefined to *time to first human response* (§5.1). Also: bots are **18.2%** of events and 2,855 of PR events, drafts 2.0%, and the probed hour was a Saturday — forcing whole-week temporal splits. |
 | 2026-09-01 | `.claude/` hooks | Ran both hooks against 3 constructed scenarios | **Defect found and fixed.** Both hooks read the git index at `PreToolUse` time, so `git add -A && git commit` as one command left the index empty and neither hook fired — silently, on all three of this repo's first commits. Patched to fall back to the working tree when the command also stages. Re-verified: clean tree → silent; STATUS.md+code → story-bank fires, STATUS check silent; code-only → STATUS check warns. |
