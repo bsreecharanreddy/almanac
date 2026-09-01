@@ -270,8 +270,8 @@ estimated:
 
 Two consequences. The firehose grew roughly **15×** between 2014 and
 2025, so the legacy slice is nearly free. And at a ~86 MB mean over three
-2025 samples, a full quarter (2,160 hourly files) is on the order of
-**~180 GB compressed**. The expansion ratio is now measured at **7.17×**
+2025 samples, a full quarter (**2,208** hourly files — Q3 is 92 days, not
+90) is on the order of **~190 GB compressed**. The expansion ratio is now measured at **7.17×**
 (§5.1), making that ~1.3 TB uncompressed — too much to pass over
 repeatedly inside the credit budget. Tier 3's month is ~444 GB
 uncompressed, which is tractable.
@@ -327,11 +327,51 @@ same reason.
 
 **Not building:** a 14-year backfill. Cost with no marginal signal.
 
+#### Tier 3 is sized by calibration, not chosen up front
+
+**Amended 2026-09-01, after the cloud budget was re-scoped.** Tier 3 was
+written as "1 month, ~62 GB gz" — a number picked before any throughput
+had been measured on a real cluster. It is now **derived**, because the
+one input that decides it is still unknown.
+
+Everything needed is measured except one thing:
+
+| Input | Status |
+|---|---|
+| Slice size (GB gz per day) | measured — ~2.1 GB/day at the 86 MB/hr mean |
+| Expansion ratio | measured — 7.17× |
+| Cluster cost | measured — **$1.896/hr** (4 × `D4ds_v6`, Premium) |
+| Credit remaining | **97 cluster-hours** on $184 |
+| **Cluster throughput (GB gz/hr)** | **unknown — nothing has run on Spark yet** |
+
+So the procedure, fixed in advance so the answer is not rationalized
+afterwards:
+
+1. **Calibration run.** Process exactly **one day** (24 files, ~2.1 GB gz)
+   through bronze → silver → gold on the target cluster. Record wall-clock,
+   DBUs consumed, and dollars.
+2. **Derive** GB-gz per cluster-hour and dollars per day-of-data.
+3. **Choose the span** as the largest contiguous slice costing **≤ 40% of
+   the remaining credit**, leaving the rest for the Photon A/B (§8.2),
+   serving (§8.1), and re-runs. Contiguity is non-negotiable — §4.5's rule
+   against sampling the time dimension still governs.
+4. **Commit the number to STATUS.md with its arithmetic** before the
+   backfill starts.
+
+**The decision rule binds in both directions.** If throughput is better
+than expected, Tier 3 grows toward the full quarter; if worse, it shrinks,
+and shrinking is not a failure. The claim being defended is "processed the
+real firehose on a real cluster, and measured what it cost" — that claim
+is true at one week and true at a quarter. What would make it false is
+quoting a span never actually run.
+
+**Why not just buy the biggest slice the credit allows?** Because an
+unrepeatable run is worth less than a measured one. Reserving ~60% leaves
+room to re-run after a bug, which on past evidence is likely.
+
 #### Open, and gating Tier 3's final size
 
-Tier 3 shrinks to two weeks if the credit budget requires it; the volume
-claim weakens slightly and nothing else in the design is affected. The
-decision needs Phase 0 to measure:
+The decision needs Phase 0 to measure:
 
 - ~~Uncompressed:compressed ratio~~ — **measured 7.17×, see §5.1**
 - ~~Events per hour, and bot share~~ — **measured, see §5.1**
@@ -542,13 +582,134 @@ Model Serving accepts a model registered in **Unity Catalog or the
 Workspace Model Registry**, so it does not force the UC/Premium decision.
 Those remain independent.
 
-**Unverified and on the Phase 0 pricing list:** the per-launch charge
-(~$0.07, max 2/hour) and the Model Serving DBU rate (~$0.08/DBU) come
-from community sources, not Microsoft. Confirm before relying on them.
+**~~Unverified and on the Phase 0 pricing list~~ — now measured
+(2026-09-01, Azure Retail Prices API, `westus3`).** The per-launch charge
+is **$0.07** exactly and the Model Serving DBU rate is **$0.07/DBU**, not
+the ~$0.08 community figure. Both community numbers were close but the
+DBU rate was wrong by ~14%.
+
+**One figure remains unverified: cold start.** "Roughly 10–20 seconds,
+occasionally minutes" is still community-sourced. It is cheap to measure
+directly and must be, before it is quoted anywhere — §13's rule applies to
+it like anything else.
+
+#### A live endpoint, not a described one
+
+**Added 2026-09-01.** The endpoint is kept **up through a real demo
+window** rather than created, screenshotted, and destroyed. At $0.07/DBU
+with `scale_to_zero_enabled`, idle cost is near zero and the marginal
+spend is bounded by actual invocations, so this is affordable in a way it
+would not be on an always-warm endpoint.
+
+What it buys is a claim the artifact cannot otherwise make: a URL that
+answers. The measurable deliverables are a **measured cold-start
+distribution** (replacing the community figure above), a **measured
+p50/p95 warm latency**, and the **dollar cost of the whole demo window** —
+each a number, none of them quotable in advance.
 
 **Explicitly rejected:** Azure Data Factory (orchestration duplicated by
 Workflows), Kubernetes (cargo-culting at this scale), multi-cloud,
 a custom web frontend.
+
+---
+
+### 8.2 Photon — an A/B designed to permit a null result
+
+**Added 2026-09-01.** Photon is enabled or not enabled on a cluster; the
+interesting thing is not the toggle but that **its benefit on this
+workload is genuinely uncertain**, and the uncertainty is specific rather
+than hand-waved.
+
+**Measured:** the Photon Jobs Compute meter bills at **the same $/DBU as
+non-Photon** ($0.30 Premium, Retail Prices API, `westus3`). That is a
+*rate*, not a total — a Photon-enabled cluster consumes more DBUs per
+hour — so the cost question is entirely "DBUs consumed vs. wall-clock
+saved", which is exactly what an A/B measures.
+
+**Validated against current vendor guidance (2026-09-01):** Photon does
+**not** support UDFs or the RDD API, and **JSON parsing of unstructured
+documents has only partial coverage**. When Photon meets an unsupported
+operation it falls back to Spark — the job still runs, but the higher DBU
+consumption is paid on the Photon portion regardless.
+
+That matters here more than it would on a typical benchmark, because
+**bronze ingest is almost entirely JSON parsing** — the case vendor docs
+name as partially covered. So:
+
+**Hypothesis, stated before the run:** Photon helps **silver and gold**
+(joins, aggregations, window functions over columnar Delta) materially,
+and helps **bronze ingest** little or not at all. The blended result may
+be a wash or a loss.
+
+**Method.** Same slice, same cluster shape, same code, one variable:
+
+| Measure | Bronze | Silver | Gold |
+|---|---|---|---|
+| Wall-clock, Photon off | | | |
+| Wall-clock, Photon on | | | |
+| DBUs consumed, off / on | | | |
+| **$ per GB processed** | | | |
+
+Per-layer, not blended — a blended number would hide exactly the effect
+the hypothesis predicts.
+
+**A null or negative result is a finding and gets published as one.** "We
+measured Photon on a JSON-heavy ingest path and it did not pay for itself"
+is a more useful and more credible statement than an unmeasured assumption
+in either direction. Reporting it only if favourable would make the
+measurement worthless.
+
+### 8.3 Retrieval index — sized before it is chosen
+
+**Added 2026-09-01.** §4.4 already fixes the *role*: retrieval is **feature
+infrastructure**, not a chatbot — nearest-neighbour lookup over PR/issue
+text producing features a deterministic model consumes. What was never
+settled is the *index*.
+
+**Measured inputs** (Phase 0 Task 8, real texts through
+`all-MiniLM-L6-v2` on CPU):
+
+| | Measured |
+|---|---|
+| Embedding throughput | **151.1 texts/sec** |
+| Vectors, 30-day slice at 5% repo sample | **~218,000** |
+| Vectors, 30-day slice at 100% | **~4.6 million** |
+
+**Validated against current practice (2026-09-01):** the 2026 consensus is
+that below roughly 10M vectors, `pgvector` on Postgres you already run, or
+an in-process FAISS index, is the default — and a managed vector service
+earns its cost through persistence, metadata filtering, hybrid search, or
+multi-tenancy, not through vector count alone. **Both of our figures sit
+under that threshold**, including the 100% case.
+
+So the choice is *not* settled by scale, and pretending otherwise would be
+dishonest. It is settled by which properties the feature path actually
+needs:
+
+- **Point-in-time filtering is mandatory.** A neighbour lookup at time *T*
+  must not return a document created after *T*. This is the governing
+  claim (§2) applied to retrieval, and it is a metadata-filter requirement,
+  not a similarity requirement — it is the single hardest constraint on
+  the choice.
+- **Rebuild cost matters more than query latency.** This is batch feature
+  computation, not an interactive endpoint. p95 query latency is close to
+  irrelevant; index rebuild time is not.
+- **Governance.** An index registered in Unity Catalog inherits the lineage
+  story the rest of the platform already tells; a FAISS file on disk does
+  not.
+
+**Decision rule, fixed in advance:** default to **Databricks Vector
+Search** for the UC lineage and the native point-in-time filtering, and
+**fall back to FAISS rebuilt per batch** if its measured cost exceeds ~10%
+of remaining credit or if point-in-time filtering cannot be expressed
+cleanly. Either outcome is written up with its numbers — including, if it
+happens, "the managed service was not worth it at this scale", which the
+validation above suggests is a live possibility.
+
+**What is explicitly not being built:** a RAG chatbot over GitHub data.
+It would be the third-most-common portfolio project in existence and it
+would violate §2 — an LLM must never produce a number a decision depends
+on.
 
 ---
 
@@ -565,6 +726,32 @@ quarter of GH Archive on Spark job clusters is the expensive operation;
 a small training run and a serving endpoint are not. Therefore the free
 credits fund the *data platform* proof, and a bounded pay-as-you-go spend
 after Sep 24 funds the *ML platform* proof.
+
+#### Revised allocation, 2026-09-01
+
+The original plan spent an estimated $25–40 of $184 — leaving most of the
+credit to expire unused, which is a waste, not thrift. Four additions
+absorb the surplus, each chosen because it converts an *assertion* in this
+document into a *measurement*:
+
+| | Adds | Converts |
+|---|---|---|
+| **Tier 3 sized by calibration** (§4.5) | the bulk of the spend | "processed the real firehose" from a claimed span to a measured one |
+| **Photon A/B** (§8.2) | ~1 extra run of the calibration slice | an assumption about Photon into a per-layer number |
+| **Live serving window** (§8.1) | near-zero idle + invocations | a described endpoint into a URL that answers, with measured cold start |
+| **Retrieval at real scale** (§8.3) | index build + storage | a 5% toy sample into a sized, justified index choice |
+
+**Budget discipline, in force from 2026-09-01:** a subscription budget
+(`almanac-credit-burndown`, $185/mo) alerts at 25/50/75/90/100% of spend
+plus a forecast breach. This exists because upgrading to pay-as-you-go
+**removes the Free Trial spending limit** — past the credit, the card is
+charged. The alerts double as a credit burn-down tracker.
+
+**The ordering is deliberate.** Tier 3's calibration runs *first*, because
+every other number depends on throughput; the Photon A/B reuses that same
+slice rather than paying for a new one; serving and retrieval come last and
+are the cheapest to abandon if the credit runs short. Nothing here is
+allowed to consume the budget the backfill needs.
 
 | Phase | Window | Deliverable | Gate |
 |---|---|---|---|
@@ -750,15 +937,26 @@ Each of these is a real property of GH Archive, each goes in
 
 ## 13. To verify before building — never quote an unmeasured number
 
-- [ ] Exact pre-2015 schema field names, diffed against real files
-- [x] **Current file sizes — measured 2026-09-01, see §4.5.** 2025 hours 62.5–113.7 MB gz; 2014 hours 5.0–6.2 MB gz
-- [ ] Uncompressed:compressed expansion ratio (sets Spark cost)
-- [ ] Events per hour, and bot share
-- [ ] `repo_id` rename frequency within the candidate 3-month window
-- [ ] Current Azure/Databricks pricing for the chosen region and SKU
-- [ ] Docker base image availability for `pyspark` + `delta-spark`
-- [ ] Unity Catalog tier requirements and their DBU cost impact
-- [ ] Whether `array_compact` exists in the Spark version actually used
+**Closed by Phase 0** (each with the measurement, not an assurance):
+
+- [x] **Pre-2015 schema field names** — diffed over 2,000 events/era, §4.1a/§4.1b. Legacy has no `id` at all, `actor` is a bare string, and `created_at` carries `-07:00`
+- [x] **Current file sizes** — 2025 hours 62.5–113.7 MB gz; 2014 hours 5.0–6.2 MB gz, §4.5
+- [x] **Uncompressed:compressed expansion ratio** — **7.17×**, §5.1
+- [x] **Events per hour, and bot share** — 227,376 events/hr peak; bot share **25.6%** on Q3, day-of-week dependent
+- [x] **`repo_id` rename frequency** — **3,792** renames on Q3 against a gate of 50. Case-only renames exist, so comparison is case-sensitive
+- [x] **Azure/Databricks pricing for the chosen region and SKU** — Retail Prices API, `westus3`, §8.1/§8.2
+- [x] **Docker base image for `pyspark` + `delta-spark`** — Java 21 on `python:3.12-slim`; 17 no longer has an installation candidate
+- [x] **Unity Catalog tier requirements and DBU impact** — Premium required; also *forced*, since Standard was discontinued for new workspaces 2026-04-01
+- [x] **Whether `array_compact` exists** — confirmed available in Spark 4.2.0
+
+**Open — and load-bearing for the four items added 2026-09-01:**
+
+- [ ] **Cluster throughput (GB gz per cluster-hour)** — nothing has run on Spark yet. Gates Tier 3's span (§4.5) and every dollar figure downstream of it. **The single most consequential unmeasured number in the design.**
+- [ ] **DBUs consumed per node-hour** — the one assumed input in the cost model. A sensitivity table covers the plausible range; the Premium decision holds across all of it, but the *absolute* cost per run does not
+- [ ] **Photon's per-layer effect** on wall-clock and DBUs consumed (§8.2). Hypothesised to be near zero on bronze
+- [ ] **Model Serving cold-start distribution** (§8.1) — "10–20 seconds" is community-sourced and must not be quoted until measured
+- [ ] **Vector index cost and whether point-in-time filtering expresses cleanly** (§8.3) — decides managed Vector Search vs. FAISS
+- [ ] **Duplicate-`event_id` rate across *adjacent* hours** — Phase 0's duplicate measurement used non-adjacent hours and therefore did not test trap 4 at all. Carried forward honestly rather than counted as done
 
 ---
 
