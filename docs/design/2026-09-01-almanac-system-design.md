@@ -202,9 +202,10 @@ estimated:
 Two consequences. The firehose grew roughly **15×** between 2014 and
 2025, so the legacy slice is nearly free. And at a ~86 MB mean over three
 2025 samples, a full quarter (2,160 hourly files) is on the order of
-**~180 GB compressed** — plausibly ~1 TB uncompressed, though the
-expansion ratio is still unmeasured. That is too much to pass over
-repeatedly inside the credit budget.
+**~180 GB compressed**. The expansion ratio is now measured at **7.17×**
+(§5.1), making that ~1.3 TB uncompressed — too much to pass over
+repeatedly inside the credit budget. Tier 3's month is ~444 GB
+uncompressed, which is tractable.
 
 #### The governing rule: sample the entity dimension, never the time dimension
 
@@ -255,9 +256,8 @@ Tier 3 shrinks to two weeks if the credit budget requires it; the volume
 claim weakens slightly and nothing else in the design is affected. The
 decision needs Phase 0 to measure:
 
-- **Uncompressed:compressed ratio** — the number that actually sets Spark
-  cost, and the one least safe to assume
-- Events per hour, and bot share
+- ~~Uncompressed:compressed ratio~~ — **measured 7.17×, see §5.1**
+- ~~Events per hour, and bot share~~ — **measured, see §5.1**
 - **Rename frequency** — whether a 3-month window contains enough
   `repo_id` name changes to demonstrate SCD2 at all. If not, the slice
   *moves*, it does not grow
@@ -280,6 +280,55 @@ names like `robotframework` and `Abbott`, then replace it with a trained
 classifier and measure the lift. Shipping a heuristic, measuring your own
 error rate, and then beating it is an honest, self-critical arc that
 interviewers remember. → ADR-005.
+
+### 5.1 Label definition — measured, not assumed
+
+**Probed 2026-09-01** against one real hour (`2025-03-15-14`, a Saturday):
+227,376 events, 597 MB uncompressed from 83 MB gzipped (**7.17×**).
+
+| Signal | Count in the hour |
+|---|---|
+| PRs opened | 6,352 |
+| PRs closed | 6,015 (77.8% merged) |
+| **Distinct PRs receiving a `PullRequestReviewEvent`** | **1,574** |
+| `PullRequestReviewEvent` share of firehose | 1.02% |
+| Bot events (`login` ends `[bot]`) | 18.2% — incl. 2,855 PR events |
+| Draft PRs opened | 127 (2.0%) |
+
+Event mix: `PushEvent` 66.5%, `CreateEvent` 11.9%, `PullRequestEvent`
+5.5%, `WatchEvent` 4.9%, `IssueCommentEvent` 3.1%, `IssuesEvent` 2.2%.
+
+**The finding that changes the design: formal review events reach only
+about one PR in four.** "Time to first review" is undefined for most PRs,
+so a model trained on it learns from a biased quarter of the population.
+
+**Therefore the label is *time to first human response*** — the earliest
+of `PullRequestReviewEvent`, `PullRequestReviewCommentEvent`, or an
+`IssueCommentEvent` whose actor is not the PR author. Time-to-resolution
+(closes run ~1:1 with opens) is the secondary target, with near-total
+coverage.
+
+Three consequences that are design constraints, not filters to add later:
+
+- **Bot PRs are ~22% of PR events and behave nothing like human ones** —
+  Dependabot and Renovate PRs are auto-merged without review. Left in
+  they teach the model that PRs resolve themselves. `is_bot` is a
+  first-class feature and metrics are segmented by it; the bot
+  population is never silently dropped.
+- **Draft PRs do not accrue review-SLA time.** They are not ready for
+  review by definition.
+- **Temporal splits must fall on whole-week boundaries.** The probed hour
+  was a Saturday; weekday/weekend review latency differs sharply, so an
+  arbitrary split point encodes day-of-week as leakage.
+
+**Volume is abundant, which reinforces §4.5.** At 6,352 PRs/hour, a 5%
+repo sample still yields on the order of 230K labelled PRs per month. The
+model never needs the full firehose — only the platform does, and only
+once.
+
+**Right-censoring is real:** PRs still open at the window edge have no
+outcome. They are excluded from training with the exclusion stated, and
+the censoring rate is reported rather than hidden.
 
 **Baseline first, always.** No model ships without a measured comparison
 against a naive baseline. A model that fails to beat its baseline is a
@@ -362,6 +411,27 @@ measured and reported.
 | BI | Power BI | 3 pages, import mode |
 | Local dev | Single Docker container, `pyspark` + `delta-spark`, `local[*]` | **Not** a Spark master/worker Compose cluster — slower at this volume and teaches nothing |
 
+### 8.1 Serving topology
+
+**Databricks Model Serving with `scale_to_zero_enabled: true`,
+Terraform-managed.** Verified against the Azure docs: scale-to-zero is a
+first-class field on custom-model endpoints, so "on-demand" and "managed
+Model Serving" are not competing options — scale-to-zero *is* the
+on-demand mode. Idle cost is near zero; the authentic managed-endpoint
+story is kept intact.
+
+Cold start is reported at roughly 10–20 seconds, occasionally minutes,
+with no SLA. Irrelevant for this use case and documented rather than
+hidden.
+
+Model Serving accepts a model registered in **Unity Catalog or the
+Workspace Model Registry**, so it does not force the UC/Premium decision.
+Those remain independent.
+
+**Unverified and on the Phase 0 pricing list:** the per-launch charge
+(~$0.07, max 2/hour) and the Model Serving DBU rate (~$0.08/DBU) come
+from community sources, not Microsoft. Confirm before relying on them.
+
 **Explicitly rejected:** Azure Data Factory (orchestration duplicated by
 Workflows), Kubernetes (cargo-culting at this scale), multi-cloud,
 a custom web frontend.
@@ -411,6 +481,9 @@ flight.
 - [ ] `fact_pull_request` is a working accumulating snapshot
 - [ ] **A feature vector computed `as_of` T is reproducible byte-for-byte a year later**
 - [ ] **Leakage test suite proves no feature sees post-T data**
+- [ ] Label coverage and right-censoring rate measured and reported, not hidden
+- [ ] Bot and human populations segmented in every model metric
+- [ ] Temporal train/test split falls on whole-week boundaries
 - [ ] Model beats a measured baseline, or the null result is documented
 - [ ] Model serves from a real endpoint with measured p50/p99
 - [ ] Drift and training/serving skew monitored and visible
@@ -418,6 +491,7 @@ flight.
 - [ ] Quarantine rate reported per rule, per day
 - [ ] Data contract enforced as a CI failure, not a markdown file
 - [ ] Column-level lineage available end to end
+- [ ] Actor identities pseudonymized in every published artifact (dashboards, memo, screenshots, README)
 - [ ] Terraform provisions from zero; `destroy` leaves nothing
 - [ ] ≥70% coverage on transformation and feature logic
 
@@ -454,6 +528,11 @@ an open choice with a defensible alternative.
 | Data contract enforced as a CI test | Contract as a markdown document | A contract nothing enforces is a wish |
 | Feature store built, not bought | Managed feature store | The build is the demonstration; a managed store hides the exact skill being shown |
 | ~13 weeks | Hard 6-week ship | Quality and structure chosen over speed, deliberately and with eyes open |
+
+| Serving | Model Serving, scale-to-zero, Terraform-managed | Always-on endpoint; hand-rolled container | Scale-to-zero *is* on-demand; keeps the managed-serving story at near-zero idle cost (§8.1) |
+| Streaming | Live Events API **and** a replay harness | Either alone | Live feed is the authentic claim; replay is the only way to force late/duplicate/out-of-order cases on demand |
+| Unity Catalog | Decide in Phase 0 on measured pricing | Commit either way now | Premium raises the DBU rate on *all* compute incl. the backfill; guessing this is expensive either direction |
+| Real-person data | Pseudonymize identities in anything published | Publish real logins; or drop individual analysis | Repos are projects and stay named; people are pseudonymized. Keeps the bus-factor analysis without naming individuals as risks in a public portfolio |
 
 **Not used:** stock cloud-architecture diagrams. The architecture diagram
 is drawn by hand and matches the repo one-to-one — a diagram containing

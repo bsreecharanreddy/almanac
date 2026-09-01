@@ -11,10 +11,16 @@ commit as the work it describes**, never as a follow-up.
 No pipeline code, no tests, no CI, no cloud resources exist yet. Nothing
 in this repo has been run.
 
-**One measurement has been taken** (2026-09-01): real GH Archive file
-sizes, via HTTP `Content-Length` against live files. It drove the dataset
-scope decision now recorded as design doc §4.5. Every other figure in the
-docs remains bracketed or absent by design.
+**Two measurement passes have been taken** (2026-09-01), both against
+real data, and both changed the design:
+
+1. File sizes via HTTP `Content-Length` → the tiered dataset scope, design
+   doc §4.5.
+2. A full parse of one real hour → the label definition, design doc §5.1.
+   Formal review events reach only ~1 PR in 4, so the target was
+   redefined before any code was written against the old one.
+
+Every other figure in the docs remains bracketed or absent by design.
 
 ## Next
 
@@ -57,4 +63,5 @@ failures.
 |---|---|---|---|
 | 2026-09-01 | Design | — | Design doc written and approved. No code. |
 | 2026-09-01 | Dataset scope | `curl -sI` against 5 live GH Archive files | **Measured.** 2025 hours 62.5 / 83.2 / 113.7 MB gz; 2014 hours 5.0 / 6.2 MB gz. Firehose grew ~15× since 2014. A full unsampled quarter extrapolates to ~180 GB gz — an order of magnitude above the earlier working assumption, which is what drove the tiered scope in design doc §4.5 and the rule to sample repos rather than hours. Uncompressed ratio still unmeasured. |
+| 2026-09-01 | Label validity probe | Downloaded and fully parsed `2025-03-15-14.json.gz` (227,376 events) | **Design-changing.** Expansion **7.17×** (83 MB gz → 597 MB). 6,352 PRs opened/hour, 6,015 closed (77.8% merged), but only **1,574 distinct PRs received a review event** — formal review reaches ~1 PR in 4, so "time to first review" was undefined for most of the population. Label redefined to *time to first human response* (§5.1). Also: bots are **18.2%** of events and 2,855 of PR events, drafts 2.0%, and the probed hour was a Saturday — forcing whole-week temporal splits. |
 | 2026-09-01 | `.claude/` hooks | Ran both hooks against 3 constructed scenarios | **Defect found and fixed.** Both hooks read the git index at `PreToolUse` time, so `git add -A && git commit` as one command left the index empty and neither hook fired — silently, on all three of this repo's first commits. Patched to fall back to the working tree when the command also stages. Re-verified: clean tree → silent; STATUS.md+code → story-bank fires, STATUS check silent; code-only → STATUS check warns. |
