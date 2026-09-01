@@ -213,6 +213,27 @@ after closing out a debugging saga or making a real decision:
   `refactor:`).
 - The README never claims something is built when it is not, and never
   carries an unmeasured number.
+- **The three reader-facing artifacts get refreshed proactively, not on
+  request: `README.md`, `CLAUDE.md`, and the story-bank gist.** Standing
+  instruction from the user, 2026-09-01, and it is incident-backed rather
+  than precautionary: the README read *"design approved, implementation
+  not started — nothing below is built yet"* through **all nine Phase 0
+  tasks**, a green CI pipeline, 69 tests, and live cloud infrastructure.
+  The two rules above it were already in force and did not catch it,
+  because each is phrased as *don't let it become wrong* — and the README
+  never became wrong, it simply stopped being updated while the project
+  moved.
+
+  So the check is positive, not negative. At every natural stopping point
+  — a task done, a STATUS.md row, a phase boundary — ask of each of the
+  three: **what changed today that a reader of this file would want to
+  know?** Not "is it still accurate?", which a stale file passes trivially.
+
+  | Artifact | Refresh when |
+  |---|---|
+  | `README.md` | status changes, a phase completes, the architecture diagram's subject changes, a finding lands that a reader would want up front |
+  | `CLAUDE.md` | a convention is set, a skill/hook is added or deferred, a policy changes |
+  | story-bank gist | anything went wrong, was measured, or was decided against a real trade-off — the raw material for a STAR answer |
 
 ## Interview story bank
 
