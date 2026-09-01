@@ -205,6 +205,40 @@ one wide fact with sixty mostly-null columns. → ADR-003.
 No `dim_time` at timestamp grain — millions of rows storing attributes
 the fact already carries. → ADR-004.
 
+### 4.3a Facts are built from the event stream, not from embedded payloads
+
+**A construction rule, and it is load-bearing.** Every fact and every
+label is derived from **event-level fields** — `created_at`, `actor`,
+`repo`, `type`, `payload.action` — never from the denormalized objects
+nested inside a payload.
+
+This was not the original design. `fact_pull_request` originally read
+`payload.pull_request.created_at`, `.user`, and `.merged`. That is the
+convenient path and it is the fragile one: the embedded object is a
+convenience the upstream provider can change unilaterally, while the
+event stream is the actual contract.
+
+**It changed for a measured reason.** When `payload.pull_request` was cut
+from 48 fields to 5 in October 2025 (§12 trap 12), a payload-native
+pipeline stops working entirely. An event-stream-native one keeps
+working, because the same facts are still derivable:
+
+| Fact | Payload-native source (fragile) | Event-native source (durable) |
+|---|---|---|
+| `opened_at` | `payload.pull_request.created_at` | the `opened` event's own `created_at` |
+| **PR author** | `payload.pull_request.user` | the `opened` event's `actor.login` |
+| `first_review_at` | — | first `PullRequestReviewEvent` time |
+| `closed_at` | — | the `closed` event's `created_at` |
+
+**Verified against live post-change data** (2026-08-28): event-level
+`created_at` present on 100% of events, and the PR author recoverable
+from `actor.login` on 151 of 151 opened events. The primary label
+survives the schema break.
+
+What is *not* recoverable from events alone, and is therefore genuinely
+era-bound: `merged` vs closed-unmerged, the `draft` flag, PR `title`/
+`body`, and PR size. Those come from the second source (§4.5a).
+
 ### 4.4 Feature platform
 
 The layer that makes this an ML platform rather than a data platform,
@@ -242,6 +276,14 @@ Two consequences. The firehose grew roughly **15×** between 2014 and
 repeatedly inside the credit budget. Tier 3's month is ~444 GB
 uncompressed, which is tractable.
 
+#### Window: Q3 2025 — the most recent quarter with full fidelity
+
+**2025-07-01 → 2025-09-30.** Chosen, not inherited: it is the last full
+quarter before the October 2025 payload reduction (§12 trap 12).
+Confirmed rich at both ends, including the quarter's final hour
+(`2025-09-30-23`, 48 keys). Every date sampled inside it measured 48 keys;
+the first reduced date observed is 2025-10-15.
+
 #### The governing rule: sample the entity dimension, never the time dimension
 
 The reflex when data gets expensive is to shorten the time window. That
@@ -269,10 +311,10 @@ introducing them would poison the label.
 | Tier | Slice | Size | Purpose |
 |---|---|---|---|
 | **0 — Fixtures** | ~4 hours, committed to the repo | ~350 MB | TDD. Tests never touch the network. |
-| **1 — Local dev** | 1 week of 2025 | ~14 GB gz | All pipeline development in the local container. |
+| **1 — Local dev** | 1 week of Q3 2025 | ~14 GB gz | All pipeline development in the local container. |
 | **2 — Legacy** | 1 month of 2014 (720 files) | ~3.9 GB gz | Full schema-evolution path. Effectively free. |
-| **3 — Cloud volume proof** | 1 month of 2025, **full firehose, unsampled** | ~62 GB gz | The Azure burn. The honest "processed the real firehose on a real cluster" claim, with measured throughput and cost per run. |
-| **4 — Modeling** | **Full 3-month span, repo-sampled** | tuned to budget | Features, temporal splits, drift. Span without the volume bill. |
+| **3 — Cloud volume proof** | 1 month of Q3 2025, **full firehose, unsampled** | ~62 GB gz | The Azure burn. The honest "processed the real firehose on a real cluster" claim, with measured throughput and cost per run. |
+| **4 — Modeling** | **Q3 2025 (Jul 1 – Sep 30), repo-sampled** | tuned to budget | Features, temporal splits, drift. Span without the volume bill. |
 
 Tiers 3 and 4 answer different questions deliberately. Tier 3 proves the
 platform processes volume; Tier 4 gives the model temporal depth.
@@ -301,6 +343,31 @@ decision needs Phase 0 to measure:
 
 ---
 
+### 4.5a Second source — the GitHub REST API
+
+The config-driven framework's proof obligation is that a new source
+onboards via **YAML alone, zero new Python** (§9, Phase 2 gate). That
+second source is the **GitHub REST API**, and the choice is no longer
+arbitrary — it repairs exactly what the firehose lost.
+
+**Verified 2026-09-01 against the live API:** `/repos/{owner}/{repo}/pulls/{n}`
+returns a **48-key** PR object including `merged`, `draft`, `title`,
+`body`, `additions`, `deletions`, `changed_files`. The list endpoint
+returns 36 keys. **The REST API was never reduced — only the Events
+firehose was.** Rate limit is 5,000 requests/hour authenticated.
+
+**The division of labour:**
+
+| Source | Provides | Scale |
+|---|---|---|
+| GH Archive firehose | Event stream, history, volume, all three schema eras | Millions/hour, free, complete |
+| GitHub REST API | Full PR fidelity for current dates — merge outcome, draft, text, size | 5,000/hour, bounded repo set |
+
+This is what makes the project **re-runnable on today's data end to
+end**, embeddings included, rather than being a historical artifact. It
+is also a genuinely common production shape: a high-volume lossy stream
+for coverage, a lower-volume authoritative API for enrichment.
+
 ## 5. The model
 
 **Primary: PR review-SLA risk.** Given an open PR, predict whether it
@@ -318,20 +385,32 @@ interviewers remember. → ADR-005.
 
 ### 5.1 Label definition — measured, not assumed
 
-**Probed 2026-09-01** against one real hour (`2025-03-15-14`, a Saturday):
-227,376 events, 597 MB uncompressed from 83 MB gzipped (**7.17×**).
+**Re-probed 2026-09-01 against the chosen Q3 window** (`2025-08-13-14`,
+a Wednesday, 167,303 events). Original probe was `2025-03-15-14`, a
+Saturday, shown alongside because the differences are themselves
+informative.
 
-| Signal | Count in the hour |
-|---|---|
-| PRs opened | 6,352 |
-| PRs closed | 6,015 (77.8% merged) |
-| **Distinct PRs receiving a `PullRequestReviewEvent`** | **1,574** |
-| `PullRequestReviewEvent` share of firehose | 1.02% |
-| Bot events (`login` ends `[bot]`) | 18.2% — incl. 2,855 PR events |
-| Draft PRs opened | 127 (2.0%) |
+| Signal | Q3 (2025-08-13, Wed) | original (2025-03-15, Sat) |
+|---|---|---|
+| PRs opened | **6,618** | 6,352 |
+| PRs closed | 6,503 (**77.4%** merged) | 6,015 (77.8% merged) |
+| Distinct PRs with a **review** event | **3,550** | 1,574 |
+| **Distinct PRs with any human response** | **6,533** | — |
+| **Broadening gain from the wider label** | **1.84×** | — |
+| Bot events (`[bot]` suffix) | 20.3% | 18.2% |
+| Draft PRs opened | **451 (6.8%)** | 127 (2.0%) |
 
-Event mix: `PushEvent` 66.5%, `CreateEvent` 11.9%, `PullRequestEvent`
-5.5%, `WatchEvent` 4.9%, `IssueCommentEvent` 3.1%, `IssuesEvent` 2.2%.
+Expansion ratio 7.17× measured separately on the March hour.
+
+**The broadened label is now validated numerically, not just argued.**
+Review-only coverage is ~54% of the PR open rate; broadening to *any
+human response* reaches ~99%, a **1.84× gain**. Merge rate is stable
+across both samples (77.4% / 77.8%), which is reassuring — the two hours
+differ in many ways but not in that.
+
+**Draft PRs tripled** (2.0% → 6.8%) between March and August 2025, which
+makes the draft-exclusion rule below materially more important than it
+looked when it was written.
 
 **The finding that changes the design: formal review events reach only
 about one PR in four.** "Time to first review" is undefined for most PRs,
@@ -513,7 +592,9 @@ flight.
 - [ ] A legacy `-07:00` timestamp is proven by test to land at the correct UTC instant (§4.1b)
 - [ ] Tier 4's 3-month repo-sampled span built, with a temporal train/test split
 - [ ] Rerunning any single hour produces identical results — idempotency proven, not claimed
-- [ ] Adding a source requires only a YAML file, zero new Python
+- [ ] Adding a source requires only a YAML file, zero new Python — proven by onboarding the GitHub REST API
+- [ ] The full pipeline runs end to end on **current** data, not only on the historical window
+- [ ] Facts and labels are built event-natively; no fact reads a nested payload object
 - [ ] `dim_repo` is SCD2 with at least one real demonstrated rename
 - [ ] `fact_pull_request` is a working accumulating snapshot
 - [ ] **A feature vector computed `as_of` T is reproducible byte-for-byte a year later**
@@ -570,6 +651,10 @@ an open choice with a defensible alternative.
 | Streaming | Live Events API **and** a replay harness | Either alone | Live feed is the authentic claim; replay is the only way to force late/duplicate/out-of-order cases on demand |
 | Unity Catalog | Decide in Phase 0 on measured pricing | Commit either way now | Premium raises the DBU rate on *all* compute incl. the backfill; guessing this is expensive either direction |
 | Real-person data | Pseudonymize identities in anything published | Publish real logins; or drop individual analysis | Repos are projects and stay named; people are pseudonymized. Keeps the bus-factor analysis without naming individuals as risks in a public portfolio |
+
+| Modeling window | Q3 2025 (Jul–Sep) | Q1 2025, as inherited; or recent 2026 data | Last full quarter before the Oct 2025 payload reduction — the most recent data with full fidelity |
+| Fact construction | Event-stream-native | Read the embedded `payload.pull_request` object | The embedded object is a convenience upstream can change unilaterally; the event stream is the contract. Proven when it changed |
+| Second source | GitHub REST API | Hugging Face mirror; another archive | Restores exactly what the firehose lost (48-key PR objects, verified live), making the project re-runnable on today's data |
 
 **Not used:** stock cloud-architecture diagrams. The architecture diagram
 is drawn by hand and matches the repo one-to-one — a diagram containing
@@ -648,6 +733,18 @@ Each of these is a real property of GH Archive, each goes in
     2026-09-01.
 11. **Deleted users and repos** appear as nulls or placeholders in later
     events.
+
+12. **A THIRD schema era, 2025-10 — MEASURED 2026-09-01**, see
+    `docs/findings/2026-09-01-third-schema-era.md`. Between **2025-10-08
+    and 2025-10-15** `payload.pull_request` was cut from **48 fields to
+    5**, losing `merged`, `user`, `draft`, `created_at`, `title`, `body`,
+    and every size field. Volume fell alongside it — one 2026 hour holds
+    54,232 events against 227,376 in 2025 (−76%), PR events −97%, review
+    events −96%. Documented nowhere upstream. Consequences: `SchemaEra`
+    has a third member `REDUCED_V3`; Bronze and Silver ingest all three
+    eras; facts are built event-natively so the primary label survives
+    (§4.3a); and the fidelity the firehose no longer carries comes from
+    the REST API instead (§4.5a).
 
 ---
 

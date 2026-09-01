@@ -26,7 +26,11 @@ from almanac.explore.measure import BotMatch, classify_bot, duplicate_ratio, ren
 from almanac.extract.archive import fetch_hour
 from almanac.extract.outcome import FetchStatus
 
-SAMPLE_DAYS = [date(2025, 1, 8), date(2025, 2, 12), date(2025, 3, 19)]
+# Q3 2025 -- the most recent quarter fully inside the rich schema era,
+# which ends 2025-10-08 at the latest (docs/findings/2026-09-01-third-
+# schema-era.md). All three are Wednesdays, so bot share stays comparable
+# across samples: it is strongly day-of-week dependent.
+SAMPLE_DAYS = [date(2025, 7, 9), date(2025, 8, 13), date(2025, 9, 17)]
 SAMPLE_HOURS = [0, 3, 6, 9, 12, 15, 18, 21]
 
 
