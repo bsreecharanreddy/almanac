@@ -26,6 +26,7 @@ mlartifacts/
 *.tfstate
 *.tfstate.*
 *.tfplan
+tfplan
 !*.tf
 
 # Secrets
