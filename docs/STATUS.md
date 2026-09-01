@@ -6,15 +6,17 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase 0 (Exploration) complete — 9 of 9. Phase 1 planned, not
-started.** The active plan is
+**Phase 0 (Exploration) complete — 9 of 9. Phase 1 in progress — 1 of
+7.** The active plan is
 `docs/plans/2026-09-01-phase-1-pipeline-plan.md` (7 tasks: declarative
 source config, Bronze, gap detection, era normalization, dedup, quality +
-quarantine, and an Azure calibration run).
+quarantine, and an Azure calibration run). Work is on branch
+`phase-1-pipeline`.
 
-Scaffold, tooling, CI, a containerized Spark + Delta environment, and the
-ingestion edge (URL construction, fetching, committed fixtures) exist and
-are green. No transformation code yet.
+Scaffold, tooling, CI, a containerized Spark + Delta environment, the
+ingestion edge (URL construction, fetching, committed fixtures), and the
+declarative source contract exist and are green. No transformation code
+yet.
 
 **Cloud resources now exist and are running** (`terraform apply`,
 2026-09-01): resource group, ADLS Gen2 with bronze/silver/gold/features
@@ -40,28 +42,22 @@ Every other figure in the docs remains bracketed or absent by design.
 
 ## Next
 
-**Phase 0 — Exploration (target: week of 2026-09-01).** Needs an
-implementation plan in `docs/plans/` before any code is written.
+**Phase 1 Task 2 — Bronze: metadata only, never transform.**
+`add_ingestion_metadata()` and an idempotent `write_bronze()` using
+`replaceWhere` on `(event_date, event_hour)`.
 
-Its purpose is to replace assumption with measurement:
+The property under test is replay: whatever Silver gets wrong must be
+recomputable from Bronze without re-downloading, which only holds if
+Bronze preserves the raw payload verbatim and keeps `ingested_at`
+strictly separate from `created_at`.
 
-1. Download 2 hours from 2025 and 2 hours from 2014.
-2. **Diff the two schema eras against real files.** The design doc's §12
-   describes the 2015 break directionally; the exact pre-2015 field names
-   are explicitly unconfirmed and must come from real data.
-3. Measure the remaining unknowns from design doc §4.5: the
-   **uncompressed:compressed ratio** (compressed size is already
-   measured), events per hour, event type distribution, bot share,
-   duplicate-`event_id` rate within and across files, and **`repo_id`
-   rename frequency** — the last of which decides whether the chosen
-   3-month window can demonstrate SCD2 at all.
-4. Stand up the local Spark container and a CI skeleton.
-5. Provision Azure via Terraform early, clusters off, so week 3 is not a
-   setup scramble.
-
-**Gate:** measured numbers committed to the repo; the schema diff
-documented from real data. If reality contradicts the design doc, reality
-wins and the design doc gets corrected.
+**Phase 1 gate** (all 7 tasks): Bronze→Silver runs end to end from
+`conf/sources/gharchive.yml` against the committed fixtures, all three
+schema eras ingest, the clean/quarantine split is asserted to conserve
+records, adjacent-hour duplicates are exercised for real (Phase 0 never
+tested trap 4), and a calibration run on Azure produces a **measured**
+GB/cluster-hour figure — the number every remaining cost estimate in the
+design rests on.
 
 ## Hard dates
 
@@ -101,3 +97,4 @@ failures.
 | 2026-09-01 | Credit re-scope — 4 design changes | Live vendor-doc validation (Photon coverage, vector-index practice); Retail Prices API; Phase 0 Task 8 embedding measurements | **Written up before building, per `almanac-design-decision`.** The plan spent ~$25–40 of $184; four additions absorb the surplus, each converting an assertion into a measurement. **§4.5 — Tier 3 is now calibration-derived, not a fixed "1 month".** Its span was a number picked before anything ran on Spark; the procedure is now fixed in advance (calibrate on one day → derive GB/cluster-hour → take the largest contiguous slice costing ≤40% of remaining credit → commit the arithmetic to STATUS.md first). The rule binds both ways: shrinking is not a failure, quoting an unrun span is. Also corrected a small arithmetic error — Q3 is **2,208** hourly files (92 days), not 2,160, so ~190 GB gz not ~180. **§8.2 — Photon A/B, designed to permit a null result.** Validation found Photon has **only partial JSON-parsing coverage and no UDF support**, falling back to Spark while still consuming the higher DBU rate — and bronze ingest is almost entirely JSON parsing. Hypothesis recorded *before* the run: helps silver/gold, little or nothing on bronze, blended result possibly a wash. Measured per-layer, since a blended number would hide exactly that effect. **§8.3 — retrieval index sized before chosen.** From Task 8's measured 151.1 texts/sec: ~218k vectors at the 5% sample, ~4.6M at 100% — **both under the ~10M threshold where 2026 practice favours pgvector/FAISS over a managed service**, so scale does *not* settle it. Decision rule fixed instead on point-in-time metadata filtering (the §2 claim applied to retrieval), rebuild cost over query latency, and UC lineage; falls back to FAISS if managed cost exceeds ~10% of credit. **§8.1 — a live endpoint, not a described one**, plus two community figures corrected: Model Serving DBU is **$0.07, not ~$0.08** (~14% off) and launch charge $0.07 exactly; cold start remains unmeasured and explicitly unquotable. **§13's register was stale** — all nine original items were measured but still unchecked; closed each with its measurement and added six genuinely open ones, the largest being **cluster throughput, on which every dollar figure depends**. Also carried forward honestly that Phase 0's duplicate-rate measurement used non-adjacent hours and so never tested trap 4. |
 | 2026-09-01 | README / CLAUDE.md / gist refresh | Read each against the actual repo state | **A staleness defect found, and the rule that missed it replaced.** The README still read *"design approved, implementation not started — nothing below is built yet"* after **all nine Phase 0 tasks**, green CI, 69 tests, and live cloud infrastructure. Two conventions were already in force (README diagram updates same-commit; README never claims something is built when it is not) and **neither caught it**, because both are phrased as *don't let it become wrong* — and the README never became wrong, it just stopped being updated. Replaced with a *positive* check asked at every stopping point: "what changed today that a reader of this file would want to know?", which a stale file fails where "is it still accurate?" passes trivially. README rewritten with real status, a Mermaid architecture diagram marking built-vs-designed, and the seven design-changing Phase 0 measurements. **Separately, the story-bank gist was found corrupted** — its description line was duplicated four times into the top of the file body by an earlier update; stripped, and the true content fetched via `gh api` rather than `gh gist view --raw`, which conceals the difference. Stories 9–11 added (the sample-of-two retraction, the three-gate quota debug, the pre-registered Photon hypothesis), plus 5 tradeoff rows and 13 index entries. Gist verified still `public: false`. |
 | 2026-09-01 | §9 resequenced + Phase 1 plan written | Read §9 against Phase 0's findings and the Sep 24 credit expiry | **Two contradictions fixed, one of them mine from earlier today.** (1) §9's phase table still described Tier 3 as "one unsampled month, ~62 GB gz" while §4.5 had been changed hours earlier to make it calibration-derived — two sections of one document disagreeing. (2) **I had written that four items "absorb the $184 surplus", but two of them are scheduled after the credit expires** — live serving is Phase 4 (Oct 5–18) and retrieval is Phase 5 (Oct 19 – Nov 1), against a Sep 24 expiry. Corrected to match §9's original and correct strategy: the credit funds the data-platform proof (calibration, Tier 3, Photon A/B, and ~60% held back for re-runs); serving and retrieval run on a bounded paid window afterwards. **Resequenced around the deadline:** the old schedule put the Azure burn at Sep 15–24 — the last ten days, zero margin — against a Phase 0 record of four defects in one task, three CI failures, and a region that had to change. Phase 0 finished Sep 1 rather than Sep 7, and that slack is spent on the deadline rather than on getting ahead elsewhere. **Key structural change: calibration moves out of Phase 2 into Phase 1**, because it needs only working Bronze and one day of data, not Gold. Phase 2 now runs Sep 9–20, leaving four deliberate days of slack before expiry, and only Phases 1–2 are deadline-bound. **Phase 1 plan written** (7 TDD tasks, full test and implementation code, exit gate, and an explicit deferred list). Two blocks in its first draft were placeholder-shaped — a `split` implementation that contradicted its own test, and an inert byte counter in the calibration script — both rewritten to be correct rather than shipped with an implementer note excusing them. |
+| 2026-09-01 | Phase 1 Task 1 — declarative source config | `make check` (ruff, ruff format, mypy --strict, 74 tests) | **Green, 74 tests (was 69), after two plan gaps.** (1) **`pyyaml` was never a dependency** — Step 4's `import yaml` could not have run as written, and `mypy --strict` additionally needs `types-pyyaml`; both added at live-checked floors (6.0.3 / 6.0.12.20260815), not versions carried over from the plan. Same class as Phase 0 Task 1's ordering bug: the plan specified code without the environment that lets it execute. (2) **The plan's four tests do not pin the `_rule_names_unique` validator** — every one reads the real config, which has unique names by construction, so the validator is never reached. Confirmed by mutation rather than asserted: deleting the validator left all four green. Added a fifth test that constructs a duplicate-name config, so the invariant the `_failed_rules` array depends on (a failure must be traceable to the rule that caused it) is actually enforced. **Flagged, not changed:** the rule named `event_type_known` only asserts `event_type IS NOT NULL`, which is *present*, not *known* — that name will surface in quarantine analysis, so it is worth revisiting at Task 6 when the rules are first executed.
