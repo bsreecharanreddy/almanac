@@ -1,7 +1,10 @@
 # Findings — Azure pricing, and the Unity Catalog decision
 
 **Date:** 2026-09-01
-**Region:** `eastus2`
+**Region:** `eastus2` as measured; **re-verified identical in `westus3`**,
+which is the region actually used — see
+`docs/findings/2026-09-01-azure-region-availability.md` for why the region
+moved. Every rate below holds unchanged in `westus3`.
 **Source:** Microsoft's **Azure Retail Prices API**
 (`https://prices.azure.com/api/retail/prices`) — the authoritative,
 machine-readable source. **Deliberately not** a blog, an aggregator, or a
@@ -83,6 +86,18 @@ assumption.** Against a 10–15 hour need, the budget is nowhere near
 binding, so trading governance away to buy compute we would not use is a
 bad trade.
 
+> **Correction (2026-09-01, same day):** this section is written as though
+> Standard were on the table. **It is not.** New Standard-tier workspaces
+> were discontinued **2026-04-01**, and existing ones auto-upgrade to
+> Premium by **2026-10-01**. Premium is *forced*, not chosen.
+>
+> The analysis is kept rather than deleted because it still answers a real
+> question — whether Premium is worth its cost *on the merits* — and the
+> answer is yes on measured numbers. But the decision was recorded as a
+> trade-off we made, and it was not one. The "what would reverse this"
+> note below is likewise moot: dropping to Standard is not an available
+> lever. Shrinking Tier 3 still is.
+
 Unity Catalog also carries the lineage story (§design goals) and is a
 genuine resume line. It costs 34 cluster-hours we have no use for.
 
@@ -96,6 +111,12 @@ run before assuming.
 - **Job clusters only.** All-purpose Compute is $0.40–0.55/DBU against
   Jobs' $0.15–0.30, and an all-purpose cluster left on a schedule is the
   single most common source of a surprise portfolio bill.
+- **Photon carries no DBU-rate premium.** Jobs Compute Photon bills at the
+  same $/DBU as non-Photon ($0.15 Standard / $0.30 Premium, measured). This
+  is a rate, not a total: Photon nodes consume more DBUs per hour, so it is
+  not free. But the rate parity means the only cost question is
+  DBUs-consumed vs. wall-clock saved — measurable in one A/B run, and worth
+  running rather than assuming.
 - Auto-termination on anything interactive.
 - `terraform destroy` between sessions.
 - Budget alert configured **before** the first apply.
