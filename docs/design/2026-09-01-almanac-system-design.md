@@ -175,6 +175,38 @@ governs computation and display, not how a string carrying an explicit
 offset is read. This gets an explicit regression test asserting a legacy
 timestamp lands at the correct UTC instant.
 
+**Measured 2026-09-01, Phase 1 Task 2 — the same trap exists on the
+write side, and in the test harness.** Session timezone does not govern
+PySpark's conversion of a Python `datetime` in *either* direction.
+Measured across **three driver timezones**, not one, because the first
+run could not distinguish "shifted by the driver offset" from "shifted by
+four hours":
+
+| Driver `user.timezone` | aware → `F.lit` | **naive** → `F.lit` | Spark → `.first()` |
+|---|---|---|---|
+| `America/New_York` (−4) | 0s | **+4h** | −4h |
+| `UTC` (0) | 0s | **0s** | 0s |
+| `Asia/Kolkata` (+5:30) | 0s | **−5h30** | +5h30 |
+
+The rule, now supported rather than guessed: **an aware datetime is always
+stored correctly; a naive one is read as driver-local wall time; a
+collected timestamp is returned as driver-local wall time.** Nothing
+raises in any case — the values are valid timestamps, just the wrong
+instants.
+
+The `UTC` row is the dangerous one. **Every defect here is invisible on a
+UTC CI runner** and appears only on a developer machine, so CI is
+structurally unable to catch this class and the guard has to be in the
+code. Two consequences, both now enforced rather than documented:
+
+1. `add_ingestion_metadata` **rejects a naive `datetime`**. `datetime.now()`
+   is naive, so the wrong call is the one a caller writes by default.
+2. **No test asserts on a collected Python `datetime`.** Comparisons are on
+   `unix_timestamp()` — an instant, unambiguous. Confirmed by the table
+   above: a naive-datetime assertion is green on a UTC runner and red on a
+   laptop, the worst available failure shape — environment-dependent, and
+   passing exactly where nobody is looking.
+
 ### 4.2 Silver
 
 Typed, deduped, validated, per-type flattened. One common `silver.events`

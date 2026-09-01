@@ -46,6 +46,12 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "PL", "RUF", "C90"]
+# N812 fires on `from pyspark.sql import functions as F`, which is the
+# universal PySpark idiom -- every example in Spark's own docs uses it, and
+# every module in the pipeline will. Renaming it to satisfy the rule would
+# make this codebase read as unfamiliar to a Spark engineer, which is the
+# opposite of what the rule is for.
+ignore = ["N812"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
