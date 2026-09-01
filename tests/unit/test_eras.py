@@ -11,13 +11,16 @@ pytestmark = pytest.mark.spark
 
 RAW_SCHEMA = (
     "created_at_raw string, actor_raw string, repo_id long, "
-    "repo_name string, event_type string, id string"
+    "repo_name string, event_type string, id string, "
+    "event_url string, ingested_at timestamp"
 )
 
-type RawRow = tuple[str, str | None, int | None, str, str, str | None]
+type RawRow = tuple[str, str | None, int | None, str, str, str | None, str | None, datetime]
 
-LEGACY: RawRow = ("2014-06-12T03:00:00-07:00", "abc", 1, "o/r", "PushEvent", None)
-MODERN: RawRow = ("2025-08-13T14:00:00Z", "abc", 1, "o/r", "PushEvent", "999")
+INGESTED = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
+
+LEGACY: RawRow = ("2014-06-12T03:00:00-07:00", "abc", 1, "o/r", "PushEvent", None, None, INGESTED)
+MODERN: RawRow = ("2025-08-13T14:00:00Z", "abc", 1, "o/r", "PushEvent", "999", None, INGESTED)
 
 
 def raw(spark: SparkSession, *rows: RawRow) -> DataFrame:
@@ -68,16 +71,25 @@ def test_content_hash_is_stable_across_runs(spark: SparkSession) -> None:
 
 
 def test_distinct_legacy_events_hash_differently(spark: SparkSession) -> None:
-    other: RawRow = ("2014-06-12T03:00:00-07:00", "abc", 2, "o/s", "PushEvent", None)
+    other: RawRow = (
+        "2014-06-12T03:00:00-07:00",
+        "abc",
+        2,
+        "o/s",
+        "PushEvent",
+        None,
+        None,
+        INGESTED,
+    )
     ids = [r["event_id"] for r in normalize_events(raw(spark, LEGACY, other)).collect()]
     assert len(set(ids)) == 2
 
 
 def test_era_is_labelled_on_every_row(spark: SparkSession) -> None:
     rows: list[RawRow] = [
-        ("2014-06-12T03:00:00-07:00", "a", 1, "o/r", "PushEvent", None),
-        ("2025-08-13T14:00:00Z", "b", 2, "o/s", "PushEvent", "1"),
-        ("2025-11-01T00:00:00Z", "c", 3, "o/t", "PushEvent", "2"),
+        ("2014-06-12T03:00:00-07:00", "a", 1, "o/r", "PushEvent", None, None, INGESTED),
+        ("2025-08-13T14:00:00Z", "b", 2, "o/s", "PushEvent", "1", None, INGESTED),
+        ("2025-11-01T00:00:00Z", "c", 3, "o/t", "PushEvent", "2", None, INGESTED),
     ]
     eras = {r["schema_era"] for r in normalize_events(raw(spark, *rows)).collect()}
     assert eras == {"legacy_v1", "modern_v2", "reduced_v3"}
@@ -88,7 +100,16 @@ def test_repo_name_case_is_preserved(spark: SparkSession) -> None:
 
     Lower-casing here would make them invisible to SCD2 in Phase 2.
     """
-    row: RawRow = ("2025-08-13T14:00:00Z", "a", 1, "Lumacaonta/GLB", "PushEvent", "1")
+    row: RawRow = (
+        "2025-08-13T14:00:00Z",
+        "a",
+        1,
+        "Lumacaonta/GLB",
+        "PushEvent",
+        "1",
+        None,
+        INGESTED,
+    )
     assert one(normalize_events(raw(spark, row)))["repo_name"] == "Lumacaonta/GLB"
 
 
@@ -109,6 +130,7 @@ def test_output_is_exactly_the_canonical_silver_shape(spark: SparkSession) -> No
         "repo_name",
         "event_type",
         "schema_era",
+        "ingested_at",
     }
 
 
@@ -127,7 +149,7 @@ def test_spark_era_labels_agree_with_the_python_implementation(spark: SparkSessi
         datetime(2025, 10, 15, 0, 0, tzinfo=UTC),
     ]
     rows: list[RawRow] = [
-        (d.strftime("%Y-%m-%dT%H:%M:%SZ"), "a", 1, "o/r", "PushEvent", str(n))
+        (d.strftime("%Y-%m-%dT%H:%M:%SZ"), "a", 1, "o/r", "PushEvent", str(n), None, INGESTED)
         for n, d in enumerate(boundaries)
     ]
     out = normalize_events(raw(spark, *rows)).collect()
@@ -166,7 +188,59 @@ def test_nulls_hold_their_position_in_the_content_hash(spark: SparkSession) -> N
     legacy events that is a silent merge of two real events with no native
     id to fall back on.
     """
-    no_actor: RawRow = ("2014-06-12T03:00:00-07:00", None, 5, "o/r", "PushEvent", None)
-    no_repo: RawRow = ("2014-06-12T03:00:00-07:00", "5", None, "o/r", "PushEvent", None)
+    no_actor: RawRow = (
+        "2014-06-12T03:00:00-07:00",
+        None,
+        5,
+        "o/r",
+        "PushEvent",
+        None,
+        None,
+        INGESTED,
+    )
+    no_repo: RawRow = (
+        "2014-06-12T03:00:00-07:00",
+        "5",
+        None,
+        "o/r",
+        "PushEvent",
+        None,
+        None,
+        INGESTED,
+    )
     ids = [r["event_id"] for r in normalize_events(raw(spark, no_actor, no_repo)).collect()]
     assert len(set(ids)) == 2
+
+
+def test_same_actor_repo_second_and_type_are_still_two_events(spark: SparkSession) -> None:
+    """The collision measured in a real legacy hour, pinned.
+
+    One actor pushed two different commit ranges to one repo inside the same
+    second; another opened two different issues inside the same second. On
+    `(created_at, actor_login, repo_id, event_type)` alone both pairs hash
+    identically, and dedup deletes one of each -- roughly 1 in 1,000 legacy
+    events, silently. Phase 0's 1-in-6.0M duplicate ratio was measured on
+    modern data, which carries native ids and never reaches this hash.
+    """
+    push_a: RawRow = (
+        "2014-06-12T14:07:42-07:00",
+        "oschettler",
+        18377459,
+        "oschettler/allesuns",
+        "PushEvent",
+        None,
+        "https://github.com/oschettler/allesuns/compare/19d1cb231c...c59c2cc6f1",
+        INGESTED,
+    )
+    push_b: RawRow = (
+        "2014-06-12T14:07:42-07:00",
+        "oschettler",
+        18377459,
+        "oschettler/allesuns",
+        "PushEvent",
+        None,
+        "https://github.com/oschettler/allesuns/compare/f8ccc599d0...19d1cb231c",
+        INGESTED,
+    )
+    ids = {r["event_id"] for r in normalize_events(raw(spark, push_a, push_b)).collect()}
+    assert len(ids) == 2
