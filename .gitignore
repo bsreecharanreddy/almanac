@@ -40,3 +40,6 @@ mlartifacts/
 .DS_Store
 .idea/
 .vscode/
+
+# Story bank gist id — the gist is secret; its id stays out of the repo
+.claude/story-bank-gist-id
