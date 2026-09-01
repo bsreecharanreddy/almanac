@@ -246,6 +246,20 @@ Currently present:
   the story bank only ever got updated when asked directly. A mechanical
   reminder is the fix; care demonstrably was not.
 
+- **`skills/almanac-design-decision`** — evidence sufficiency, live
+  validation, and where a decision gets recorded. Incident-derived, and
+  the incidents are the *same mistake twice*: the 2026 volume claim
+  generalized from **one** truncated hour (wrong; corrected in `535cbeb`),
+  and the "VM SKUs are restricted subscription-wide" claim generalized
+  from **two** regions (wrong; centralus and westus3 offer the SKU, and
+  the error nearly triggered a serverless rewrite of design doc §8.1).
+  Both were ~90 seconds of extra measurement from being caught, and both
+  were stated as conclusions before that measurement ran. Its gate 1
+  ("state the actual `n`, along the dimension you are generalizing over")
+  is the part that addresses the failure; gates 2 and 3 codify the
+  already-standing web-validation and where-it-gets-written rules rather
+  than adding anything new.
+
 Deliberately deferred until earned, with the trigger that would justify
 each:
 
@@ -257,3 +271,11 @@ each:
   above; mechanize it once it is proven that stating it was not enough.
 - **A recurring-CI-failure procedure** — there is no CI yet and no
   failure history to generalize from.
+- **A code-quality review skill** — write it once Almanac has accumulated
+  its own named review incidents. A sibling project's equivalent works
+  because it cites six specific ones; Almanac currently has zero, so
+  writing one now would be guessing at what its bugs look like.
+- **A test-coverage skill** — deliberately *not* planned. Coverage is
+  already enforced mechanically by CI and the testing policy above. A
+  skill would be a second place recording the same rule, and two places
+  recording one rule means one of them is wrong.

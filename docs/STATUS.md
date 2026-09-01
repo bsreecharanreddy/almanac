@@ -6,14 +6,25 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase: 0 (Exploration), Task 9 in progress — blocked on an Azure
-subscription upgrade.** Tasks 1–8 complete. Executing
+**Phase: 0 (Exploration), Task 9 complete — Azure infrastructure is
+live.** Tasks 1–9 complete. Executing
 `docs/plans/2026-09-01-phase-0-exploration-plan.md` on branch
-`phase-0-exploration`.
+`phase-0-cloud`.
 
 Scaffold, tooling, CI, a containerized Spark + Delta environment, and the
 ingestion edge (URL construction, fetching, committed fixtures) exist and
-are green. No transformation code, no cloud resources yet.
+are green. No transformation code yet.
+
+**Cloud resources now exist and are running** (`terraform apply`,
+2026-09-01): resource group, ADLS Gen2 with bronze/silver/gold/features
+containers, and a Premium Azure Databricks workspace in **`westus3`** —
+not `eastus2` as originally planned. No compute is running; the workspace
+accrues no DBUs until a cluster launches. **`terraform destroy` between
+sessions is the standing rule.** A subscription budget
+(`almanac-credit-burndown`, $185/mo, alerts at 25/50/75/90/100% + a
+forecast alert) is in force, because upgrading to pay-as-you-go **removes
+the Free Trial spending limit** and the card becomes chargeable once the
+credit is exhausted.
 
 **Two measurement passes have been taken** (2026-09-01), both against
 real data, and both changed the design:
@@ -84,3 +95,5 @@ failures.
 | 2026-09-01 | Phase 0 Task 9 — **blocked, quota** | `az vm list-usage --location eastus2`; `terraform validate` + `plan` | **Terraform validated and plans cleanly (8 resources), but NOT applied.** The subscription is an Azure **Free Trial**, capped at **4 Total Regional vCPUs** in eastus2. The intended cluster needs **16**; even 1-driver-1-worker needs 8. Caught before `apply`, which matters: the workspace would have created successfully and then *every cluster launch* would have failed on quota, surfacing as a confusing Databricks error rather than an obvious billing one. **Decision: upgrade to pay-as-you-go** — the only path where the $184 actually funds the Spark compute it was earmarked for. Upgrading is a portal billing action with no supported `az` CLI equivalent, so it is the user's step. Task 9 resumes once the regional vCPU limit is confirmed lifted. |
 | 2026-09-01 | Label validity probe | Downloaded and fully parsed `2025-03-15-14.json.gz` (227,376 events) | **Design-changing.** Expansion **7.17×** (83 MB gz → 597 MB). 6,352 PRs opened/hour, 6,015 closed (77.8% merged), but only **1,574 distinct PRs received a review event** — formal review reaches ~1 PR in 4, so "time to first review" was undefined for most of the population. Label redefined to *time to first human response* (§5.1). Also: bots are **18.2%** of events and 2,855 of PR events, drafts 2.0%, and the probed hour was a Saturday — forcing whole-week temporal splits. |
 | 2026-09-01 | `.claude/` hooks | Ran both hooks against 3 constructed scenarios | **Defect found and fixed.** Both hooks read the git index at `PreToolUse` time, so `git add -A && git commit` as one command left the index empty and neither hook fired — silently, on all three of this repo's first commits. Patched to fall back to the working tree when the command also stages. Re-verified: clean tree → silent; STATUS.md+code → story-bank fires, STATUS check silent; code-only → STATUS check warns. |
+| 2026-09-01 | Phase 0 Task 9 — **complete; infra live in `westus3`** | `az vm list-skus --all` across 4 regions; live workspace `/api/2.0/clusters/list-node-types`; `terraform apply`; Retail Prices API | **Applied, 8 resources, and the region and node type both changed on measured evidence.** The pay-as-you-go upgrade lifted the regional cap 4 → 10, which then exposed a larger blocker quota had been masking: **in `eastus2` and `eastus`, every node type in Databricks' Azure reference is `NotAvailableForSubscription`** (Location- *and* Zone-scoped, all 3 zones) — a cluster there could not launch at any quota. `centralus` and `westus3` are unrestricted, so the restriction is **per-region, not subscription-wide**. Moved to `westus3`: identical to `eastus2` on every measured rate (VM $0.2260, Jobs DBU $0.30, Inferencing DBU $0.07) where `centralus` is ~13% higher. **A third gate then ruled out the planned `D4ds_v5`:** availability and quota are independent, and the `DDSv5` family has a **zero allocation self-service cannot raise** (`QuotaNotAvailableForResource` — there is nothing to raise). Computed the three-way intersection instead — in the workspace's live 337-entry node catalog **and** unrestricted in `westus3` **and** family quota > 0 — yielding 37 candidates; chose **`Standard_D4ds_v6`**, same 4-core/16 GB shape, at **$0.2490/hr (+10.2%)**, so a 4-node Premium cluster is **$1.896/hr → 97 hours on $184** (was 102). Still not binding against a 10–15 hour need. Quota granted and verified against ground truth, not the request response: **regional 86** (asked 48), **Ddsv6 48**. Spot left at 3, unraised, noted. Workspace API also **confirmed the doc inference**: `D4ds_v5` is offered, `D4ds_v7` is absent (only 12 v7 types exist in 337). **Two corrections forced:** (1) an interim conclusion that the SKU restriction was subscription-wide generalized from 2 regions and was wrong — same shape as the volume claim corrected in `535cbeb`, and it nearly triggered a serverless rewrite of §8.1; (2) Standard-tier workspaces were **discontinued 2026-04-01**, so Premium is *forced*, not the trade-off the pricing doc recorded — corrected in place. Also measured: **Photon carries no DBU-rate premium** ($0.30 either way). |
+| 2026-09-01 | `almanac-design-decision` skill | Written against the two incidents it cites | **Added, incident-derived.** Its gate 1 exists because this repo has now made the *same* error twice: the volume claim from **one** hour, and the SKU-restriction claim from **two** regions. Both were ~90 seconds of extra measurement from being caught, and both were stated as conclusions before that measurement ran. The skill requires stating the actual `n` along the dimension being generalized over. Gates 2 and 3 codify the already-standing web-validation and where-it-gets-recorded rules rather than adding anything new. **A code-quality skill and a test-coverage skill were considered and deliberately deferred** — zero review incidents so far, and coverage is already enforced mechanically by CI; both are recorded in CLAUDE.md's deferred list with the trigger that would earn them. |
