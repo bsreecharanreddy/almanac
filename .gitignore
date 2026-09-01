@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Data — never commit downloaded archive files or built tables
+data/
+*.json.gz
+warehouse/
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Delta / MLflow local artifacts
+mlruns/
+mlartifacts/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+!*.tf
+
+# Secrets
+.env
+*.pem
+*.key
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
