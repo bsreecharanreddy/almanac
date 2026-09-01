@@ -1,0 +1,26 @@
+# Without this, `COPY . .` ships the host's .venv into the image. uv then
+# finds a venv linked to a non-existent interpreter, silently rebuilds it,
+# and host absolute paths leak into container tracebacks. Found for real
+# on 2026-09-01.
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+.git/
+.github/
+
+# Never ship downloaded archive data or built tables into an image.
+data/
+warehouse/
+spark-warehouse/
+metastore_db/
+derby.log
+mlruns/
+
+.terraform/
+*.tfstate*
+htmlcov/
+.coverage

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # The two are pinned differently on purpose, and the difference is
+      # not cosmetic: `releases/latest` returns a RELEASE tag, which is not
+      # necessarily a resolvable action ref. actions/checkout publishes a
+      # floating major tag (refs/tags/v7 exists); astral-sh/setup-uv does
+      # not (no refs/tags/v10 -- only v10.0.1), so it must be pinned exact.
+      # Verified with `gh api repos/<owner>/<repo>/git/ref/tags/<ref>`,
+      # after `@v10` failed CI with "unable to resolve action".
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src tests
+
+      # -m "not network" keeps CI off data.gharchive.org: a third-party
+      # host outage must never turn this build red.
+      - run: uv run pytest -m "not network" -v
