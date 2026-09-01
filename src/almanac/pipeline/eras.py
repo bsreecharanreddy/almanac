@@ -18,6 +18,12 @@ from almanac.explore.schema import (
 # that the raw input columns cannot leak downstream -- carrying `id`
 # alongside `event_id`, null on every legacy row, is exactly the shape a
 # later dedup is most likely to key on by mistake.
+#
+# `ingested_at` is carried through rather than dropped: it is the
+# provenance a determination has to be reproducible against, and it is the
+# tiebreak `deduplicate` orders on when two copies share an event time.
+# Omitting it made the declared Silver order -- normalize, then dedup --
+# impossible to wire, which nothing noticed until Task 6 tried.
 SILVER_COLUMNS = (
     "event_id",
     "event_id_source",
@@ -27,6 +33,7 @@ SILVER_COLUMNS = (
     "repo_name",
     "event_type",
     "schema_era",
+    "ingested_at",
 )
 
 # Written into the hash input wherever a field is null, so that a null
@@ -49,15 +56,26 @@ def _content_hash() -> Column:
     incremental run under different session timezones would re-ingest all
     of legacy history as new rows, and dedup would not notice.
 
-    The field set is the minimal one that distinguishes two genuinely
-    different events; adding more would make the hash sensitive to fields
-    that vary by serialization.
+    ``event_url`` is in the key because the four fields around it are not
+    enough, which was measured rather than assumed: run against a real
+    legacy hour, ``(created_at, actor_login, repo_id, event_type)`` gave two
+    colliding pairs in 2,000 events, and both pairs were **genuinely
+    different events** -- one actor pushing two distinct commit ranges in
+    the same second, another opening two distinct issues in the same second.
+    Dedup was deleting one of each, silently, at roughly 1 in 1,000 legacy
+    events. Phase 0's measured duplicate ratio of 1 in 6.0M could not have
+    caught this: it was taken on modern data, which carries native ids and
+    never reaches this hash. Adding the url takes the same hour to zero
+    collisions. It is stable content -- a canonical URL naming the specific
+    commit range or issue -- not a serialization artifact, which is the line
+    that keeps the rest of the payload out of the key.
     """
     parts = (
         F.col("created_at").cast("long"),
         F.col("actor_login"),
         F.col("repo_id"),
         F.col("event_type"),
+        F.col("event_url"),
     )
     joined = F.concat_ws("|", *[F.coalesce(p.cast("string"), F.lit(_NULL_SENTINEL)) for p in parts])
     return F.sha2(joined, 256)

@@ -71,4 +71,5 @@ testpaths = ["tests"]
 markers = [
   "spark: needs a SparkSession (slow)",
   "network: hits data.gharchive.org (slow, excluded from CI)",
+  "integration: runs several pipeline stages together (slow)",
 ]

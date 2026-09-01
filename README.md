@@ -11,12 +11,13 @@ architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
-> (Bronze + Silver) in progress — 5 of 7.**
-> Ingestion edge, local Spark + Delta, CI, cloud infrastructure, the
-> declarative source contract, Bronze ingest, hour-gap detection,
-> normalization of all three schema eras, and cross-hour deduplication
-> exist and are green (111 tests). **Silver is partial — no quality rules
-> or quarantine yet, and no model** — the rest of Phase 1, and later.
+> (Bronze + Silver) in progress — 6 of 7.**
+> **Bronze → Silver runs end to end** on both committed fixtures — era
+> normalization, cross-hour dedup, null-safe quality rules and a
+> conserving quarantine split — alongside the ingestion edge, local Spark
+> + Delta, CI, cloud infrastructure and the declarative source contract
+> (130 tests). **No Gold, no features, no model yet** — later phases. The
+> one task left in Phase 1 is a calibration run on Azure.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
@@ -62,8 +63,8 @@ flowchart LR
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
-  class GHA,B done
-  class API,S,G,F,R,E,V,BI todo
+  class GHA,B,S done
+  class API,G,F,R,E,V,BI todo
 ```
 
 Solid = built and green. Dashed = designed, not built.
