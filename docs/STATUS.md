@@ -9,9 +9,12 @@ commit as the work it describes**, never as a follow-up.
 **Phase: pre-0. Design approved, implementation not started.**
 
 No pipeline code, no tests, no CI, no cloud resources exist yet. Nothing
-in this repo has been run. No number anywhere in these docs has been
-measured yet — every figure in the design doc is bracketed or absent by
-design.
+in this repo has been run.
+
+**One measurement has been taken** (2026-09-01): real GH Archive file
+sizes, via HTTP `Content-Length` against live files. It drove the dataset
+scope decision now recorded as design doc §4.5. Every other figure in the
+docs remains bracketed or absent by design.
 
 ## Next
 
@@ -24,9 +27,12 @@ Its purpose is to replace assumption with measurement:
 2. **Diff the two schema eras against real files.** The design doc's §12
    describes the 2015 break directionally; the exact pre-2015 field names
    are explicitly unconfirmed and must come from real data.
-3. Measure file size compressed and uncompressed, events per hour, event
-   type distribution, bot share, and duplicate-`event_id` rate within and
-   across files.
+3. Measure the remaining unknowns from design doc §4.5: the
+   **uncompressed:compressed ratio** (compressed size is already
+   measured), events per hour, event type distribution, bot share,
+   duplicate-`event_id` rate within and across files, and **`repo_id`
+   rename frequency** — the last of which decides whether the chosen
+   3-month window can demonstrate SCD2 at all.
 4. Stand up the local Spark container and a CI skeleton.
 5. Provision Azure via Terraform early, clusters off, so week 3 is not a
    setup scramble.
@@ -50,3 +56,4 @@ failures.
 | Date | Task | What was run | Result |
 |---|---|---|---|
 | 2026-09-01 | Design | — | Design doc written and approved. No code. |
+| 2026-09-01 | Dataset scope | `curl -sI` against 5 live GH Archive files | **Measured.** 2025 hours 62.5 / 83.2 / 113.7 MB gz; 2014 hours 5.0 / 6.2 MB gz. Firehose grew ~15× since 2014. A full unsampled quarter extrapolates to ~180 GB gz — an order of magnitude above the earlier working assumption, which is what drove the tiered scope in design doc §4.5 and the rule to sample repos rather than hours. Uncompressed ratio still unmeasured. |

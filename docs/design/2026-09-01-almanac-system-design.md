@@ -186,6 +186,86 @@ and the reason the project is worth building.
 
 ---
 
+### 4.5 Dataset scope — how much data, and why
+
+**Measured 2026-09-01** via HTTP `Content-Length` on real files, not
+estimated:
+
+| File | Compressed |
+|---|---|
+| `2025-01-08-9.json.gz` | 113.7 MB |
+| `2025-03-15-14.json.gz` | 83.2 MB |
+| `2025-03-15-3.json.gz` | 62.5 MB |
+| `2014-06-12-14.json.gz` | 6.2 MB |
+| `2014-06-12-3.json.gz` | 5.0 MB |
+
+Two consequences. The firehose grew roughly **15×** between 2014 and
+2025, so the legacy slice is nearly free. And at a ~86 MB mean over three
+2025 samples, a full quarter (2,160 hourly files) is on the order of
+**~180 GB compressed** — plausibly ~1 TB uncompressed, though the
+expansion ratio is still unmeasured. That is too much to pass over
+repeatedly inside the credit budget.
+
+#### The governing rule: sample the entity dimension, never the time dimension
+
+The reflex when data gets expensive is to shorten the time window. That
+is the wrong lever here, because span is precisely what this project
+needs:
+
+- Point-in-time features need a **warm-up period** before the first
+  training example can be computed at all
+- Train/test must be split **temporally**; a random split is itself a
+  leakage bug
+- Drift monitoring over a short window demonstrates nothing
+- SCD2 renames and complete PR lifecycles need calendar time to occur
+
+So volume is controlled by a deterministic hash sample on `repo_id`,
+which preserves *complete* event history for every repo retained.
+
+**Sampling hours is forbidden.** A PR's review event could land in a
+skipped hour, silently corrupting the accumulating snapshot and
+fabricating SLA breaches that never happened. Hour-level gaps are a data
+*defect* this pipeline detects and reports (§12 trap 5); deliberately
+introducing them would poison the label.
+
+#### Tiers
+
+| Tier | Slice | Size | Purpose |
+|---|---|---|---|
+| **0 — Fixtures** | ~4 hours, committed to the repo | ~350 MB | TDD. Tests never touch the network. |
+| **1 — Local dev** | 1 week of 2025 | ~14 GB gz | All pipeline development in the local container. |
+| **2 — Legacy** | 1 month of 2014 (720 files) | ~3.9 GB gz | Full schema-evolution path. Effectively free. |
+| **3 — Cloud volume proof** | 1 month of 2025, **full firehose, unsampled** | ~62 GB gz | The Azure burn. The honest "processed the real firehose on a real cluster" claim, with measured throughput and cost per run. |
+| **4 — Modeling** | **Full 3-month span, repo-sampled** | tuned to budget | Features, temporal splits, drift. Span without the volume bill. |
+
+Tiers 3 and 4 answer different questions deliberately. Tier 3 proves the
+platform processes volume; Tier 4 gives the model temporal depth.
+Conflating them is what makes a full unsampled quarter look mandatory
+when it is not.
+
+Scoping a model's entity universe is a **modeling decision, not a
+platform limitation** — the same call gets made in production, for the
+same reason.
+
+**Not building:** a 14-year backfill. Cost with no marginal signal.
+
+#### Open, and gating Tier 3's final size
+
+Tier 3 shrinks to two weeks if the credit budget requires it; the volume
+claim weakens slightly and nothing else in the design is affected. The
+decision needs Phase 0 to measure:
+
+- **Uncompressed:compressed ratio** — the number that actually sets Spark
+  cost, and the one least safe to assume
+- Events per hour, and bot share
+- **Rename frequency** — whether a 3-month window contains enough
+  `repo_id` name changes to demonstrate SCD2 at all. If not, the slice
+  *moves*, it does not grow
+- Duplicate-`event_id` rate across hour boundaries
+- Real Databricks DBU + VM pricing for the chosen region and SKU
+
+---
+
 ## 5. The model
 
 **Primary: PR review-SLA risk.** Given an open PR, predict whether it
@@ -306,7 +386,7 @@ after Sep 24 funds the *ML platform* proof.
 |---|---|---|---|
 | **0 — Exploration** | Wk 1 (Sep 1–7) | Repo, CI skeleton, local Spark container. Download 2h from 2025 + 2h from 2014; **diff the schemas for real**; measure file size, rows/hour, event distribution, bot share, duplicate rate. Terraform-provision Azure early (clusters off) so there is no setup scramble later. | Measured numbers committed; schema diff documented from real data, not assumed |
 | **1 — Local pipeline** | Wk 2 (Sep 8–14) | Config-driven runner. Bronze ingest with missing-file handling and `replaceWhere`. Silver with dedup, quality rules, quarantine, dual schema handlers. | Rerun any hour twice → identical content. Null-handling regression test green. |
-| **2 — Gold + AZURE BURN** | Wk 3–4 (Sep 15–24) ⚠️ | SCD2 `dim_repo`, `fact_pull_request` accumulating snapshot, `agg_repo_daily`. **Lift to Azure Databricks: Unity Catalog, ADLS, real quarter backfill + 2014 month at volume on job clusters.** Capture evidence — run metrics, UC lineage, cost per run, screenshots. Tear down. | Real backfill completed on Azure; evidence captured; `terraform destroy` leaves nothing |
+| **2 — Gold + AZURE BURN** | Wk 3–4 (Sep 15–24) ⚠️ | SCD2 `dim_repo`, `fact_pull_request` accumulating snapshot, `agg_repo_daily`. **Lift to Azure Databricks: Unity Catalog, ADLS, Tier 3 (one unsampled month of 2025, ~62 GB gz) + Tier 2 (2014 month) at volume on job clusters — see §4.5.** Capture evidence — run metrics, UC lineage, cost per run, screenshots. Tear down. | Real backfill completed on Azure; evidence captured; `terraform destroy` leaves nothing |
 | **3 — Feature platform** | Wk 5–6 | Point-in-time-correct offline store, as-of joins, feature specs, leakage test suite. | The `as_of` demo works; leakage suite green |
 | **4 — Model + MLflow** | Wk 7–8 | Measured baseline, then the SLA-risk model. MLflow tracking + registry. Batch scoring, then a serving endpoint. Drift and training/serving skew monitoring. | Model beats baseline by a measured margin, or the null result is documented |
 | **5 — Embeddings + vector index** | Wk 9–10 | Incremental embedding pipeline, ANN index, similarity features, measured downstream lift. | Measured lift, or an honest documented null result |
@@ -323,7 +403,8 @@ flight.
 ## 10. Goals — what "done" means
 
 ### Technical
-- [ ] One quarter + one 2014 month ingested, both schema eras through the same framework
+- [ ] Tier 3 (unsampled month of 2025) and Tier 2 (2014 month) ingested, both schema eras through the same framework
+- [ ] Tier 4's 3-month repo-sampled span built, with a temporal train/test split
 - [ ] Rerunning any single hour produces identical results — idempotency proven, not claimed
 - [ ] Adding a source requires only a YAML file, zero new Python
 - [ ] `dim_repo` is SCD2 with at least one real demonstrated rename
@@ -416,7 +497,10 @@ Each of these is a real property of GH Archive, each goes in
 ## 13. To verify before building — never quote an unmeasured number
 
 - [ ] Exact pre-2015 schema field names, diffed against real files
-- [ ] Current file sizes and events/hour, measured
+- [x] **Current file sizes — measured 2026-09-01, see §4.5.** 2025 hours 62.5–113.7 MB gz; 2014 hours 5.0–6.2 MB gz
+- [ ] Uncompressed:compressed expansion ratio (sets Spark cost)
+- [ ] Events per hour, and bot share
+- [ ] `repo_id` rename frequency within the candidate 3-month window
 - [ ] Current Azure/Databricks pricing for the chosen region and SKU
 - [ ] Docker base image availability for `pyspark` + `delta-spark`
 - [ ] Unity Catalog tier requirements and their DBU cost impact
