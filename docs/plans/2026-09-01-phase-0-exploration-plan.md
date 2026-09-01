@@ -351,8 +351,7 @@ def test_session_timezone_is_utc(spark: SparkSession) -> None:
 @pytest.mark.spark
 def test_delta_round_trip(spark: SparkSession, tmp_path) -> None:
     path = str(tmp_path / "t")
-    spark.createDataFrame([(1, "a"), (2, "b")], "id int, v string") \
-        .write.format("delta").save(path)
+    spark.createDataFrame([(1, "a"), (2, "b")], "id int, v string").write.format("delta").save(path)
     assert spark.read.format("delta").load(path).count() == 2
 
 
@@ -366,8 +365,9 @@ def test_delta_replace_where_is_idempotent(spark: SparkSession, tmp_path) -> Non
 
     again = spark.createDataFrame([(1, "2025-01-01")], "id int, d string")
     for _ in range(2):
-        again.write.format("delta").mode("overwrite") \
-            .option("replaceWhere", "d = '2025-01-01'").save(path)
+        again.write.format("delta").mode("overwrite").option(
+            "replaceWhere", "d = '2025-01-01'"
+        ).save(path)
 
     rows = {(r.id, r.d) for r in spark.read.format("delta").load(path).collect()}
     assert rows == {(1, "2025-01-01"), (2, "2025-01-02")}
@@ -682,6 +682,7 @@ from almanac.extract.outcome import FetchStatus
 
 # --- the pure decision, exhaustively ---
 
+
 def test_200_with_bytes_is_ok() -> None:
     assert classify_response(200, 1024) is FetchStatus.OK
 
@@ -705,6 +706,7 @@ def test_server_errors_are_failed(code: int) -> None:
 
 # --- the I/O edge, against a mock transport ---
 
+
 def _client(handler: object) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -716,8 +718,11 @@ def test_fetch_writes_file_and_reports_ok(tmp_path) -> None:
         return httpx.Response(200, content=body)
 
     result = fetch_hour(
-        date(2025, 3, 15), 3,
-        client=_client(handler), dest_dir=tmp_path, settings=Settings(),
+        date(2025, 3, 15),
+        3,
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=Settings(),
     )
     assert result.status is FetchStatus.OK
     assert result.bytes_downloaded == len(body)
@@ -732,8 +737,11 @@ def test_absent_hour_is_not_retried(tmp_path) -> None:
         return httpx.Response(404)
 
     result = fetch_hour(
-        date(2025, 3, 15), 3,
-        client=_client(handler), dest_dir=tmp_path, settings=Settings(),
+        date(2025, 3, 15),
+        3,
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=Settings(),
     )
     assert result.status is FetchStatus.ABSENT
     assert calls["n"] == 1, "a 404 is a fact about the data, not a transient error"
@@ -749,8 +757,11 @@ def test_server_error_is_retried_then_reported_failed(tmp_path) -> None:
 
     settings = Settings(max_fetch_attempts=3)
     result = fetch_hour(
-        date(2025, 3, 15), 3,
-        client=_client(handler), dest_dir=tmp_path, settings=settings,
+        date(2025, 3, 15),
+        3,
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=settings,
     )
     assert result.status is FetchStatus.FAILED
     assert calls["n"] == 3
@@ -767,8 +778,11 @@ def test_transient_error_then_success(tmp_path) -> None:
         return httpx.Response(200, content=b"\x1f\x8bdata")
 
     result = fetch_hour(
-        date(2025, 3, 15), 3,
-        client=_client(handler), dest_dir=tmp_path, settings=Settings(),
+        date(2025, 3, 15),
+        3,
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=Settings(),
     )
     assert result.status is FetchStatus.OK
     assert result.attempts == 2
@@ -781,8 +795,11 @@ def test_partial_download_leaves_no_file(tmp_path) -> None:
         raise httpx.ReadError("connection dropped")
 
     result = fetch_hour(
-        date(2025, 3, 15), 3,
-        client=_client(handler), dest_dir=tmp_path, settings=Settings(),
+        date(2025, 3, 15),
+        3,
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=Settings(),
     )
     assert result.status is FetchStatus.FAILED
     assert list(tmp_path.iterdir()) == []
@@ -813,9 +830,9 @@ from pathlib import Path
 
 class FetchStatus(str, Enum):
     OK = "ok"
-    ABSENT = "absent"   # 404 -- the hour was never published. Not an error.
-    EMPTY = "empty"     # published, zero bytes. A real collector gap.
-    FAILED = "failed"   # transport/5xx. Retryable; may succeed later.
+    ABSENT = "absent"  # 404 -- the hour was never published. Not an error.
+    EMPTY = "empty"  # published, zero bytes. A real collector gap.
+    FAILED = "failed"  # transport/5xx. Retryable; may succeed later.
 
 
 @dataclass(frozen=True)
@@ -897,9 +914,7 @@ def fetch_hour(
         last_error = f"HTTP {response.status_code}"
 
     tmp.unlink(missing_ok=True)
-    return FetchResult(
-        url, FetchStatus.FAILED, None, 0, settings.max_fetch_attempts, last_error
-    )
+    return FetchResult(url, FetchStatus.FAILED, None, 0, settings.max_fetch_attempts, last_error)
 ```
 
 - [ ] **Step 5: Run and confirm green**
@@ -977,8 +992,11 @@ SAMPLES: list[tuple[str, date, int]] = [
 def build(name: str, day: date, hour: int, settings: Settings) -> Path:
     with httpx.Client(follow_redirects=True) as client:
         result = fetch_hour(
-            day, hour, client=client,
-            dest_dir=settings.data_dir / "raw", settings=settings,
+            day,
+            hour,
+            client=client,
+            dest_dir=settings.data_dir / "raw",
+            settings=settings,
         )
     if result.status is not FetchStatus.OK or result.path is None:
         raise RuntimeError(f"{name}: fetch returned {result.status}")
@@ -1413,9 +1431,9 @@ BOT_REGEX = re.compile(r"(?i)(bot|automation|ci)$")
 
 
 class BotMatch(str, Enum):
-    SUFFIX = "suffix"     # login ends with [bot] -- authoritative
-    CURATED = "curated"   # exact match on a known list
-    REGEX = "regex"       # heuristic; HAS false positives
+    SUFFIX = "suffix"  # login ends with [bot] -- authoritative
+    CURATED = "curated"  # exact match on a known list
+    REGEX = "regex"  # heuristic; HAS false positives
     NONE = "none"
 
 
@@ -1519,8 +1537,11 @@ def main() -> int:
         for day in SAMPLE_DAYS:
             for hour in range(24):
                 res = fetch_hour(
-                    day, hour, client=client,
-                    dest_dir=settings.data_dir / "raw", settings=settings,
+                    day,
+                    hour,
+                    client=client,
+                    dest_dir=settings.data_dir / "raw",
+                    settings=settings,
                 )
                 outcomes[res.status] += 1
                 if res.status is not FetchStatus.OK or res.path is None:
@@ -1541,12 +1562,15 @@ def main() -> int:
                             regex_only_logins[login] += 1
                         repo = e.get("repo") or {}
                         if repo.get("id") and repo.get("name"):
-                            repo_obs.append((
-                                repo["id"], repo["name"],
-                                datetime.fromisoformat(
-                                    e["created_at"].replace("Z", "+00:00")
-                                ).astimezone(UTC),
-                            ))
+                            repo_obs.append(
+                                (
+                                    repo["id"],
+                                    repo["name"],
+                                    datetime.fromisoformat(
+                                        e["created_at"].replace("Z", "+00:00")
+                                    ).astimezone(UTC),
+                                )
+                            )
             print(f"{day} done, {events} events so far")
 
     renames = rename_events(repo_obs)

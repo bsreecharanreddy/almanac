@@ -1,0 +1,66 @@
+[project]
+name = "almanac"
+version = "0.1.0"
+description = "An ML platform for work-queue risk, built on the GitHub event firehose"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+]
+
+[project.optional-dependencies]
+# Version floors checked live on 2026-09-01, not carried over from a plan.
+#
+# The upper bound on pyspark is load-bearing: delta-spark 4.4.0 declares
+# `pyspark<=4.2.0,>=4.0.1`, and 4.2.0 is the current release -- i.e. the
+# ceiling is exactly where we sit. Left unbounded, the day PySpark 4.3
+# ships this resolves to an incompatible pair and fails at SparkSession
+# construction rather than at install time. Revisit when delta-spark
+# raises its own ceiling.
+spark = [
+    "pyspark>=4.2.0,<4.3",
+    "delta-spark>=4.4.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "chispa>=0.12.0",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.5",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "PL", "RUF", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Comparing against expected literals is normal and readable in tests.
+"tests/**/*.py" = ["PLR2004"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "spark: needs a SparkSession (slow)",
+  "network: hits data.gharchive.org (slow, excluded from CI)",
+]

@@ -6,10 +6,12 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase: pre-0. Design approved, implementation not started.**
+**Phase: 0 (Exploration), Task 1 of 9 complete.** Executing
+`docs/plans/2026-09-01-phase-0-exploration-plan.md` on branch
+`phase-0-exploration`.
 
-No pipeline code, no tests, no CI, no cloud resources exist yet. Nothing
-in this repo has been run.
+Scaffold, tooling and CI exist and are green. No pipeline code, no Spark,
+no cloud resources yet.
 
 **Two measurement passes have been taken** (2026-09-01), both against
 real data, and both changed the design:
@@ -63,5 +65,6 @@ failures.
 |---|---|---|---|
 | 2026-09-01 | Design | — | Design doc written and approved. No code. |
 | 2026-09-01 | Dataset scope | `curl -sI` against 5 live GH Archive files | **Measured.** 2025 hours 62.5 / 83.2 / 113.7 MB gz; 2014 hours 5.0 / 6.2 MB gz. Firehose grew ~15× since 2014. A full unsampled quarter extrapolates to ~180 GB gz — an order of magnitude above the earlier working assumption, which is what drove the tiered scope in design doc §4.5 and the rule to sample repos rather than hours. Uncompressed ratio still unmeasured. |
+| 2026-09-01 | Phase 0 Task 1 — scaffold, tooling, CI | `make check` (ruff, mypy --strict, pytest) | **Green.** 3 tests pass. Installed live-checked versions: pyspark 4.2.0, delta-spark 4.4.0, chispa 0.12.0, ruff 0.16.5, mypy 2.3.1, pytest 9.1.1, pydantic 2.13.5. Three findings: (1) **delta-spark 4.4.0 declares `pyspark<=4.2.0`, and 4.2.0 is current** — the ceiling is exactly where we sit, so pyspark is capped `<4.3` or a future release breaks at SparkSession construction, not install; (2) the plan's GitHub Action versions were both wrong — `checkout` is v7.0.1 (plan said v5), `setup-uv` v10.0.1 (plan said v7), corrected from `gh api`; (3) plan ordering bug — `uv` cannot build the package without `src/almanac/__init__.py`, so the TDD "watch it fail" step could not run until the marker existed. Also found ruff 0.16.5 formats Python inside markdown, so plan docs are held to the same standard; accepted rather than excluded. |
 | 2026-09-01 | Label validity probe | Downloaded and fully parsed `2025-03-15-14.json.gz` (227,376 events) | **Design-changing.** Expansion **7.17×** (83 MB gz → 597 MB). 6,352 PRs opened/hour, 6,015 closed (77.8% merged), but only **1,574 distinct PRs received a review event** — formal review reaches ~1 PR in 4, so "time to first review" was undefined for most of the population. Label redefined to *time to first human response* (§5.1). Also: bots are **18.2%** of events and 2,855 of PR events, drafts 2.0%, and the probed hour was a Saturday — forcing whole-week temporal splits. |
 | 2026-09-01 | `.claude/` hooks | Ran both hooks against 3 constructed scenarios | **Defect found and fixed.** Both hooks read the git index at `PreToolUse` time, so `git add -A && git commit` as one command left the index empty and neither hook fired — silently, on all three of this repo's first commits. Patched to fall back to the working tree when the command also stages. Re-verified: clean tree → silent; STATUS.md+code → story-bank fires, STATUS check silent; code-only → STATUS check warns. |

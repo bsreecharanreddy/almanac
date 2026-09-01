@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # Action versions confirmed live on 2026-09-01 via
+      #   gh api repos/<owner>/<repo>/releases/latest --jq .tag_name
+      # rather than carried over from a template.
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src tests
+
+      # -m "not network" keeps CI off data.gharchive.org: a third-party
+      # host outage must never turn this build red.
+      - run: uv run pytest -m "not network" -v
