@@ -21,7 +21,7 @@ from almanac.extract.outcome import FetchStatus
 TARGET_EVENTS = 2_000
 MAX_FIXTURE_MB = 5.0
 SAMPLES: list[tuple[str, date, int]] = [
-    ("modern", date(2025, 3, 15), 14),
+    ("modern", date(2025, 8, 13), 14),
     ("legacy", date(2014, 6, 12), 14),
 ]
 
