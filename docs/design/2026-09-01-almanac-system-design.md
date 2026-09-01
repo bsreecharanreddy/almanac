@@ -590,10 +590,31 @@ Each of these is a real property of GH Archive, each goes in
    and `distinct_size`, never `size(commits)`. Force-pushes inflate
    `size`.
 4. **Duplicate event IDs occur across hour-file boundaries.** Dedup is
-   functionally necessary, not decorative.
+   functionally necessary, not decorative. **Still unmeasured as of
+   2026-09-01** — Phase 0's sample deliberately used non-adjacent hours
+   (0,3,6,…) to observe renames over time, so no two consecutive hours
+   were ever compared and the boundary condition was never exercised.
+   Within-sample duplication was ~0 (1 in 6,002,410), which says nothing
+   about the boundary. Measured properly in Phase 1, where the dedup is
+   built.
 5. **Missing and truncated hours.** Ingestion must distinguish *file
    absent* / *file empty* / *job failed*.
-6. **Bots dominate volume.** Any unclassified metric is misleading.
+6. **Bots dominate volume — MEASURED 2026-09-01.** 29.0% of events by the
+   `[bot]` suffix alone, and **day-of-week dependent** (18.2% on a
+   Saturday hour vs 29.0% across three Wednesdays), because scheduled
+   automation runs on weekday cadences and humans do not. Any
+   unclassified metric is misleading.
+   **The heuristic itself needed changing**, see
+   `docs/findings/2026-09-01-bot-classification.md`: the documented false
+   positives (`robotframework`, `Abbott`) do not match the anchored rule
+   at all, while the real ones were far worse — a bare `ci$` clause
+   matched 1,002 distinct logins of which **869 (86.7%) were human
+   surnames** (Turkish `Yazici`/`Akinci`/`Avci`, Italian
+   `Federici`/`Falcucci`). Fixed by requiring a separator.
+   **The methodological lesson generalizes:** inspecting top-N matches by
+   volume is structurally blind to this, because bots are high-volume by
+   definition. Error rates for a rule over a power-law population must be
+   computed per distinct entity, not per event.
 7. **The 2015 schema break — MEASURED 2026-09-01**, see
    `docs/findings/2026-09-01-schema-eras.md`. Confirmed real, and worse
    than this doc originally described:
@@ -610,8 +631,14 @@ Each of these is a real property of GH Archive, each goes in
      those were retired before mid-2014
    - `repo_id` **is** stable across both eras (1,997/2,000 legacy,
      2,000/2,000 modern), so the SCD2 natural key survives
-8. **Repos get renamed and transferred.** `repo.id` is stable,
-   `repo.name` is not. The SCD2 arises naturally.
+8. **Repos get renamed and transferred — MEASURED 2026-09-01.** **5,757
+   renames** across 1,234,736 distinct repos in a 24-hour-file sample
+   spanning the candidate quarter, against a gate of 50. `repo.id` is
+   stable, `repo.name` is not, and the SCD2 arises naturally. Varied and
+   real: ownership transfers, user renames, project renames, typo fixes —
+   and at least one repo renamed **twice** inside the window, exercising
+   the multi-version path rather than a single transition. **The window
+   does not need to move.**
 9. **gzip is not splittable.** Parallelism is bounded by file count, not
    file size.
 10. **Language is absent from most modern events** — nested in PR
