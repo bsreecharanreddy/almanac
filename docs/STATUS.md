@@ -6,7 +6,7 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase 0 (Exploration) complete — 9 of 9. Phase 1 in progress — 1 of
+**Phase 0 (Exploration) complete — 9 of 9. Phase 1 in progress — 2 of
 7.** The active plan is
 `docs/plans/2026-09-01-phase-1-pipeline-plan.md` (7 tasks: declarative
 source config, Bronze, gap detection, era normalization, dedup, quality +
@@ -14,9 +14,9 @@ quarantine, and an Azure calibration run). Work is on branch
 `phase-1-pipeline`.
 
 Scaffold, tooling, CI, a containerized Spark + Delta environment, the
-ingestion edge (URL construction, fetching, committed fixtures), and the
-declarative source contract exist and are green. No transformation code
-yet.
+ingestion edge (URL construction, fetching, committed fixtures), the
+declarative source contract, and Bronze ingest exist and are green. No
+Silver transformation code yet.
 
 **Cloud resources now exist and are running** (`terraform apply`,
 2026-09-01): resource group, ADLS Gen2 with bronze/silver/gold/features
@@ -42,14 +42,12 @@ Every other figure in the docs remains bracketed or absent by design.
 
 ## Next
 
-**Phase 1 Task 2 — Bronze: metadata only, never transform.**
-`add_ingestion_metadata()` and an idempotent `write_bronze()` using
-`replaceWhere` on `(event_date, event_hour)`.
+**Phase 1 Task 3 — hour-gap detection.** `missing_hours()` and a
+`GapReport` over an expected range.
 
-The property under test is replay: whatever Silver gets wrong must be
-recomputable from Bronze without re-downloading, which only holds if
-Bronze preserves the raw payload verbatim and keeps `ingested_at`
-strictly separate from `created_at`.
+A missing hour is a data defect to report, never a gap to paper over
+(§12 trap 5): a PR's response event can land in a skipped hour, and
+losing it fabricates an SLA breach that never happened.
 
 **Phase 1 gate** (all 7 tasks): Bronze→Silver runs end to end from
 `conf/sources/gharchive.yml` against the committed fixtures, all three
@@ -98,3 +96,4 @@ failures.
 | 2026-09-01 | README / CLAUDE.md / gist refresh | Read each against the actual repo state | **A staleness defect found, and the rule that missed it replaced.** The README still read *"design approved, implementation not started — nothing below is built yet"* after **all nine Phase 0 tasks**, green CI, 69 tests, and live cloud infrastructure. Two conventions were already in force (README diagram updates same-commit; README never claims something is built when it is not) and **neither caught it**, because both are phrased as *don't let it become wrong* — and the README never became wrong, it just stopped being updated. Replaced with a *positive* check asked at every stopping point: "what changed today that a reader of this file would want to know?", which a stale file fails where "is it still accurate?" passes trivially. README rewritten with real status, a Mermaid architecture diagram marking built-vs-designed, and the seven design-changing Phase 0 measurements. **Separately, the story-bank gist was found corrupted** — its description line was duplicated four times into the top of the file body by an earlier update; stripped, and the true content fetched via `gh api` rather than `gh gist view --raw`, which conceals the difference. Stories 9–11 added (the sample-of-two retraction, the three-gate quota debug, the pre-registered Photon hypothesis), plus 5 tradeoff rows and 13 index entries. Gist verified still `public: false`. |
 | 2026-09-01 | §9 resequenced + Phase 1 plan written | Read §9 against Phase 0's findings and the Sep 24 credit expiry | **Two contradictions fixed, one of them mine from earlier today.** (1) §9's phase table still described Tier 3 as "one unsampled month, ~62 GB gz" while §4.5 had been changed hours earlier to make it calibration-derived — two sections of one document disagreeing. (2) **I had written that four items "absorb the $184 surplus", but two of them are scheduled after the credit expires** — live serving is Phase 4 (Oct 5–18) and retrieval is Phase 5 (Oct 19 – Nov 1), against a Sep 24 expiry. Corrected to match §9's original and correct strategy: the credit funds the data-platform proof (calibration, Tier 3, Photon A/B, and ~60% held back for re-runs); serving and retrieval run on a bounded paid window afterwards. **Resequenced around the deadline:** the old schedule put the Azure burn at Sep 15–24 — the last ten days, zero margin — against a Phase 0 record of four defects in one task, three CI failures, and a region that had to change. Phase 0 finished Sep 1 rather than Sep 7, and that slack is spent on the deadline rather than on getting ahead elsewhere. **Key structural change: calibration moves out of Phase 2 into Phase 1**, because it needs only working Bronze and one day of data, not Gold. Phase 2 now runs Sep 9–20, leaving four deliberate days of slack before expiry, and only Phases 1–2 are deadline-bound. **Phase 1 plan written** (7 TDD tasks, full test and implementation code, exit gate, and an explicit deferred list). Two blocks in its first draft were placeholder-shaped — a `split` implementation that contradicted its own test, and an inert byte counter in the calibration script — both rewritten to be correct rather than shipped with an implementer note excusing them. |
 | 2026-09-01 | Phase 1 Task 1 — declarative source config | `make check` (ruff, ruff format, mypy --strict, 74 tests) | **Green, 74 tests (was 69), after two plan gaps.** (1) **`pyyaml` was never a dependency** — Step 4's `import yaml` could not have run as written, and `mypy --strict` additionally needs `types-pyyaml`; both added at live-checked floors (6.0.3 / 6.0.12.20260815), not versions carried over from the plan. Same class as Phase 0 Task 1's ordering bug: the plan specified code without the environment that lets it execute. (2) **The plan's four tests do not pin the `_rule_names_unique` validator** — every one reads the real config, which has unique names by construction, so the validator is never reached. Confirmed by mutation rather than asserted: deleting the validator left all four green. Added a fifth test that constructs a duplicate-name config, so the invariant the `_failed_rules` array depends on (a failure must be traceable to the rule that caused it) is actually enforced. **Flagged, not changed:** the rule named `event_type_known` only asserts `event_type IS NOT NULL`, which is *present*, not *known* — that name will surface in quarantine analysis, so it is worth revisiting at Task 6 when the rules are first executed.
+| 2026-09-01 | Phase 1 Task 2 — Bronze ingest | `make check` (ruff, ruff format, mypy --strict, 81 tests); a 3-timezone probe of PySpark's datetime conversion | **Green, 81 tests (was 74), and design-changing — a new timestamp trap, sibling to §4.1b but on the write side.** The added value-assertion on `ingested_at` failed on the first run: 12:00Z read back as 08:00 on a UTC-4 driver. Diagnosed before fixing, and the diagnosis inverted the conclusion — `unix_timestamp()` showed the **stored instant was correct** (epoch 1788350400); it was the *assertion* that was wrong, because `.first()` returns a naive datetime in **driver-local** time. **`spark.sql.session.timeZone=UTC` governs neither direction of Python↔Spark datetime conversion.** Probed across three driver timezones rather than concluding from the one in front of me — the n=1 error `almanac-design-decision` was written for: an **aware** datetime stores correctly everywhere, a **naive** one is read as local wall time and lands off by the driver's offset (+4h `America/New_York`, −5h30 `Asia/Kolkata`, **0s on UTC**). The UTC row is the finding: **every defect of this class is green on a UTC CI runner** and red only on a laptop, so CI is structurally blind to it. Now enforced in code, not prose — `add_ingestion_metadata` rejects a naive datetime (`datetime.now()` is naive, so the wrong call is the default one), and no test asserts on a collected datetime; comparisons are on epochs. Design doc §4.1b extended with the measured table. **Three further plan defects, all found by executing the plan rather than re-reading it:** (1) the planned tests leave `tmp_path` unannotated, which `mypy --strict` rejects under `disallow_incomplete_defs`; (2) `out.first()["col"]` does not typecheck — `first()` is `Row | None` — fixed with a local `one()` helper; (3) `from pyspark.sql import functions as F`, which the plan itself specifies, trips ruff `N812`; ignored repo-wide with rationale rather than `noqa`d in every pipeline module to come. Idempotency verified by mutation as well as by test: swapping `F.lit(ingested_at)` for `F.current_timestamp()` reddens exactly the one new test and leaves the other six green.
