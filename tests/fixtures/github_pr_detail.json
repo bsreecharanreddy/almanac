@@ -1,0 +1,17 @@
+{
+  "id": 2147483001,
+  "number": 42,
+  "state": "closed",
+  "title": "Fix the off-by-one in the hour partitioner",
+  "body": "The partition was derived from created_at; it must follow the source file.",
+  "draft": false,
+  "merged": true,
+  "merged_at": "2025-08-13T18:04:11Z",
+  "additions": 37,
+  "deletions": 12,
+  "changed_files": 3,
+  "base": {"ref": "main"},
+  "head": {"ref": "fix/partitioner"},
+  "url": "https://api.github.com/repos/acme/almanac/pulls/42",
+  "user": {"login": "octocat"}
+}
