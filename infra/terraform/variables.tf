@@ -104,27 +104,37 @@ variable "backfill_end" {
 variable "backfill_checkpoint_dir" {
   type = string
   # Not an abfss:// URI: BackfillCheckpoint is pathlib, and it must outlive
-  # the cluster for a resumed run to skip finished days. A UC volume works too.
+  # the cluster for a resumed run to skip finished days. Not /dbfs/FileStore
+  # either -- measured 2026-09-02, this workspace has public DBFS root
+  # disabled (`Error: Public DBFS root is disabled`, same restriction Task 7
+  # hit once before, now confirmed to cover FileStore too). A Unity Catalog
+  # volume is FUSE-mounted and pathlib-compatible without that restriction;
+  # `almanac_dbx.burn.checkpoints` is the one this run actually used.
   description = "FUSE-mounted, persistent dir for the per-day resume markers."
-  default     = "/dbfs/FileStore/almanac/checkpoints/tier3"
+  default     = "/Volumes/almanac_dbx/burn/checkpoints/tier3"
 }
 
 variable "backfill_python_file" {
-  type        = string
+  type = string
+  # /Workspace/Repos/... assumes a Databricks Repo linked to this repo's git
+  # remote; this workspace has no Git credential configured for it, so the
+  # actual run used `databricks sync` to a plain workspace path instead.
   description = "Workspace path of scripts/backfill.py, set at deploy time (repos sync or bundle)."
-  default     = "/Workspace/Repos/almanac/scripts/backfill.py"
+  default     = "/Workspace/Shared/almanac/scripts/backfill.py"
 }
 
 variable "photon_ab_python_file" {
   type        = string
   description = "Workspace path of scripts/photon_ab.py."
-  default     = "/Workspace/Repos/almanac/scripts/photon_ab.py"
+  default     = "/Workspace/Shared/almanac/scripts/photon_ab.py"
 }
 
 variable "photon_ab_out_dir" {
-  type        = string
+  type = string
+  # Same DBFS-root-disabled finding as backfill_checkpoint_dir above; a UC
+  # volume (`almanac_dbx.burn.photon_ab`) replaces it.
   description = "FUSE-mounted dir each A/B arm writes its measurement JSON to."
-  default     = "/dbfs/FileStore/almanac/photon_ab"
+  default     = "/Volumes/almanac_dbx/burn/photon_ab"
 }
 
 variable "photon_ab_dbt_dependencies" {
@@ -141,7 +151,7 @@ variable "photon_ab_dbt_dependencies" {
 variable "almanac_wheel" {
   type        = string
   description = "Built almanac wheel (uv build), installed on each job cluster. A bundle would resolve this from pyproject.toml."
-  default     = "/Workspace/Repos/almanac/dist/almanac-0.1.0-py3-none-any.whl"
+  default     = "/Workspace/Shared/almanac/dist/almanac-0.1.0-py3-none-any.whl"
 }
 
 variable "backfill_pip_dependencies" {
