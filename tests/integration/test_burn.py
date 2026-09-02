@@ -66,6 +66,41 @@ def test_process_day_lands_bronze_and_silver_and_reports_the_gap(
     assert landed.count() == result.rows_clean
 
 
+def test_process_day_reads_the_local_download_even_when_the_default_fs_is_not_local(
+    spark: SparkSession, archive_client: httpx.Client, tmp_path: Path
+) -> None:
+    """Measured on the first real burn run: a bare path resolves against
+    Spark's fs.defaultFS, which is dbfs:/ on a Databricks cluster, not the
+    real local disk the file was actually downloaded to. bronze/silver get
+    their own file:// scheme here, matching their real abfss:// scheme in
+    production, so only the staging read -- bare on every real run too --
+    is exposed to the hostile default."""
+    ctx = BurnContext(
+        paths=LakePaths(
+            bronze=(tmp_path / "bronze").as_uri(),
+            silver=(tmp_path / "silver").as_uri(),
+            staging=tmp_path / "staging",
+        ),
+        config=CONFIG,
+        client=archive_client,
+        settings=Settings(),
+        ingested_at=PINNED,
+    )
+
+    hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+    original = hadoop_conf.get("fs.defaultFS")
+    hadoop_conf.set("fs.defaultFS", "dbfs:/nonexistent")
+    try:
+        result = process_day(spark, DAY, ctx)
+    finally:
+        if original is None:
+            hadoop_conf.unset("fs.defaultFS")
+        else:
+            hadoop_conf.set("fs.defaultFS", original)
+
+    assert result.rows_bronze > 0
+
+
 def test_backfill_checkpoints_the_day_skips_it_on_a_rerun_and_reports_per_layer(
     spark: SparkSession, archive_client: httpx.Client, tmp_path: Path
 ) -> None:

@@ -123,7 +123,10 @@ def _land_bronze(
         date_str = hour.date().isoformat()
         # read.text, not read.json: per-file inference disagrees between hours
         # of one day (Task 7), and parsing is a transform Bronze may not do.
-        raw = spark.read.text(str(result.path)).withColumnRenamed("value", "raw_json")
+        # .as_uri(), not str(): a bare path resolves against Spark's
+        # fs.defaultFS (dbfs:/ on Databricks), not the real local disk the
+        # file was downloaded to -- measured on the first real burn run.
+        raw = spark.read.text(result.path.as_uri()).withColumnRenamed("value", "raw_json")
         stamped = add_ingestion_metadata(raw, ingested_at=ingested_at, source_file=result.url)
         partitioned = stamped.withColumn("event_date", F.lit(date_str)).withColumn(
             "event_hour", F.lit(hour.hour)
