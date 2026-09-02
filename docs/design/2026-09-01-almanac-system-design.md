@@ -518,6 +518,34 @@ Three consequences that are design constraints, not filters to add later:
   was a Saturday; weekday/weekend review latency differs sharply, so an
   arbitrary split point encodes day-of-week as leakage.
 
+**The label is era-bound, and this doc now says so.** Measured while
+writing the Phase 2 plan, against the committed fixtures (2,000 events per
+era; see STATUS.md's verification log for the probe):
+
+| Label input | legacy (2014) | modern (2025) | reduced (post-Oct-2025) |
+|---|---|---|---|
+| `PullRequestReviewEvent` | **absent** — 0 of 106 legacy PRs | 68 | present |
+| `PullRequestReviewCommentEvent` | 42 | present | present |
+| `IssueCommentEvent` on a PR | 194 | present | present |
+| `payload.pull_request.draft` | **absent** — null on all 106 | 5 of 149 | absent |
+| `payload.pull_request.merged` | present (35/49 closed) | present | **absent** |
+
+`PullRequestReviewEvent` — the component the "one PR in four" finding is
+about — **did not exist before 2015**. A Tier 2 (2014) PR can be ingested
+and dimensioned, but its label rests on the *other two* components only.
+This is a second, independent argument for the broadened label: §5.1
+widened it for coverage, and the width turns out to be what lets the label
+survive the era boundary at all. Two rules follow, both already
+load-bearing in the Phase 2 Gold code:
+
+- **`draft` exclusion is null-safe, never `draft = false`.** "Not a draft"
+  and "the era had no drafts" are different facts; collapsing them makes
+  the 2014 slice look like 106 deliberate non-draft PRs.
+- **`merged` is read three-way by era.** It is in the legacy and modern
+  payloads and gone from the reduced era, so a fact needing it falls back
+  to the event stream (a `closed` `PullRequestEvent` plus the merge
+  signal) rather than trusting the field to be there.
+
 **Volume is abundant, which reinforces §4.5.** At 6,352 PRs/hour, a 5%
 repo sample still yields on the order of 230K labelled PRs per month. The
 model never needs the full firehose — only the platform does, and only
