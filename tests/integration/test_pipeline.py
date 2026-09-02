@@ -12,40 +12,57 @@ from pathlib import Path
 import pytest
 from pyspark.sql import SparkSession
 
-from almanac.pipeline.bronze import add_ingestion_metadata
 from almanac.pipeline.dedup import duplicate_stats
 from almanac.pipeline.eras import normalize_events
-from almanac.pipeline.silver import read_events, run_silver
+from almanac.pipeline.payloads import parse_events
+from almanac.pipeline.silver import read_bronze, run_silver
 from almanac.pipeline.source import SourceConfig
-from tests.helpers import one
+from tests.helpers import build_bronze, one
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
 INGESTED = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 CONFIG = SourceConfig.load(Path("conf/sources/gharchive.yml"))
 
+# The date each fixture is landed under. It is the archive file's own hour,
+# not the events' UTC hour -- see `SILVER_COLUMNS` on why those differ for
+# the legacy era.
+ERAS = {"modern": "2025-08-13", "legacy": "2014-06-12"}
 
-@pytest.fixture(params=["modern", "legacy"])
-def fixture_path(
-    request: pytest.FixtureRequest, modern_events_path: Path, legacy_events_path: Path
-) -> Path:
+
+@pytest.fixture(params=sorted(ERAS))
+def era(request: pytest.FixtureRequest) -> str:
     """Both eras, through the same pipeline, from the same tests."""
-    return modern_events_path if request.param == "modern" else legacy_events_path
+    return str(request.param)
+
+
+@pytest.fixture
+def landed(
+    spark: SparkSession,
+    era: str,
+    modern_events_path: Path,
+    legacy_events_path: Path,
+    tmp_path: Path,
+) -> tuple[Path, Path, str, Path]:
+    """One era's fixture, landed in a real Bronze table ready for Silver."""
+    source = modern_events_path if era == "modern" else legacy_events_path
+    bronze, out, date = tmp_path / "bronze", tmp_path / "silver", ERAS[era]
+    build_bronze(spark, source, bronze, event_date=date, event_hour=14, ingested_at=INGESTED)
+    return bronze, out, date, source
 
 
 def test_fixture_flows_bronze_to_silver(
-    spark: SparkSession, fixture_path: Path, tmp_path: Path
+    spark: SparkSession, landed: tuple[Path, Path, str, Path]
 ) -> None:
-    clean, _ = run_silver(
-        spark, str(fixture_path), str(tmp_path), ingested_at=INGESTED, config=CONFIG
-    )
+    bronze, out, date, _ = landed
+    clean, _ = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
     assert clean.count() > 0, "the fixture must produce usable rows"
     assert "_failed_rules" in clean.columns
     assert "_reject_rules" not in clean.columns
 
 
 def test_every_record_is_accounted_for(
-    spark: SparkSession, fixture_path: Path, tmp_path: Path
+    spark: SparkSession, landed: tuple[Path, Path, str, Path]
 ) -> None:
     """Conservation, stated as an equation rather than an inequality.
 
@@ -53,53 +70,46 @@ def test_every_record_is_accounted_for(
     satisfies it. The only rows the pipeline may remove are duplicates, so
     the count it removes has to be named and added back.
     """
-    raw = spark.read.json(str(fixture_path)).count()
-    clean, quarantined = run_silver(
-        spark, str(fixture_path), str(tmp_path), ingested_at=INGESTED, config=CONFIG
-    )
-    stamped = add_ingestion_metadata(
-        read_events(spark, str(fixture_path)),
-        ingested_at=INGESTED,
-        source_file=str(fixture_path),
-    )
-    removed = duplicate_stats(normalize_events(stamped))["duplicates"]
+    bronze, out, date, source = landed
+    raw = spark.read.text(str(source)).count()
+    clean, quarantined = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
+    landed_rows = read_bronze(spark, str(bronze), event_date=date)
+    removed = duplicate_stats(normalize_events(parse_events(landed_rows)))["duplicates"]
     assert clean.count() + quarantined.count() + removed == raw
 
 
-def test_silver_is_idempotent(spark: SparkSession, fixture_path: Path, tmp_path: Path) -> None:
-    first, _ = run_silver(
-        spark, str(fixture_path), str(tmp_path), ingested_at=INGESTED, config=CONFIG
-    )
+def test_silver_is_idempotent(spark: SparkSession, landed: tuple[Path, Path, str, Path]) -> None:
+    bronze, out, date, _ = landed
+    first, _ = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
     n = first.count()
-    second, _ = run_silver(
-        spark, str(fixture_path), str(tmp_path), ingested_at=INGESTED, config=CONFIG
-    )
+    second, _ = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
     assert second.count() == n
-    assert spark.read.format("delta").load(f"{tmp_path}/clean").count() == n
+    assert spark.read.format("delta").load(f"{out}/clean").count() == n
 
 
 def test_both_eras_are_labelled_and_get_an_id(
-    spark: SparkSession, fixture_path: Path, tmp_path: Path
+    spark: SparkSession, landed: tuple[Path, Path, str, Path]
 ) -> None:
     """The era-specific handling survives a real file, not just a crafted row."""
-    clean, _ = run_silver(
-        spark, str(fixture_path), str(tmp_path), ingested_at=INGESTED, config=CONFIG
-    )
+    bronze, out, date, _ = landed
+    clean, _ = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
     row = one(clean)
     assert row["schema_era"] in {"legacy_v1", "modern_v2", "reduced_v3"}
     assert row["event_id"]
     assert clean.filter("event_id IS NULL").count() == 0
 
 
-def test_legacy_repo_names_are_qualified_like_modern_ones(
-    spark: SparkSession, legacy_events_path: Path
-) -> None:
-    """Legacy splits owner and name; modern ships `owner/repo` already.
+def test_pr_columns_reach_silver(spark: SparkSession, landed: tuple[Path, Path, str, Path]) -> None:
+    """Gold's inputs must actually arrive. Phase 1's Silver carried no payload.
 
-    Leaving legacy unreconstructed would make `repo_name` mean two different
-    things either side of 2015, and Phase 2's SCD2 would read the era
-    boundary as a mass rename of every repo that survived it.
+    `fact_pull_request` cannot be built without these, and a Silver that
+    parses them but drops them before writing would look completely healthy
+    right up until Task 4.
     """
-    names = read_events(spark, str(legacy_events_path)).filter("repo_name IS NOT NULL")
-    assert names.count() > 0
-    assert names.filter("repo_name NOT LIKE '%/%'").count() == 0
+    bronze, out, date, _ = landed
+    clean, _ = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
+    for column in ("pr_number", "pr_merged", "pr_draft", "is_pr_comment", "event_action"):
+        assert column in clean.columns
+    prs = clean.filter("event_type = 'PullRequestEvent'")
+    assert prs.count() > 0
+    assert prs.filter("pr_number IS NULL").count() == 0

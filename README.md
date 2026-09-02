@@ -12,20 +12,20 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) planned, not started.**
+> Phase 2 (Gold + the Azure burn) in progress — 1 of 9 tasks.**
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (130 tests). It has also **run on a real Databricks cluster**: one day of
+> (148 tests). It has also **run on a real Databricks cluster**: one day of
 > the firehose, 3.79M rows, measured. **No Gold, no features, no model
 > yet** — Phase 2 onward.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
-> raw archive rather than Bronze. Both are invisible at a sample size of
-> one file, which is all Silver had been run against; both are the first
-> task of Phase 2. Recorded rather than quietly fixed, because the
-> interesting part is *why the tests passed*.
+> raw archive rather than Bronze. Both were invisible at a sample size of
+> one file, which is all Silver had been run against. **Both are now
+> fixed** (Phase 2 Task 1), and recorded rather than quietly repaired,
+> because the interesting part is *why the tests passed*.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
@@ -94,6 +94,8 @@ which is the entire point of doing it first:
 | **Availability, not quota, picks the region** | `az vm list-skus --all`, 4 regions | Every Databricks node type is `NotAvailableForSubscription` in `eastus2`/`eastus`, all zones. Deployed to **`westus3`** |
 | **Cluster throughput, measured not estimated** | One day (2025-08-13) on 4 × `D4ds_v6` + driver, DBR 17.3 LTS | **13.84 GB gz per *billed* cluster-hour** — 3.79M rows, $0.34/day-of-data. Timing compute and network separately mattered: the Spark-only rate is 36.72 and a single wall-clock timer would have understated the bill by a third |
 | **The recorded cluster cost was 25% low** | Azure Retail Prices API, `westus3` | `num_workers: 4` provisions **five** VMs — four workers and a driver. The recorded $1.896/hr counted workers only; it is $2.370/hr |
+| **One archive file's events span two UTC hours** | Committed legacy fixture, 2,000 events | A file named hour 14 holds events from 14:05 to 15:01 at `-07:00` — **1,957 in UTC hour 21, 43 in hour 22**. So Silver partitions by *ingest* (the file) and reasons by *event time* (`created_at`); deriving the partition from `created_at` would scatter one file across two of them and break idempotent replacement |
+| **The PR-comment discriminator does not exist before 2015** | 2,000 events per era | `issue.pull_request` is present on 55 of 92 modern `IssueCommentEvent` and **0 of 194 legacy** ones. Reported as null, not false — a fabricated negative would silently drop the whole legacy era from the label, which already has no `PullRequestReviewEvent` there |
 
 Full write-ups in [`docs/findings/`](docs/findings/), each carrying its
 method and its sample size.

@@ -2,29 +2,18 @@ from datetime import UTC, datetime
 
 import pytest
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
 
 from almanac.explore.schema import era_for
 from almanac.pipeline.eras import normalize_events
-from tests.helpers import epoch_of, one
+from tests.helpers import RawRow, epoch_of, one, raw
 
 pytestmark = pytest.mark.spark
-
-RAW_SCHEMA = (
-    "created_at_raw string, actor_raw string, repo_id long, "
-    "repo_name string, event_type string, id string, "
-    "event_url string, ingested_at timestamp"
-)
-
-type RawRow = tuple[str, str | None, int | None, str, str, str | None, str | None, datetime]
 
 INGESTED = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 
 LEGACY: RawRow = ("2014-06-12T03:00:00-07:00", "abc", 1, "o/r", "PushEvent", None, None, INGESTED)
 MODERN: RawRow = ("2025-08-13T14:00:00Z", "abc", 1, "o/r", "PushEvent", "999", None, INGESTED)
-
-
-def raw(spark: SparkSession, *rows: RawRow) -> DataFrame:
-    return spark.createDataFrame(list(rows), RAW_SCHEMA)
 
 
 def instant(year: int, month: int, day: int, hour: int, minute: int) -> int:
@@ -129,8 +118,15 @@ def test_output_is_exactly_the_canonical_silver_shape(spark: SparkSession) -> No
         "repo_id",
         "repo_name",
         "event_type",
+        "event_action",
         "schema_era",
         "ingested_at",
+        "event_date",
+        "event_hour",
+        "pr_number",
+        "pr_merged",
+        "pr_draft",
+        "is_pr_comment",
     }
 
 
@@ -244,3 +240,43 @@ def test_same_actor_repo_second_and_type_are_still_two_events(spark: SparkSessio
     )
     ids = {r["event_id"] for r in normalize_events(raw(spark, push_a, push_b)).collect()}
     assert len(ids) == 2
+
+
+def _issue_comment(spark: SparkSession, created_at: str, *, on_a_pr: bool) -> DataFrame:
+    row: RawRow = (created_at, "abc", 1, "o/r", "IssueCommentEvent", "1", None, INGESTED)
+    return raw(spark, row).withColumn("issue_is_pr", F.lit(on_a_pr))
+
+
+def test_legacy_issue_comments_report_unknown_not_false(spark: SparkSession) -> None:
+    """`issue.pull_request` does not exist before 2015, so neither does the answer.
+
+    Measured: 0 of 194 legacy `IssueCommentEvent` carry the field, against
+    55 of 92 modern ones. A structural `IS NOT NULL` would call every legacy
+    issue comment "not on a PR" -- a fabricated negative, and one that would
+    silently drop the whole legacy era out of §5.1's label, which already
+    has no `PullRequestReviewEvent` to fall back on there.
+    """
+    legacy = one(
+        normalize_events(_issue_comment(spark, "2014-06-12T03:00:00-07:00", on_a_pr=False))
+    )
+    assert legacy["is_pr_comment"] is None
+
+
+def test_modern_issue_comments_report_the_measured_answer(spark: SparkSession) -> None:
+    on_pr = one(normalize_events(_issue_comment(spark, "2025-08-13T14:00:00Z", on_a_pr=True)))
+    on_issue = one(normalize_events(_issue_comment(spark, "2025-08-13T14:00:00Z", on_a_pr=False)))
+    assert on_pr["is_pr_comment"] is True
+    assert on_issue["is_pr_comment"] is False
+
+
+def test_non_comment_events_have_no_pr_comment_answer(spark: SparkSession) -> None:
+    """The question does not apply to a push, so the column must not answer it.
+
+    `issue_is_pr` is set to `False` here rather than left null, because that
+    is what `parse_events` actually produces for an event carrying no issue:
+    the structural test is `payload.issue.pull_request IS NOT NULL`. Leaving
+    it null would make this test pass whether or not the era dispatch does
+    anything at all.
+    """
+    pushed = raw(spark, MODERN).withColumn("issue_is_pr", F.lit(False))
+    assert one(normalize_events(pushed))["is_pr_comment"] is None
