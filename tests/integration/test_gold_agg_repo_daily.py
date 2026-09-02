@@ -1,12 +1,4 @@
-"""`agg_repo_daily` -- daily activity per repo, across real dbt runs.
-
-Same recompute-touched incremental strategy as `fact_pull_request`: a
-(repo, date) touched by a new event is rebuilt in full from `silver.events`
-rather than folded, so a late event corrects that day and a re-run does not
-double-count. The two things the plan names explicitly are pinned here:
-stars are *gained* not totalled (§12 traps 1-2), and commit volume comes
-from `payload.size`, never the 20-capped `commits` array (trap 3).
-"""
+"""`agg_repo_daily` -- daily activity per repo, across real dbt runs."""
 
 import subprocess
 import sys

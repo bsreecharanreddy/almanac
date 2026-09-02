@@ -1,10 +1,6 @@
--- Exactly one row per (repo_id, pr_number) -- the accumulating-snapshot
--- grain, asserted on every `dbt build` rather than trusted to the merge
--- key. A broken `unique_key`, a bad incremental filter that double-counts,
--- or a full-refresh that unions the batch with itself would each produce
--- duplicate PR rows, and none of those fails loudly on its own.
---
--- A dbt test passes when this query returns zero rows.
+-- Exactly one row per (repo_id, pr_number) -- the accumulating-snapshot grain.
+-- A broken unique_key, a double-counting incremental filter, or a self-unioning
+-- full-refresh each produce duplicate PR rows without failing loudly.
 select
     repo_id,
     pr_number,

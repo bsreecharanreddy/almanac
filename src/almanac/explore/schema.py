@@ -4,17 +4,10 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-# Two measured era boundaries, not one.
-#
-# 2015-01-01 was the design doc's stated hypothesis (§12 trap 7) and is
-# confirmed. The second was found by measurement on 2026-09-01 and is
-# documented nowhere upstream: between 2025-10-08 and 2025-10-15 the
-# `payload.pull_request` object was cut from 48 fields to 5, removing
-# `merged`, `user`, `draft`, `created_at`, `title`, `body`, and every size
-# field. See docs/findings/2026-09-01-third-schema-era.md.
-#
-# The boundary is placed at 2025-10-15, the first date observed reduced.
-# It is known only to within a week; sampling was one hour per date.
+# Two measured boundaries. 2015-01-01 is §12 trap 7, confirmed. The reduced
+# era (payload.pull_request cut 48 -> 5 fields) was found by measurement,
+# placed at the first date observed reduced, known to within a week
+# (docs/findings/2026-09-01-third-schema-era.md).
 ERA_BOUNDARY_MODERN = datetime(2015, 1, 1, tzinfo=UTC)
 ERA_BOUNDARY_REDUCED = datetime(2025, 10, 15, tzinfo=UTC)
 
@@ -28,9 +21,8 @@ class SchemaEra(StrEnum):
 def era_for(created_at: datetime) -> SchemaEra:
     """Which schema era an event belongs to, by its event time.
 
-    `REDUCED_V3` events are ingestible but **not modelable**: they carry no
-    merge outcome, no PR author, and no PR text, so the label defined in
-    design doc §5.1 cannot be computed for them at all.
+    ``REDUCED_V3`` events are ingestible but not modelable -- no merge
+    outcome, no PR author, no PR text, so §5.1's label is uncomputable.
     """
     if created_at >= ERA_BOUNDARY_REDUCED:
         return SchemaEra.REDUCED_V3
@@ -40,12 +32,7 @@ def era_for(created_at: datetime) -> SchemaEra:
 
 
 def field_paths(event: dict[str, Any]) -> set[str]:
-    """Dotted paths, two levels deep.
-
-    Two levels is deliberate: deeper paths explode combinatorially across
-    payload variants and bury the structural differences this diff exists
-    to surface.
-    """
+    """Dotted paths, two levels deep -- deeper explodes across payload variants."""
     paths: set[str] = set()
     for key, value in event.items():
         if isinstance(value, dict):

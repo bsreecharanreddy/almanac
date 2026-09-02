@@ -1,11 +1,6 @@
-"""The vocabulary for how a fetch turned out.
-
-Distinguishing ABSENT from EMPTY from FAILED is a design requirement, not
-a nicety (design doc §12, trap 5): the collector has genuinely failed at
-points across fourteen years, and an ingestion layer that cannot tell
-"this hour was never published" from "the download broke" cannot report
-completeness honestly.
-"""
+"""How a fetch turned out. ABSENT/EMPTY/FAILED are distinct by design (§12
+trap 5): completeness reporting needs "never published" apart from "download
+broke"."""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -14,9 +9,9 @@ from pathlib import Path
 
 class FetchStatus(StrEnum):
     OK = "ok"
-    ABSENT = "absent"  # 404 -- the hour was never published. Not an error.
-    EMPTY = "empty"  # published, zero bytes. A real collector gap.
-    FAILED = "failed"  # transport/5xx. Retryable; may succeed later.
+    ABSENT = "absent"  # 404 -- never published, not an error
+    EMPTY = "empty"  # published, zero bytes -- a real collector gap
+    FAILED = "failed"  # transport/5xx -- retryable
 
 
 @dataclass(frozen=True)

@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
-# PreToolUse/Bash hook: when a commit stages docs/STATUS.md -- this repo's
-# marker for "a task just closed out" -- remind that the interview story
-# bank gist may need the story before the moment is lost.
-#
-# Purely incident-derived, and the most-earned control in this repo. On a
-# prior project the equivalent trigger was documented failing to self-fire
-# on *every* occasion across roughly a dozen sessions; the story bank was
-# only ever updated when the user asked directly. Care demonstrably did not
-# work, so this is mechanized instead.
-#
-# Fires only on STATUS.md commits, not on every commit, so it stays
-# low-noise -- a reminder that fires constantly is a reminder that gets
-# ignored, which is the failure mode it exists to prevent.
+# PreToolUse/Bash hook: on a commit staging docs/STATUS.md (this repo's "task
+# closed out" marker), remind that the story-bank gist may need the story.
+# Rationale and incident history: CLAUDE.md, `.claude/` tooling section.
 set -euo pipefail
 
 input="$(cat)"

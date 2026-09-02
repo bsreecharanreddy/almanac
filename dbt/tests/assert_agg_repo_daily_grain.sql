@@ -1,9 +1,5 @@
--- Exactly one row per (repo_id, activity_date) -- the daily grain,
--- asserted on every `dbt build`. A bad incremental filter that
--- double-counts a day, or a full-refresh that unions the batch with
--- itself, would each duplicate a repo-day without failing loudly.
---
--- A dbt test passes when this query returns zero rows.
+-- Exactly one row per (repo_id, activity_date). A bad incremental filter or
+-- a self-unioning full-refresh would duplicate a repo-day without failing.
 select
     repo_id,
     activity_date,

@@ -10,20 +10,13 @@
 {#- `contract: enforced` + `on_schema_change: fail` are set in schema.yml. -#}
 
 {#-
-  Daily activity per repo, on **event time** (`created_at`), not ingest
-  time. Same incremental strategy as `fact_pull_request`: any (repo, date)
-  touched by a new event is recomputed in full from `silver.events`, so a
-  late event for an earlier day corrects that day's row rather than being
-  added to a stale total or double-counted on a re-run.
+  Daily activity per repo, on event time. Recompute-touched incremental,
+  like `fact_pull_request`: a late event corrects its day, never double-counts.
 
-  `stars_gained`, never a running total: `WatchEvent` *is* a star (§12
-  trap 1 -- GitHub renamed the feature in 2012, never the event), and
-  there is no un-star event (trap 2), so a cumulative star count is not
-  derivable from this stream and "gained" is the only honest name.
-
-  `commits_pushed` sums `payload.size` (Silver's `push_size`), never
-  `size(commits)` -- the `commits` array is capped at 20 (trap 3), so a
-  1,000-commit push would read as 20.
+  `stars_gained`, not a running total: `WatchEvent` is a star (§12 trap 1)
+  and there is no un-star event (trap 2), so a cumulative count isn't
+  derivable. `commits_pushed` sums `push_size`, never `size(commits)` (trap
+  3 caps the array at 20).
 -#}
 
 {%- set agg_columns -%}

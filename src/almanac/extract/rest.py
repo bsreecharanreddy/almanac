@@ -1,17 +1,9 @@
-"""The GitHub REST API second source. The I/O edge; the decisions are pure.
+"""The GitHub REST API second source -- and the falsification of §4.5a's
+"zero new Python" claim (docs/findings/2026-09-02-second-source.md).
 
-**This module is the finding.** Design doc §4.5a claims a new source
-onboards via YAML alone, zero new Python. A second gzip-file mirror would
-have: `SourceConfig` and the Spark path are format-agnostic. The REST API
-is not a file -- it is paginated, authenticated and rate-limited, and each
-of those is Python that did not exist. The accounting is in
-`docs/findings/2026-09-02-second-source.md`; this file and
-`RestSourceConfig` are what it counts.
-
-`httpx` is the only I/O. Rate-limit waiting and pagination are the two
-behaviours a file fetch never needs; `RestSession` carries injectable
-`sleep`/`now` so tests exercise both without waiting or reaching the
-network.
+Rate-limit waiting and pagination are the two behaviours a file fetch never
+needs; ``RestSession`` carries injectable ``sleep`` / ``now`` so tests hit
+neither the clock nor the network.
 """
 
 from __future__ import annotations
@@ -29,9 +21,7 @@ _RATE_LIMITED = (403, 429)
 
 @dataclass(frozen=True)
 class RestSession:
-    """Everything one enrichment run needs. Client, config and token travel
-    together through every call, so they compose into one object rather
-    than five parameters."""
+    """Client, config and token composed into one object per enrichment run."""
 
     client: httpx.Client
     config: RestSourceConfig
@@ -41,8 +31,6 @@ class RestSession:
 
     @property
     def headers(self) -> dict[str, str]:
-        # One `scheme` today; the Literal in the config would carry a second
-        # without this becoming a branch factory.
         return {"Authorization": f"Bearer {self.token}"}
 
 
@@ -67,8 +55,7 @@ def _is_exhausted(response: httpx.Response, config: RestSourceConfig) -> bool:
 
 
 def _reset_wait(response: httpx.Response, session: RestSession) -> float:
-    """Seconds until the rate-limit window resets, from the response's own
-    header -- never a fixed guess, which either wastes time or wakes early."""
+    """Seconds until the rate-limit window resets, from the response's own header."""
     reset = response.headers.get(session.config.rate_limit.header_reset)
     if reset is None:
         return 1.0
@@ -90,8 +77,7 @@ def _next_link(link_header: str) -> str | None:
 
 
 def fetch_pr(session: RestSession, owner: str, repo: str, number: int) -> PrEnrichment:
-    """One PR's enrichment fields, waiting out a rate-limit response rather
-    than failing on it. Any other non-200 raises."""
+    """One PR's enrichment fields, waiting out a rate-limit response; other non-200 raises."""
     url = session.config.url_template.format(owner=owner, repo=repo, number=number)
 
     for _ in range(session.config.max_attempts):
@@ -100,19 +86,14 @@ def fetch_pr(session: RestSession, owner: str, repo: str, number: int) -> PrEnri
             session.sleep(_reset_wait(response, session))
             continue
         response.raise_for_status()
-        # Budget spent on this call; make the next caller in the batch wait.
-        _wait_if_exhausted(response, session)
+        _wait_if_exhausted(response, session)  # make the next caller in the batch wait
         return _to_enrichment(owner, repo, number, response.json())
 
     raise RuntimeError(f"rate limited for all {session.config.max_attempts} attempts on {url}")
 
 
 def list_pr_numbers(session: RestSession, owner: str, repo: str) -> Iterator[int]:
-    """Every PR number in a repo, following the `Link` header across pages.
-
-    A generator, not a list: a busy repo has thousands of PRs and the
-    caller only ever walks them once (the repo's code-style convention).
-    """
+    """Every PR number in a repo, following the ``Link`` header across pages."""
     url: str | None = session.config.list_url_template.format(owner=owner, repo=repo)
 
     while url:

@@ -1,9 +1,4 @@
-"""The GitHub REST API second source. Never touches the network.
-
-This module and its tests exist to *measure* §4.5a's "a new source
-onboards via YAML alone, zero new Python" claim, not to assume it. The
-finding is written up in `docs/findings/2026-09-02-second-source.md`.
-"""
+"""The GitHub REST API second source. Never touches the network."""
 
 import json
 from collections.abc import Callable
@@ -47,9 +42,7 @@ def test_the_rest_config_loads() -> None:
 
 
 def test_the_file_source_config_rejects_the_rest_config() -> None:
-    """`SourceConfig` (extra='forbid') cannot absorb the REST fields --
-    the first line of the finding: the config model needed new Python,
-    not just a new YAML file."""
+    """`SourceConfig` (extra='forbid') and `RestSourceConfig` do not overlap."""
     with pytest.raises(ValidationError):
         SourceConfig.model_validate(
             {

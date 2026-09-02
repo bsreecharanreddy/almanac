@@ -1,13 +1,4 @@
-"""Gold's contracts and referential tests fail the *build*, not a document.
-
-CLAUDE.md's testing table: "The data contract fails the build, not a
-document." This proves the mechanism -- a model whose output type drifts
-from its declared contract, and a fact row with no matching `dim_repo`,
-each redden `dbt build`.
-
-The real `dbt/` project is copied to tmp and broken there, so a failing
-run never leaves the shipped project in a bad state.
-"""
+"""Gold's contracts and referential tests fail the *build*, not a document."""
 
 import shutil
 import subprocess
@@ -119,8 +110,7 @@ def test_the_shipped_project_builds_clean(
 def test_a_wrong_output_type_fails_the_contract(
     project_and_silver: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    """`repo_id` is contracted as `bigint`; emit it as a string and the
-    build must fail rather than silently produce a mistyped column."""
+    """`repo_id` is contracted as `bigint`; emitting a string fails the build."""
     project, silver = project_and_silver
     model = project / "models" / "gold" / "fact_pull_request.sql"
     broken = model.read_text().replace(
@@ -140,8 +130,7 @@ def test_a_wrong_output_type_fails_the_contract(
 def test_a_fact_row_with_no_dim_repo_fails_relationships(
     project_and_silver: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    """`fact_pull_request.repo_id` -> `dim_repo` is a `relationships` test;
-    drop the repo from the dimension and the build must fail."""
+    """A `fact_pull_request` row with no matching `dim_repo` fails the relationships test."""
     project, silver = project_and_silver
     snapshot = project / "snapshots" / "dim_repo.sql"
     snapshot.write_text(

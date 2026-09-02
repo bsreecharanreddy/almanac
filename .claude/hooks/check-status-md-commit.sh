@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# PreToolUse/Bash hook: warns before a `git commit` if files outside docs/
-# are staged without docs/STATUS.md, since CLAUDE.md requires STATUS.md to
-# update "in the same commit as the work it describes -- never as a
-# separate follow-up commit, or it drifts and stops being trustworthy."
-#
-# Non-blocking by design: it warns, it does not refuse. Ported from a prior
-# project where this exact drift happened for real; the convention is
-# restated in this repo's CLAUDE.md, so the control comes with it.
+# PreToolUse/Bash hook: warns (never refuses) before a `git commit` that stages
+# files outside docs/ without docs/STATUS.md -- CLAUDE.md requires STATUS.md to
+# update in the same commit as the work it describes, or it drifts.
 set -euo pipefail
 
 input="$(cat)"

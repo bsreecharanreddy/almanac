@@ -1,10 +1,4 @@
-"""Bronze -> Silver against the committed fixtures. No network.
-
-The unit suites test each stage in isolation and every one of them was
-green while `normalize_events` and `deduplicate` could not actually be
-composed -- the declared Silver order was unbuildable and nothing noticed
-until these tests existed. That is what this file is for.
-"""
+"""Bronze -> Silver against the committed fixtures. No network."""
 
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,9 +18,8 @@ pytestmark = [pytest.mark.spark, pytest.mark.integration]
 INGESTED = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 CONFIG = SourceConfig.load(Path("conf/sources/gharchive.yml"))
 
-# The date each fixture is landed under. It is the archive file's own hour,
-# not the events' UTC hour -- see `SILVER_COLUMNS` on why those differ for
-# the legacy era.
+# The date each fixture is landed under -- the archive file's own hour, not
+# the events' UTC hour (see SILVER_COLUMNS).
 ERAS = {"modern": "2025-08-13", "legacy": "2014-06-12"}
 
 
@@ -64,12 +57,7 @@ def test_fixture_flows_bronze_to_silver(
 def test_every_record_is_accounted_for(
     spark: SparkSession, landed: tuple[Path, Path, str, Path]
 ) -> None:
-    """Conservation, stated as an equation rather than an inequality.
-
-    `clean + quarantined <= raw` is not conservation -- dropping every row
-    satisfies it. The only rows the pipeline may remove are duplicates, so
-    the count it removes has to be named and added back.
-    """
+    """Conservation, stated as an equation rather than an inequality."""
     bronze, out, date, source = landed
     raw = spark.read.text(str(source)).count()
     clean, quarantined = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
@@ -100,12 +88,7 @@ def test_both_eras_are_labelled_and_get_an_id(
 
 
 def test_pr_columns_reach_silver(spark: SparkSession, landed: tuple[Path, Path, str, Path]) -> None:
-    """Gold's inputs must actually arrive. Phase 1's Silver carried no payload.
-
-    `fact_pull_request` cannot be built without these, and a Silver that
-    parses them but drops them before writing would look completely healthy
-    right up until Task 4.
-    """
+    """Gold's inputs must actually arrive. Phase 1's Silver carried no payload."""
     bronze, out, date, _ = landed
     clean, _ = run_silver(spark, str(bronze), str(out), event_date=date, config=CONFIG)
     for column in ("pr_number", "pr_merged", "pr_draft", "is_pr_comment", "event_action"):

@@ -1,6 +1,6 @@
 ---
 name: almanac-code-style
-description: Use while writing or modifying any code in this repo, and before calling a code-writing task done — a checklist for simplifying logic, naming, edge-case coverage, deduplication, guard clauses, composition over inheritance, mapping-based dispatch over if/elif chains, generators, and context managers. Not incident-derived like this repo's other skills — a deliberate, user-directed standing convention (2026-09-02), recorded as an exception rather than pretending it grew from a mistake this project made.
+description: Use while writing or modifying any code in this repo, and before calling a code-writing task done — a checklist for simplifying logic, naming, edge-case coverage, deduplication, guard clauses, composition over inheritance, mapping-based dispatch over if/elif chains, generators, context managers, and comment/docstring discipline (structured and sparse, never narrative paragraphs). Not incident-derived like this repo's other skills — a deliberate, user-directed standing convention (2026-09-02), recorded as an exception rather than pretending it grew from a mistake this project made.
 ---
 
 # Code style in Almanac
@@ -99,6 +99,32 @@ idea even though a `SparkSession` isn't opened with a bare `with`: it
 exactly what a context manager formalizes. New code acquiring a resource
 that isn't already covered by that fixture should use an actual `with`,
 not a manual try/finally reinventing it.
+
+**10. Comments and docstrings: structured, not narrative.** The reader is
+an interviewer at a frontier lab or a FAANG-tier company. The code
+carries the story; comments are sparse and load-bearing.
+
+- **No "what" comments.** `# increment the counter` over `count += 1` is
+  noise — the fix is a better name or a smaller function, not the comment.
+- **A comment earns its place by explaining "why"**: a non-obvious
+  constraint, a measured fact, an edge case that bit someone. `# .part
+  then rename: a crash never leaves a half-written marker` stays; a
+  paragraph restating the algorithm goes.
+- **One-line docstrings on functions.** No multi-paragraph docstrings,
+  no parameter tables (unless explicitly asked). A function that seems to
+  need one is usually two functions, or its name and types are doing too
+  little.
+- **Module docstrings are one line** — what it is for, not how it came
+  to exist.
+- **No tutorial prose, measured-number essays, or chat leaks in code.**
+  That story belongs in `docs/` (design docs, findings, STATUS), where a
+  reader who wants it finds it and a reader who wants the code isn't
+  wading through it.
+
+The Phase 0–1 modules were swept once against this rule in a dedicated
+pass (2026-09-02). Going forward it applies as code is written; a later
+opportunistic reformat of untouched code is still out of scope per
+CLAUDE.md's scope discipline.
 
 ## When this runs
 

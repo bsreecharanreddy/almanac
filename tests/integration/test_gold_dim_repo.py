@@ -1,30 +1,4 @@
-"""`dim_repo`'s SCD2 lifecycle, across real dbt invocations. No network.
-
-Three separate processes against the same persistent warehouse/metastore,
-each appending more rows to a real Silver Delta table and rerunning
-`dbt build`. That is deliberate, not convenient: a snapshot's whole
-premise is that each invocation sees whatever the source currently holds,
-so the test has to actually rerun it against changed data rather than
-asserting on one build's output.
-
-This one test proves all four of Task 3's invariants at once, because
-they are one scenario, not four:
-  1. a rename closes the old row and opens exactly one current row
-  2. exactly one `dbt_valid_to IS NULL` per `repo_id`, always
-  3. a case-only rename (`GLB` -> `glb`) is detected
-  4. a repo renamed twice yields three versions, not two
-
-Invariant 2 is also enforced by `dbt/tests/assert_dim_repo_scd2.sql` as
-part of `build` itself -- a real regression there fails the subprocess
-(nonzero exit) before this test ever inspects a row, which is the primary
-safety net. The row-level assertions below exist so a failure says *what*
-went wrong, not just *that* something did.
-
-Gold's own tests exercise the Gold/Silver *contract* -- the handful of
-named columns `dim_repo` actually selects -- rather than re-deriving
-Silver's own pipeline, which `test_pipeline.py` already covers. Only those
-columns are written here.
-"""
+"""`dim_repo`'s SCD2 lifecycle, across real dbt invocations. No network."""
 
 import subprocess
 import sys
@@ -46,20 +20,12 @@ _Row = tuple[int, str, datetime, str]
 
 
 def _write_silver_events(spark: SparkSession, path: Path, rows: list[_Row]) -> None:
-    """Append rows to Gold's view of `silver.events`.
-
-    `append`, always: each call simulates more of the archive landing,
-    never a replacement of what a previous run already saw.
-    """
+    """Append rows to Gold's view of `silver.events`."""
     spark.createDataFrame(rows, _SILVER_SCHEMA).write.format("delta").mode("append").save(str(path))
 
 
 def _build_gold(*, warehouse: Path, metastore: Path, target_path: Path, silver_path: Path) -> None:
-    """One `dbt build`, in its own process, against the real (not a copy)
-    `dbt/` project -- unlike the Task 2 canary, this test is exercising
-    our actual `dim_repo` snapshot and our actual singular test, both of
-    which live there.
-    """
+    """One `dbt build` in its own process against the shipped project."""
     result = subprocess.run(
         [
             sys.executable,
@@ -76,12 +42,9 @@ def _build_gold(*, warehouse: Path, metastore: Path, target_path: Path, silver_p
             "build",
             "--select",
             "dim_repo",
-            # No `+`: the descendant graph pulls in the fact/agg -> dim_repo
-            # relationships tests, and `--indirect-selection` cannot exclude
-            # a *directly* selected test. `cautious` still drops those two
-            # (their fact/agg parent is unselected) while keeping the
-            # snapshot's own `assert_dim_repo_scd2` / `not_null`. `make dbt`
-            # runs the relationships tests in the full build.
+            # No `+` and `cautious`: keep the snapshot's own tests, drop the
+            # fact/agg -> dim_repo relationships tests whose parent is unbuilt
+            # here (they run in `make dbt`'s full build).
             "--indirect-selection",
             "cautious",
         ],
@@ -122,9 +85,8 @@ def test_dim_repo_scd2_lifecycle_across_reruns(
     t1 = datetime(2025, 8, 14, 0, 0, tzinfo=UTC)
     t2 = datetime(2025, 8, 15, 0, 0, tzinfo=UTC)
 
-    # An empty but valid Delta table: `register_silver_sources` registers
-    # both tables together, and dim_repo reads neither of the columns
-    # below, but the quarantine location still has to exist.
+    # An empty but valid Delta table: register_silver_sources registers both
+    # tables together, so the quarantine location has to exist.
     _write_silver_events(spark, gold_paths["quarantine_path"], [])
 
     # --- Run 1: initial state -- two repos, neither renamed yet.

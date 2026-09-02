@@ -9,11 +9,7 @@ def test_era_boundary_is_2015_01_01() -> None:
 
 
 def test_second_era_boundary_is_2025_10_15() -> None:
-    """Measured 2026-09-01, documented nowhere upstream.
-
-    Between 2025-10-08 and 2025-10-15 the pull_request payload was cut
-    from 48 fields to 5. Events after it cannot support the label.
-    """
+    """Measured 2026-09-01, documented nowhere upstream."""
     assert era_for(datetime(2025, 10, 8, tzinfo=UTC)) is SchemaEra.MODERN_V2
     assert era_for(datetime(2025, 10, 15, tzinfo=UTC)) is SchemaEra.REDUCED_V3
     assert era_for(datetime(2026, 8, 28, tzinfo=UTC)) is SchemaEra.REDUCED_V3

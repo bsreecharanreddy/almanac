@@ -11,27 +11,17 @@ from itertools import pairwise
 # Curated exact logins, extended as real ones are found.
 CURATED_BOTS = frozenset({"dependabot", "renovate", "github-actions"})
 
-# Its own clause so its false positives stay countable (design doc §12,
-# trap 6). The shape below is not the obvious one, and the difference is
-# measured, not stylistic -- see docs/findings/2026-09-01-bot-classification.md.
-#
-# A bare `ci$` clause was tried first and is unusable: of 1,002 distinct
-# logins ending in "ci" across 6.0M real events, 869 (86.7%) have no
-# separator and are overwhelmingly human surnames -- Turkish (Akinci,
-# Yazici, Ekinci, Avci) and Italian (Federici, Popovici, Falcucci). Real
-# CI accounts almost always carry a separator (swift-ci, aws-sdk-rust-ci,
-# LinuxServer-CI) or camelCase the suffix (VenlyCI, CheckmkCI).
-#
-# The third alternative is case-SENSITIVE on purpose: `[a-z0-9]CI$` needs a
-# literal uppercase CI after a lowercase char, which admits VenlyCI while
-# still rejecting all-caps human names like AlperenYABACI and AitanaESCI.
+# Own clause so its false positives stay countable (§12 trap 6). A bare
+# `ci$` matched 869 of 1,002 human surnames; the ci clauses require a
+# separator or a case-sensitive camelCase suffix
+# (docs/findings/2026-09-01-bot-classification.md).
 BOT_REGEX = re.compile(r"(?i:(bot|automation)$)|(?i:[-_.]ci$)|[a-z0-9]CI$")
 
 
 class BotMatch(StrEnum):
-    SUFFIX = "suffix"  # login ends with [bot] -- authoritative
+    SUFFIX = "suffix"  # [bot] suffix -- authoritative
     CURATED = "curated"  # exact match on a known list
-    REGEX = "regex"  # heuristic; HAS false positives
+    REGEX = "regex"  # heuristic; has false positives
     NONE = "none"
 
 
@@ -44,10 +34,7 @@ class RepoRename:
 
 
 def duplicate_ratio(event_ids: Iterable[str]) -> float:
-    """Fraction of the stream that is a redundant copy.
-
-    Counts extra copies, so a stream with no duplicates scores 0.0.
-    """
+    """Fraction of the stream that is a redundant copy (0.0 when all distinct)."""
     ids = list(event_ids)
     if not ids:
         return 0.0
@@ -68,10 +55,9 @@ def classify_bot(login: str) -> BotMatch:
 def rename_events(
     observations: Iterable[tuple[int, str, datetime]],
 ) -> list[RepoRename]:
-    """Name changes per repo id, in observation order.
+    """Name changes per repo id from ``(repo_id, repo_name, observed_at)`` tuples.
 
-    Input is ``(repo_id, repo_name, observed_at)``. Observations are sorted
-    by time first: unsorted input would fabricate reversed renames.
+    Sorted by time first -- unsorted input would fabricate reversed renames.
     """
     by_repo: dict[int, list[tuple[datetime, str]]] = defaultdict(list)
     for repo_id, name, at in observations:

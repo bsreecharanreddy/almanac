@@ -25,8 +25,7 @@ def test_quality_rules_are_named_and_typed() -> None:
 
 
 def test_rule_names_are_unique() -> None:
-    # _failed_rules is keyed by name; duplicates would make a failure
-    # untraceable to the rule that caused it.
+    # _failed_rules is keyed by name; a duplicate makes a failure untraceable.
     names = [r.name for r in SourceConfig.load(CONF).quality_rules]
     assert len(names) == len(set(names))
 
@@ -42,9 +41,8 @@ def test_unknown_field_is_rejected(tmp_path: Path) -> None:
 
 
 def test_duplicate_rule_names_are_rejected(tmp_path: Path) -> None:
-    # The validator above this one is unreachable from the real config,
-    # which has unique names by construction. Without this test it could
-    # be deleted and the suite would stay green -- checked, it does.
+    # The validator is unreachable from the real config, so without this
+    # test it could be deleted and the suite would stay green.
     p = tmp_path / "dupe.yml"
     p.write_text(
         "name: x\n"
