@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -17,6 +18,8 @@ from almanac.pipeline.gaps import GapReport, expected_hours
 from almanac.pipeline.silver import run_silver
 
 _BYTES_PER_GB = 1024**3
+# Where Databricks mounts Unity Catalog volumes on every cluster node.
+_VOLUMES_ROOT = "/Volumes"
 
 
 def gb_per_hour(gb: float, seconds: float) -> float | None:
@@ -110,6 +113,16 @@ def process_day(spark: SparkSession, day: date, ctx: BurnContext) -> DayResult:
     )
 
 
+def spark_path(path: Path) -> str:
+    """How Spark must address a staged file: bare on a volume, file:// on real local disk."""
+    # Neither scheme is right for both. A bare local path resolves against
+    # fs.defaultFS -- dbfs:/ on a cluster, not the disk the file was downloaded
+    # to. A file:// volume path resolves to the driver's local root, where the
+    # FUSE-mounted file the fetch just wrote is invisible to the JVM. Both were
+    # measured on real burn runs, the second one caused by fixing the first.
+    return str(path) if path.is_relative_to(_VOLUMES_ROOT) else path.as_uri()
+
+
 def _land_bronze(
     spark: SparkSession,
     paired: list[tuple[datetime, FetchResult]],
@@ -120,15 +133,12 @@ def _land_bronze(
     for hour, result in paired:
         if result.status is not FetchStatus.OK or result.path is None:
             continue
-        date_str = hour.date().isoformat()
+        event_date, event_hour = hour.date().isoformat(), hour.hour
         # read.text, not read.json: per-file inference disagrees between hours
         # of one day (Task 7), and parsing is a transform Bronze may not do.
-        # .as_uri(), not str(): a bare path resolves against Spark's
-        # fs.defaultFS (dbfs:/ on Databricks), not the real local disk the
-        # file was downloaded to -- measured on the first real burn run.
-        raw = spark.read.text(result.path.as_uri()).withColumnRenamed("value", "raw_json")
+        raw = spark.read.text(spark_path(result.path)).withColumnRenamed("value", "raw_json")
         stamped = add_ingestion_metadata(raw, ingested_at=ingested_at, source_file=result.url)
-        partitioned = stamped.withColumn("event_date", F.lit(date_str)).withColumn(
-            "event_hour", F.lit(hour.hour)
+        partitioned = stamped.withColumn("event_date", F.lit(event_date)).withColumn(
+            "event_hour", F.lit(event_hour)
         )
-        write_bronze(partitioned, bronze_path, event_date=date_str, event_hour=hour.hour)
+        write_bronze(partitioned, bronze_path, event_date=event_date, event_hour=event_hour)

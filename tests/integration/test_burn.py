@@ -73,8 +73,8 @@ def test_process_day_reads_the_local_download_even_when_the_default_fs_is_not_lo
     Spark's fs.defaultFS, which is dbfs:/ on a Databricks cluster, not the
     real local disk the file was actually downloaded to. bronze/silver get
     their own file:// scheme here, matching their real abfss:// scheme in
-    production, so only the staging read -- bare on every real run too --
-    is exposed to the hostile default."""
+    production, so only the staging read is exposed to the hostile default --
+    which is the branch of ``spark_path`` a local-disk staging dir takes."""
     ctx = BurnContext(
         paths=LakePaths(
             bronze=(tmp_path / "bronze").as_uri(),

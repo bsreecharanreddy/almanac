@@ -15,6 +15,7 @@ import httpx
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
+from almanac.burn.day import spark_path
 from almanac.config import Settings
 from almanac.extract.archive import fetch_hour
 from almanac.extract.outcome import FetchStatus
@@ -73,9 +74,9 @@ def main(day: str, bronze_path: str, staging_dir: str) -> dict[str, object]:
             started = time.monotonic()
             # read.text, not read.json: per-file inference disagrees between
             # hours of one day and Bronze may not transform (Task 7).
-            # .as_uri(), not str(): forces the local filesystem regardless of
-            # fs.defaultFS (day.py._land_bronze has the measured failure mode).
-            raw = spark.read.text(result.path.as_uri()).withColumnRenamed("value", "raw_json")
+            # spark_path, not str() or .as_uri(): --staging-dir may be either a
+            # local disk or a volume, and they need opposite schemes.
+            raw = spark.read.text(spark_path(result.path)).withColumnRenamed("value", "raw_json")
             stamped = add_ingestion_metadata(raw, ingested_at=ingested_at, source_file=result.url)
             partitioned = stamped.withColumn(
                 "event_date", F.lit(hour.date().isoformat())

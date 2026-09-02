@@ -51,8 +51,9 @@ resource "databricks_job" "backfill" {
         "--end", var.backfill_end,
         "--bronze-path", "${local.lake.bronze}/events",
         "--silver-path", "${local.lake.silver}/events",
-        # Cluster-local scratch; each day's download is deleted once Bronze holds it.
-        "--staging-dir", "/local_disk0/almanac-staging",
+        # UC volume, not cluster-local disk: must be visible from every
+        # worker node, not just the driver that downloaded it (defect #7).
+        "--staging-dir", var.backfill_staging_dir,
         # FUSE path, not abfss://: BackfillCheckpoint is pathlib and must
         # outlive the cluster for a resumed run to skip finished days.
         "--checkpoint-dir", var.backfill_checkpoint_dir,
@@ -123,7 +124,16 @@ resource "databricks_job" "photon_ab" {
           task.value == "photon" ? "--photon" : "--no-photon",
           "--bronze-path", "${local.lake.bronze}/photon_ab_${task.value}",
           "--silver-path", "${local.lake.silver}/photon_ab_${task.value}",
-          "--staging-dir", "/local_disk0/almanac-staging",
+          # Same defect #7 fix as the backfill job: process_day()'s Bronze
+          # landing is the identical code path, so the same multi-node
+          # staging-dir problem applies here too.
+          "--staging-dir", var.backfill_staging_dir,
+          # Left on /local_disk0 deliberately: Gold's dbt run hasn't been
+          # exercised on this cluster yet, so it's unconfirmed whether it
+          # hits the same multi-node problem, and an embedded Derby
+          # metastore's file locking is not verified safe over a FUSE
+          # volume the way plain file reads are. Flagging, not fixing --
+          # revisit if/when a Photon A/B or Gold run actually fails here.
           "--warehouse", "/local_disk0/warehouse",
           "--metastore", "/local_disk0/metastore",
           "--out", "${var.photon_ab_out_dir}/arm_${task.value}.json",
