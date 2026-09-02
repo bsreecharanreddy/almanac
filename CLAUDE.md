@@ -60,7 +60,7 @@ a year later.**
 ## Current status
 
 **Phase 0 and Phase 1 complete and merged to `main`; Phase 2 in
-progress — 6 of 9 tasks, on branch `phase-2-gold`.** `docs/STATUS.md` holds it at
+progress — 7 of 9 tasks, on branch `phase-2-gold`.** `docs/STATUS.md` holds it at
 task granularity — deliberately not duplicated here, because two places
 recording the same thing means one of them is wrong, and this section
 proved that the hard way: it read *"implementation not started"* through

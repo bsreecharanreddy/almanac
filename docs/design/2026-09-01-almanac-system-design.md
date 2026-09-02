@@ -417,10 +417,21 @@ The decision needs Phase 0 to measure:
 
 ### 4.5a Second source — the GitHub REST API
 
-The config-driven framework's proof obligation is that a new source
+The config-driven framework's proof obligation was that a new source
 onboards via **YAML alone, zero new Python** (§9, Phase 2 gate). That
 second source is the **GitHub REST API**, and the choice is no longer
 arbitrary — it repairs exactly what the firehose lost.
+
+**Measured 2026-09-02, and the claim did not hold — cleanly.** A second
+gzip-file mirror would onboard by YAML alone (`quality_rules` is the only
+field the Spark path consumes and it is format-agnostic). A paginated,
+authenticated, rate-limited API needed **~123 lines of new Python** — a
+config-model extension, a REST client, rate-limit backoff, `Link`-header
+pagination. The honest register statement and the line-by-line accounting
+are in `docs/findings/2026-09-02-second-source.md`. "Zero new Python" held
+for the case it was easy for and broke on the case that matters, which is
+a more credible thing to be able to say than an unfalsifiable claim of
+full generality.
 
 **Verified 2026-09-01 against the live API:** `/repos/{owner}/{repo}/pulls/{n}`
 returns a **48-key** PR object including `merged`, `draft`, `title`,

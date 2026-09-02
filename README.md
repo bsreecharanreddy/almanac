@@ -12,12 +12,12 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) in progress — 6 of 9 tasks.**
+> Phase 2 (Gold + the Azure burn) in progress — 7 of 9 tasks.**
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (169 tests). It has also **run on a real Databricks cluster**: one day of
+> (175 tests). It has also **run on a real Databricks cluster**: one day of
 > the firehose, 3.79M rows, measured. **Gold's Kimball layer is built
 > locally:** `dim_repo` (SCD2 on repo identity — a rename closes the old
 > row and opens exactly one current row, case-only renames detected, a
@@ -32,8 +32,13 @@ review queue. The domain is incidental, and that is the point.
 > object October 2025 gutted; the two consumer models carry **enforced
 > column contracts** and a `relationships` check to `dim_repo`, both proven
 > to fail the build by a break-it test. All three verified against real
-> multi-run lifecycles, not one build. **There are still no features and no
-> model** — later in Phase 2 and beyond.
+> multi-run lifecycles, not one build. The **GitHub REST API second
+> source** is built and tested (never against the live network) — and
+> §4.5a's "a new source onboards via YAML alone, zero new Python" claim is
+> **falsified and the failure accounted for**: a file mirror would pass it,
+> a paginated, authenticated, rate-limited API took ~120 lines of Python.
+> **There are still no features and no model** — later in Phase 2 and
+> beyond.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of
