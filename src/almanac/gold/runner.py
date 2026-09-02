@@ -22,6 +22,7 @@ from pathlib import Path
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 
 from almanac.config import Settings
+from almanac.gold.sources import register_silver_sources
 from almanac.spark import dbt_session
 
 DEFAULT_PROJECT_DIR = Path("dbt")
@@ -64,15 +65,36 @@ class GoldTarget:
         return flags
 
 
-def run_dbt(command: list[str], target: GoldTarget) -> dbtRunnerResult:
+def run_dbt(
+    command: list[str], target: GoldTarget, *, silver_path: Path | None = None
+) -> dbtRunnerResult:
     """Run one dbt command against the local session or a remote warehouse.
 
     A SparkSession is built only for the local target. The ``databricks``
     target connects over HTTP to compute that already exists, and starting a
     local JVM to talk to it would be pure waste.
+
+    ``silver_path`` is the base directory holding Silver's ``clean`` and
+    ``quarantine`` subdirectories (``almanac.pipeline.silver``'s
+    ``CLEAN_SUBDIR`` / ``QUARANTINE_SUBDIR``). It is optional because not
+    every invocation needs Silver at all -- the Task 2 canary regression
+    test selects from nothing, and registering a source it will never read
+    would only add a way for that test to fail for an unrelated reason.
+    Any command that actually selects from ``source('silver', ...)`` needs
+    it, on the local target, every time: registration is cheap and
+    idempotent (see ``register_silver_sources``), and skipping it on the
+    assumption a previous process already registered the table is exactly
+    the kind of "should still be true" reasoning this project's testing
+    policy exists to not rely on.
     """
     if target.is_local:
-        dbt_session(warehouse=target.warehouse, metastore=target.metastore)
+        spark = dbt_session(warehouse=target.warehouse, metastore=target.metastore)
+        if silver_path is not None:
+            register_silver_sources(
+                spark,
+                clean_path=silver_path / "clean",
+                quarantine_path=silver_path / "quarantine",
+            )
     return dbtRunner().invoke([*command, *target.cli_flags()])
 
 
@@ -85,6 +107,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profiles-dir", type=Path, default=None)
     parser.add_argument("--target", default=SESSION_TARGET)
     parser.add_argument("--target-path", type=Path, default=None)
+    parser.add_argument(
+        "--silver-path",
+        type=Path,
+        default=None,
+        help=(
+            "Base dir holding Silver's clean/ and quarantine/ subdirs; "
+            "registered into the metastore as silver.events / "
+            "silver.events_quarantine before dbt runs. Required by any "
+            "command that selects from a Gold model reading a source."
+        ),
+    )
     parser.add_argument("command", nargs=argparse.REMAINDER, help="dbt command, e.g. `build`")
     args = parser.parse_args(argv)
 
@@ -98,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             name=args.target,
             target_path=args.target_path,
         ),
+        silver_path=args.silver_path,
     )
     return 0 if result.success else 1
 

@@ -22,7 +22,13 @@ check: lint typecheck test
 fixtures:
 	uv run python scripts/build_fixtures.py
 
+# Bronze -> Silver on the committed fixtures, so Gold has real Delta tables
+# to select from. Ephemeral output under data/, gitignored like the
+# warehouse and metastore it feeds.
+silver-fixture:
+	uv run python scripts/build_silver_fixture.py
+
 # Gold. Runs through the runner, never a bare `dbt` command: the SparkSession
 # has to exist, with Delta and a persistent metastore, before dbt asks for one.
-dbt:
-	uv run python -m almanac.gold.runner build
+dbt: silver-fixture
+	uv run python -m almanac.gold.runner --silver-path data/gold_fixture/silver build

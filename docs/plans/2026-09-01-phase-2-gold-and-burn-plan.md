@@ -339,30 +339,56 @@ costume.
 
 ---
 
-## Task 3: `dim_repo` — SCD2, case-sensitive, null-safe
+## Task 3: `dim_repo` — SCD2, case-sensitive, null-safe — **DONE**
 
 **Files:** `dbt/snapshots/dim_repo.sql`, `dbt/tests/assert_dim_repo_scd2.sql`
 
-- [ ] **Step 1: Failing tests** — three invariants, from the testing policy:
+**As built, beyond what the sketch below anticipated:** the snapshot
+selects from `source('silver', 'events')`, and nothing had ever made that
+resolve — Silver writes plain Delta files with no metastore entry at all,
+so `source()` cannot find a table that was never registered. Task 2 named
+this gap and left it for whichever model first selected from a source.
+Closed here with `almanac/gold/sources.py`'s `register_silver_sources`,
+called from the runner before dbt runs on the local target, plus
+`scripts/build_silver_fixture.py` (and matching CI/`make dbt` steps) to
+give Gold real Silver data to select from on a cold machine — see
+STATUS.md's verification log for the relative-path registration bug this
+found and fixed.
+
+- [x] **Step 1: Failing tests** — three invariants, from the testing policy:
   - a rename closes the old row and opens exactly one current row
   - **exactly one `dbt_valid_to IS NULL` per `repo_id`**, always
   - a **case-only** rename (`GLB` → `glb`) is detected — measured to exist
   - a repo renamed **twice** yields three versions, not two (§12 trap 8
     measured one in the window)
 
-- [ ] **Step 2: The snapshot.** `strategy='check'`, `check_cols=['repo_name']`,
+  *As built:* one lifecycle test (`tests/integration/test_gold_dim_repo.py`)
+  proves all four together, since they are one scenario rather than four —
+  three real dbt invocations, each a separate process, against one
+  persistent warehouse/metastore. `dbt/tests/assert_dim_repo_scd2.sql` is
+  the second invariant as a standing dbt test, run on every `build`.
+
+- [x] **Step 2: The snapshot.** `strategy='check'`, `check_cols=['repo_name']`,
   `file_format='delta'`. Verified working in the spike.
 
-- [ ] **Step 3: Case sensitivity.** Spark string comparison is
+- [x] **Step 3: Case sensitivity.** Spark string comparison is
   case-sensitive by default; the test exists so a later "helpful"
   `lower()` cannot pass silently.
 
-- [ ] **Step 4: Null-safety.** Any comparison added later uses `<=>`.
+- [x] **Step 4: Null-safety.** Any comparison added later uses `<=>`.
   A repo whose name goes null (deleted repos, §12 trap 11) is a
-  transition, not a non-event.
+  transition, not a non-event. *As built:* dbt's stock `check` strategy
+  already generates a null-safe comparison (an explicit OR over both
+  null-to-value and value-to-null transitions), so no custom strategy
+  macro was needed to satisfy this.
 
-- [ ] **Step 5: Verify**, then **mutate**: change `check_cols` comparison
-  to case-insensitive and confirm the case-only test reddens.
+- [x] **Step 5: Verify**, then **mutate**: change `check_cols` comparison
+  to case-insensitive and confirm the case-only test reddens. *As built:*
+  mutated by folding `repo_name` to `lower()` in the snapshot's own select
+  (equivalent effect, since `check_cols` itself has no case-sensitivity
+  knob to flip) — confirmed the lifecycle test's case-only-rename
+  assertion failed (`assert 1 == 2`, no version added at all) for exactly
+  the reason expected, then reverted.
 
 ---
 
