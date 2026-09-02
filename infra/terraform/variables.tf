@@ -129,6 +129,19 @@ variable "photon_ab_python_file" {
   default     = "/Workspace/Shared/almanac/scripts/photon_ab.py"
 }
 
+variable "source_config_workspace_path" {
+  type = string
+  # scripts/backfill.py and scripts/photon_ab.py both default
+  # --source-config to the relative path conf/sources/gharchive.yml, which
+  # resolves against the repo root -- true for `make`/CI, false for a
+  # Databricks job task's working directory. Measured 2026-09-02: the
+  # first real run failed FileNotFoundError on exactly this, before either
+  # script read a single byte of data. Passed explicitly rather than fixed
+  # by relying on the script's CWD assumption.
+  description = "Workspace path of the synced conf/sources/gharchive.yml, passed explicitly to both scripts."
+  default     = "/Workspace/Shared/almanac/conf/sources/gharchive.yml"
+}
+
 variable "photon_ab_out_dir" {
   type = string
   # Same DBFS-root-disabled finding as backfill_checkpoint_dir above; a UC
