@@ -56,6 +56,7 @@ resource "databricks_job" "backfill" {
         # FUSE path, not abfss://: BackfillCheckpoint is pathlib and must
         # outlive the cluster for a resumed run to skip finished days.
         "--checkpoint-dir", var.backfill_checkpoint_dir,
+        "--source-config", var.source_config_workspace_path,
       ]
     }
 
@@ -115,6 +116,10 @@ resource "databricks_job" "photon_ab" {
         python_file = var.photon_ab_python_file
         source      = "WORKSPACE"
         parameters = [
+          # "run": photon_ab.py's main() is subcommand-dispatched
+          # (argparse required=True); omitting it fails before any flag
+          # is even parsed. Same class of gap as the missing --source-config.
+          "run",
           task.value == "photon" ? "--photon" : "--no-photon",
           "--bronze-path", "${local.lake.bronze}/photon_ab_${task.value}",
           "--silver-path", "${local.lake.silver}/photon_ab_${task.value}",
@@ -122,6 +127,7 @@ resource "databricks_job" "photon_ab" {
           "--warehouse", "/local_disk0/warehouse",
           "--metastore", "/local_disk0/metastore",
           "--out", "${var.photon_ab_out_dir}/arm_${task.value}.json",
+          "--source-config", var.source_config_workspace_path,
         ]
       }
 
