@@ -9,11 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Severity(StrEnum):
-    """What a failed rule does to the record.
-
-    ``REJECT`` quarantines it. ``WARN`` annotates it but leaves it in the
-    clean set -- used where a field is genuinely optional in some era.
-    """
+    """What a failed rule does: REJECT quarantines, WARN annotates and keeps."""
 
     REJECT = "reject"
     WARN = "warn"
@@ -28,11 +24,7 @@ class QualityRule(BaseModel):
 
 
 class SourceConfig(BaseModel):
-    """A source, declared entirely in data.
-
-    Onboarding a second source must require a new YAML file and no new
-    Python -- see design doc §4.5a and the Phase 2 gate.
-    """
+    """A file source, declared entirely in data (design doc §4.5a)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -55,9 +47,9 @@ class SourceConfig(BaseModel):
         return cls.model_validate(yaml.safe_load(path.read_text()))
 
 
-# --- The second source: everything below is new Python §4.5a's "zero new
-# --- Python" claim did not survive. A gzip-file mirror reuses `SourceConfig`
-# --- untouched; a paginated, authenticated, rate-limited API does not.
+# The second source. §4.5a's "zero new Python" claim did not survive: a
+# gzip-file mirror reuses SourceConfig untouched, a paginated authenticated
+# rate-limited API does not (docs/findings/2026-09-02-second-source.md).
 
 
 class AuthConfig(BaseModel):
@@ -76,9 +68,7 @@ class RateLimitConfig(BaseModel):
 
 
 class RestSourceConfig(BaseModel):
-    """A REST API source. Distinct from ``SourceConfig`` on purpose -- the
-    shapes do not overlap, and pretending they did (one model with every
-    field optional) would make both unreadable."""
+    """A REST API source. Distinct from SourceConfig: the shapes do not overlap."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

@@ -1,23 +1,4 @@
-"""`fact_pull_request`'s accumulating-snapshot behaviour, across real dbt runs.
-
-Same shape as `test_gold_dim_repo.py`: several separate processes against
-one persistent warehouse/metastore, each appending more of the event
-stream to `silver.events` and rerunning `dbt build`. A snapshot's premise
-is that every run reconciles against whatever the source now holds, so the
-test has to actually rerun it rather than inspecting one build.
-
-The defining property is that **out-of-order arrival preserves the
-earliest timestamp** -- the `opened` event for a PR can land in a later
-file than its `closed` event, and a plain `MERGE ... UPDATE SET` would
-overwrite the real `opened_at` with a null. The model handles this by
-recomputing any PR touched this batch in full from `int_pr_events`, so a
-touched PR always sees its complete event history; the mutation that
-reverts to a batch-only aggregate reddens
-`test_out_of_order_open_after_close_keeps_both_timestamps`.
-
-Only the handful of Silver columns `int_pr_events` reads are written here;
-`test_pipeline.py` already covers Silver deriving them.
-"""
+"""`fact_pull_request`'s accumulating-snapshot behaviour, across real dbt runs."""
 
 import subprocess
 import sys
@@ -109,13 +90,7 @@ _TS_COLUMNS = ("opened_at", "closed_at", "first_review_at", "first_response_at")
 
 
 def _fact(spark: SparkSession, warehouse: Path) -> DataFrame:
-    """The fact, with every timestamp column projected to an epoch second.
-
-    No test in this repo asserts on a collected datetime: PySpark hands one
-    back naive in the driver's timezone, so the comparison passes or fails
-    by which machine runs it (Phase 1 Task 2, `tests/helpers.epoch_of`). An
-    epoch is an instant and carries no ambiguity.
-    """
+    """The fact, with every timestamp column projected to an epoch second."""
     raw = spark.read.format("delta").load(str(warehouse / "gold.db" / "fact_pull_request"))
     ts = [f"unix_timestamp({c}) as {c}" for c in _TS_COLUMNS]
     others = [c for c in raw.columns if c not in _TS_COLUMNS]
@@ -147,8 +122,7 @@ def gold_paths(tmp_path: Path) -> dict[str, Path]:
 
 @pytest.fixture
 def empty_quarantine(spark: SparkSession, gold_paths: dict[str, Path]) -> None:
-    """`register_silver_sources` registers both tables together; the fact
-    reads only `clean`, but the quarantine location still has to exist."""
+    """`register_silver_sources` registers both tables, so the quarantine path must exist."""
     spark.createDataFrame([], _SILVER_SCHEMA).write.format("delta").save(
         str(gold_paths["quarantine_path"])
     )
@@ -162,8 +136,7 @@ T2 = datetime(2025, 8, 15, 0, 0, tzinfo=UTC)
 def test_out_of_order_open_after_close_keeps_both_timestamps(
     spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
 ) -> None:
-    """The `opened` event arrives in a later batch than `closed`, at an
-    earlier event time. Both timestamps must survive."""
+    """`opened` arriving in a later batch than `closed` still keeps the earliest timestamps."""
     c_close = datetime(2025, 8, 13, 15, 0, tzinfo=UTC)
     c_open = datetime(2025, 8, 13, 9, 0, tzinfo=UTC)
 
@@ -191,8 +164,7 @@ def test_out_of_order_open_after_close_keeps_both_timestamps(
 def test_one_row_per_pr_accumulates_every_lifecycle_column(
     spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
 ) -> None:
-    """opened, first review, and closed each land in a different run; the PR
-    ends as exactly one row carrying all three."""
+    """opened, first review and closed land in three runs; the snapshot still accumulates."""
     c_open = datetime(2025, 8, 13, 9, 0, tzinfo=UTC)
     c_review_late = datetime(2025, 8, 13, 18, 0, tzinfo=UTC)
     c_review_early = datetime(2025, 8, 13, 12, 0, tzinfo=UTC)
@@ -265,9 +237,7 @@ def test_a_pr_open_at_the_window_edge_is_flagged_censored(
 def test_second_build_merges_rather_than_rebuilding(
     spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
 ) -> None:
-    """Phase 2 exit gate: a Gold model's second run is a `MERGE`, read from
-    the Delta commit log -- not the row counts, which stayed correct in the
-    silent-rebuild failure the Task 2 spike found."""
+    """Phase 2 exit gate: a Gold model's second run is a `MERGE`, read from the Delta log."""
     c_open = datetime(2025, 8, 13, 9, 0, tzinfo=UTC)
     row = [_event(703, 2, c_open, T0, event_type="PullRequestEvent", action="opened", actor="ivan")]
 
@@ -460,8 +430,7 @@ def test_label_exclusions_are_stated_never_silent(
 def test_label_is_stable_when_a_later_response_arrives(
     spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
 ) -> None:
-    """The governing principle for the label: once the first response is
-    observed, an event after it must not change the label."""
+    """Once the first response is recorded, a later one does not move the label."""
     first = OPEN + timedelta(hours=2)
     later = OPEN + timedelta(hours=6)
 

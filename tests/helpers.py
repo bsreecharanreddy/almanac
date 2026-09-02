@@ -17,13 +17,11 @@ def one(df: DataFrame) -> Row:
 
 
 def epoch_of(df: DataFrame, column: str) -> int:
-    """A timestamp column's stored instant, as an epoch second.
+    """A timestamp column's stored instant as an epoch second.
 
-    No test asserts on a *collected* datetime. PySpark hands one back naive,
-    converted to the driver's timezone, so a datetime comparison passes or
-    fails depending on the machine running it -- and passes on a UTC CI
-    runner either way (Task 2's finding, STATUS.md 2026-09-01). An epoch is
-    an instant and carries no timezone ambiguity at all.
+    No test asserts on a collected datetime: PySpark returns it naive in the
+    driver's timezone, so the comparison passes or fails by machine (and
+    always passes on a UTC CI runner). An epoch carries no ambiguity.
     """
     return int(one(df.selectExpr(f"unix_timestamp({column}) AS epoch"))["epoch"])
 
@@ -38,23 +36,11 @@ def build_bronze(
     ingested_at: datetime,
     part: tuple[int, int] | None = None,
 ) -> None:
-    """Land one fixture as a real Bronze partition.
+    """Land one fixture as a real Bronze partition, through the shipped ``write_bronze``.
 
-    Deliberately goes through the shipped ``write_bronze`` rather than
-    writing Delta directly: Silver's input contract is whatever Bronze
-    actually produces, and a test that hand-rolls its own Bronze can pass
-    while the two have drifted apart.
-
-    Reads with ``spark.read.text``, not ``read.json`` -- Bronze stores the
-    record as an unparsed string. Task 7 measured why: per-file schema
-    inference disagrees between hours of the same day, which broke the
-    calibration's first Delta write, and parsing in Bronze is a transform
-    Bronze is not allowed to do.
-
-    Pass ``part=(index, total)`` to land a deterministic, disjoint slice of
-    the fixture, so two hours can hold different events the way two real
-    hourly files do. Split on a hash of the record rather than on row order,
-    which Spark does not promise to preserve.
+    ``part=(index, total)`` lands a deterministic disjoint slice (split on a
+    record hash, since Spark does not promise row order) so two hours can
+    hold different events like two real hourly files.
     """
     raw = spark.read.text(str(fixture_path)).withColumnRenamed("value", "raw_json")
     if part is not None:
@@ -67,11 +53,8 @@ def build_bronze(
     write_bronze(partitioned, str(bronze_path), event_date=event_date, event_hour=event_hour)
 
 
-# The contract `parse_events` produces and `normalize_events` consumes,
-# declared once. It lived in two test modules that each spelled it out, and
-# adding a column to the parser broke the one that was not being looked at
-# -- the same two-places-one-contract failure that cost Phase 1 a day
-# between `normalize_events` and `deduplicate`.
+# The parse_events -> normalize_events contract, declared once (it lived in
+# two test modules and drifted -- the two-places-one-contract failure).
 RAW_SCHEMA = (
     "created_at_raw string, actor_raw string, repo_id long, "
     "repo_name string, event_type string, id string, "
@@ -82,14 +65,8 @@ type RawRow = tuple[str, str | None, int | None, str, str, str | None, str | Non
 
 
 def _parsed_defaults() -> dict[str, Column]:
-    """The rest of what `parse_events` produces.
-
-    Defaulted so each test spells out only the fields it is about: a
-    PushEvent fixture asserting on timestamp handling has no business naming
-    a PR number, and threading every field through every case would bury the
-    interesting one. Built lazily because `F.lit` needs a live
-    SparkContext, which pytest's collection phase does not have.
-    """
+    """The rest of what ``parse_events`` produces, so each test names only
+    the fields it is about. Built lazily -- ``F.lit`` needs a live SparkContext."""
     return {
         "event_action": F.lit(None).cast("string"),
         "pr_number": F.lit(None).cast("long"),

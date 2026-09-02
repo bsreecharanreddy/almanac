@@ -1,8 +1,4 @@
-"""Parsing Bronze's raw JSON into the Silver contract.
-
-Every assertion here is a measured property of the committed fixtures, not
-an expectation of what GH Archive ought to contain.
-"""
+"""Parsing Bronze's raw JSON into the Silver contract."""
 
 from pathlib import Path
 
@@ -29,13 +25,7 @@ def test_modern_fields_are_extracted(spark: SparkSession, modern_events_path: Pa
 
 
 def test_legacy_fields_are_extracted(spark: SparkSession, legacy_events_path: Path) -> None:
-    """Legacy carries `actor` as a bare string and `repository`, not `repo`.
-
-    Three of 2,000 legacy records carry no `repository` object at all -- the
-    quarantine rows Phase 1 already measured -- so `repo_id` is asserted at
-    1,997, not 2,000. Asserting 2,000 here would be asserting the fixture is
-    something other than what it is.
-    """
+    """Legacy carries `actor` as a bare string and `repository`, not `repo`."""
     df = _parsed(spark, legacy_events_path)
     assert df.count() == 2000
     assert df.filter("event_type IS NULL").count() == 0
@@ -54,12 +44,7 @@ def test_legacy_repo_name_is_qualified_like_modern(
 def test_pr_number_is_present_in_both_eras(
     spark: SparkSession, modern_events_path: Path, legacy_events_path: Path
 ) -> None:
-    """`(repo_id, pr_number)` is the fact key, so it must survive every era.
-
-    Measured: 149 of 149 modern and 106 of 106 legacy `PullRequestEvent`
-    carry a number, and `number` is one of the five fields that survived the
-    October 2025 payload reduction -- so the key holds in all three eras.
-    """
+    """`(repo_id, pr_number)` is the fact key, so it must survive every era."""
     for path, expected in ((modern_events_path, 149), (legacy_events_path, 106)):
         prs = _parsed(spark, path).filter("event_type = 'PullRequestEvent'")
         assert prs.count() == expected
@@ -69,13 +54,7 @@ def test_pr_number_is_present_in_both_eras(
 def test_draft_is_null_in_legacy_rather_than_false(
     spark: SparkSession, modern_events_path: Path, legacy_events_path: Path
 ) -> None:
-    """The draft flag did not exist in 2014. Absent is not the same as false.
-
-    Measured: non-null on 149 of 149 modern PRs and 0 of 106 legacy ones.
-    Collapsing that to `false` would make the legacy slice look like 106
-    confirmed non-draft PRs, and §5.1's draft-exclusion rule would then be
-    silently applied to a population it cannot be evaluated on.
-    """
+    """The draft flag did not exist in 2014. Absent is not the same as false."""
     modern = _parsed(spark, modern_events_path).filter("event_type = 'PullRequestEvent'")
     legacy = _parsed(spark, legacy_events_path).filter("event_type = 'PullRequestEvent'")
     assert modern.filter("pr_draft IS NOT NULL").count() == 149
@@ -83,11 +62,7 @@ def test_draft_is_null_in_legacy_rather_than_false(
 
 
 def test_issue_comment_pr_discriminator(spark: SparkSession, modern_events_path: Path) -> None:
-    """`issue.pull_request` separates a PR comment from a genuine issue comment.
-
-    Measured: present on 55 of 92 modern `IssueCommentEvent`. The label
-    counts a comment only when the issue is actually a PR.
-    """
+    """`issue.pull_request` separates a PR comment from a genuine issue comment."""
     comments = _parsed(spark, modern_events_path).filter("event_type = 'IssueCommentEvent'")
     assert comments.count() == 92
     assert comments.filter("issue_is_pr").count() == 55
@@ -96,10 +71,7 @@ def test_issue_comment_pr_discriminator(spark: SparkSession, modern_events_path:
 def test_push_size_is_extracted_from_the_payload_in_both_eras(
     spark: SparkSession, modern_events_path: Path, legacy_events_path: Path
 ) -> None:
-    """`agg_repo_daily` counts commit volume from `payload.size`, never
-    `size(commits)` -- the commits array is capped at 20 (§12 trap 3), and
-    force-pushes inflate `size`. `distinct_size` is modern-only.
-    """
+    """Commit volume comes from `payload.size`, never the 20-capped `commits` array."""
     modern = _parsed(spark, modern_events_path).filter("event_type = 'PushEvent'")
     legacy = _parsed(spark, legacy_events_path).filter("event_type = 'PushEvent'")
 
@@ -112,11 +84,7 @@ def test_push_size_is_extracted_from_the_payload_in_both_eras(
 
 
 def test_unknown_event_type_does_not_break_parsing(spark: SparkSession) -> None:
-    """A new event type must never be able to break ingestion (CLAUDE.md).
-
-    An explicit schema means an unrecognised payload shape yields nulls in
-    the columns it does not have, and the row still lands.
-    """
+    """A new event type must never be able to break ingestion (CLAUDE.md)."""
     raw = spark.createDataFrame(
         [
             (
@@ -134,12 +102,7 @@ def test_unknown_event_type_does_not_break_parsing(spark: SparkSession) -> None:
 
 
 def test_malformed_json_is_not_silently_dropped(spark: SparkSession) -> None:
-    """A record that will not parse must still reach the quality rules.
-
-    Dropping it here would put it in neither Silver nor quarantine, which is
-    the exact vanishing act `coalesce(cond, False)` exists to prevent one
-    layer down.
-    """
+    """A record that will not parse must still reach the quality rules."""
     raw = spark.createDataFrame([("{not json at all",)], "raw_json string")
     parsed = parse_events(raw)
     assert parsed.count() == 1

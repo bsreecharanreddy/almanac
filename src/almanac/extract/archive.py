@@ -50,14 +50,13 @@ def fetch_hour(
 
         status = classify_response(response.status_code, len(response.content))
 
-        # A 404 or an empty file is a fact about the data. Retrying either
-        # wastes time and cannot change the answer.
+        # 404 / empty is a fact about the data -- retrying cannot change it.
         if status in (FetchStatus.ABSENT, FetchStatus.EMPTY):
             return FetchResult(url, status, None, 0, attempt)
 
         if status is FetchStatus.OK:
-            # Write to .part then rename: a crash mid-write must never leave
-            # a truncated file that a later run mistakes for complete.
+            # .part then rename: a crash mid-write must not leave a file a
+            # later run mistakes for complete.
             tmp.write_bytes(response.content)
             tmp.replace(final)
             return FetchResult(url, status, final, len(response.content), attempt)

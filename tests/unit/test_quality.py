@@ -38,11 +38,7 @@ def test_multiple_failures_all_recorded(spark: SparkSession) -> None:
 
 
 def test_null_in_predicate_counts_as_failure(spark: SparkSession) -> None:
-    """The three-valued-logic trap, wrapped in coalesce(cond, False).
-
-    `NULL > 5` is NULL, not False. An un-coalesced rule would let the row
-    through as if it had passed.
-    """
+    """The three-valued-logic trap, wrapped in coalesce(cond, False)."""
     rule = [QualityRule(name="positive", expression="repo_id > 0", severity=Severity.REJECT)]
     df = spark.createDataFrame([("e1", None, "a")], SCHEMA)
     assert one(apply_rules(df, rule))["_failed_rules"] == ["positive"]
@@ -80,14 +76,7 @@ def test_split_conserves_every_record(spark: SparkSession) -> None:
 
 
 def test_every_declared_rule_resolves_against_the_silver_shape(spark: SparkSession) -> None:
-    """A rule naming a column the pipeline drops cannot run at all.
-
-    `created_at_not_future` compares against `ingested_at`, which the Silver
-    contract originally omitted -- so that rule was unrunnable, and nothing
-    said so until a real file was pushed through. Each rule is applied on
-    its own here, so a failure names the rule instead of failing the whole
-    pipeline with one unresolved column.
-    """
+    """A rule naming a column the pipeline drops cannot run at all."""
     silver = normalize_events(
         raw(
             spark,

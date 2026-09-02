@@ -1,20 +1,4 @@
-"""The local dbt target is a correctness requirement, not configuration.
-
-The spike behind Phase 2's plan (2026-09-01) found that with an ephemeral
-metastore dbt cannot see the existing relation, so ``is_incremental()`` is
-false and every model silently falls back to a full rebuild -- while dbt
-still reports ``success=True``. An SCD2 dimension that has quietly become a
-snapshot of "now" is exactly the defect this project exists to demonstrate
-competence against, and it is invisible to every count-based check: the
-broken run produced a table of the right shape, plausibly populated, and
-wrong.
-
-The two dbt invocations are two **separate processes**, deliberately. Two
-runs inside one process would pass on a session that happens to still be
-alive in memory; a real orchestrated backfill runs each day in its own
-process, so persistence across processes is the property that actually has
-to hold.
-"""
+"""The local dbt target is a correctness requirement, not configuration."""
 
 import json
 import shutil
@@ -60,12 +44,7 @@ def _delta_operations(spark: SparkSession, table_path: Path) -> list[str]:
 
 @pytest.fixture
 def canary_project(tmp_path: Path) -> Path:
-    """The canary dbt project, copied so dbt's artifacts land in tmp.
-
-    A copy rather than an in-place run: dbt writes `target/` and `logs/`
-    into the project directory, and a test that litters the repository is
-    one someone eventually silences.
-    """
+    """The canary dbt project, copied so dbt's artifacts land in tmp."""
     destination = tmp_path / "canary"
     shutil.copytree(Path("tests/fixtures/dbt_canary"), destination)
     return destination
@@ -76,11 +55,7 @@ def canary_project(tmp_path: Path) -> Path:
 def test_gold_model_merges_on_second_run_rather_than_rebuilding(
     spark: SparkSession, canary_project: Path, tmp_path: Path
 ) -> None:
-    """A silent CREATE OR REPLACE is the failure this test exists for.
-
-    Asserted from the Delta commit log, not from row counts: in the broken
-    run the row counts were correct and the table was still wrong.
-    """
+    """A silent CREATE OR REPLACE is the failure this test exists for."""
     warehouse, metastore = tmp_path / "warehouse", tmp_path / "metastore"
 
     _invoke_dbt(canary_project, warehouse=warehouse, metastore=metastore)
@@ -97,11 +72,7 @@ def test_gold_model_merges_on_second_run_rather_than_rebuilding(
 
 @pytest.mark.integration
 def test_the_shipped_dbt_project_parses_under_the_session_target(tmp_path: Path) -> None:
-    """`dbt parse` resolves the real project, profile, and source declarations.
-
-    Cheap, and it is the only thing standing between a typo in
-    `profiles.yml` and discovering it during the Azure burn.
-    """
+    """`dbt parse` resolves the real project, profile, and source declarations."""
     result = subprocess.run(
         [
             sys.executable,

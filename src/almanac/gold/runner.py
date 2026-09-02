@@ -1,15 +1,9 @@
 """Invoking dbt. The I/O boundary for Gold.
 
-dbt-spark's session method builds its connection with
-``SparkSession.builder.enableHiveSupport().getOrCreate()``, which **reuses**
-whatever session is already live in the process. That is the hook this
-module exists for: the session has to already carry Delta and a persistent
-metastore before dbt asks for one, because ``getOrCreate`` returns the
-running session and cannot retrofit either onto it.
-
-So the order here is load bearing -- session first, dbt second -- and it is
-why Gold is invoked through this module rather than through a bare ``dbt``
-command line.
+dbt-spark's session method calls ``builder.enableHiveSupport().getOrCreate()``,
+which reuses the live session and cannot retrofit Delta or a persistent
+metastore onto it. So the order is load bearing -- session first, dbt second
+-- which is why Gold runs through this module, not a bare ``dbt`` command.
 """
 
 from __future__ import annotations
@@ -33,10 +27,8 @@ SESSION_TARGET = "session"
 class GoldTarget:
     """Where one dbt invocation reads its project and writes its output.
 
-    ``profiles_dir`` is separate from ``project_dir`` because they genuinely
-    come apart: the regression test runs a throwaway project against the
-    profile this repository actually ships, which is the only way it can
-    prove anything about that profile.
+    ``profiles_dir`` is separate from ``project_dir`` so the regression test
+    can run a throwaway project against the profile this repo ships.
     """
 
     warehouse: Path
@@ -48,7 +40,7 @@ class GoldTarget:
 
     @property
     def is_local(self) -> bool:
-        """Local compute, as opposed to a Databricks endpoint that already exists."""
+        """Local compute, vs a Databricks endpoint that already exists."""
         return self.name == SESSION_TARGET
 
     def cli_flags(self) -> list[str]:
@@ -70,22 +62,10 @@ def run_dbt(
 ) -> dbtRunnerResult:
     """Run one dbt command against the local session or a remote warehouse.
 
-    A SparkSession is built only for the local target. The ``databricks``
-    target connects over HTTP to compute that already exists, and starting a
-    local JVM to talk to it would be pure waste.
-
-    ``silver_path`` is the base directory holding Silver's ``clean`` and
-    ``quarantine`` subdirectories (``almanac.pipeline.silver``'s
-    ``CLEAN_SUBDIR`` / ``QUARANTINE_SUBDIR``). It is optional because not
-    every invocation needs Silver at all -- the Task 2 canary regression
-    test selects from nothing, and registering a source it will never read
-    would only add a way for that test to fail for an unrelated reason.
-    Any command that actually selects from ``source('silver', ...)`` needs
-    it, on the local target, every time: registration is cheap and
-    idempotent (see ``register_silver_sources``), and skipping it on the
-    assumption a previous process already registered the table is exactly
-    the kind of "should still be true" reasoning this project's testing
-    policy exists to not rely on.
+    A SparkSession is built only for the local target. ``silver_path`` is
+    Silver's base dir (holding ``clean`` / ``quarantine``); pass it for any
+    command that selects from ``source('silver', ...)``. Registration is
+    idempotent, and re-doing it every call beats assuming a prior process did.
     """
     if target.is_local:
         spark = dbt_session(warehouse=target.warehouse, metastore=target.metastore)

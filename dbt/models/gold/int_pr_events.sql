@@ -1,17 +1,11 @@
 {{ config(materialized='view') }}
 
--- Every PR-relevant event, flattened to one shape. The seam between
--- `silver.events` and the PR fact + label: "which event types feed a PR"
--- is decided here, once, so the fact never re-derives it.
---
--- `IssueCommentEvent` is the awkward one. Modern events carry
--- `issue.pull_request`, so `is_pr_comment` is a real boolean. Legacy
--- events never carry it -- 0 of 194 measured -- so `is_pr_comment` is null
--- pre-2015, and a legacy issue comment counts as being on a PR only when
--- its `(repo_id, pr_number)` matches a PR we have actually seen a
--- `PullRequestEvent` for. GitHub numbers issues and PRs from a single
--- per-repo sequence, so that match cannot collide. A modern
--- `is_pr_comment = false` is a genuine issue comment and is dropped.
+-- Every PR-relevant event, one shape. "Which event types feed a PR" is
+-- decided here so the fact never re-derives it. IssueCommentEvent is the
+-- awkward case: `is_pr_comment` is null pre-2015 (0 of 194 measured), so a
+-- legacy issue comment counts only when (repo_id, pr_number) matches a seen
+-- PullRequestEvent. A modern `is_pr_comment = false` is a real issue comment
+-- and is dropped.
 
 with silver as (
 

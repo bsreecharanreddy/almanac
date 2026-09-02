@@ -1,11 +1,4 @@
-"""`dbt/macros/almanac_is_bot.sql` must not drift from `classify_bot`.
-
-One heuristic, two implementations -- Python for exploration, SQL for Gold
--- and the same failure mode as `era_for` vs the Spark era labels: move one
-and history is misclassified rather than the build failing. `rlike` is a
-Java regex engine and `re` is not, so agreement is checked on real logins,
-not assumed from the pattern string alone.
-"""
+"""`dbt/macros/almanac_is_bot.sql` must not drift from `classify_bot`."""
 
 import re
 from pathlib import Path
@@ -19,9 +12,8 @@ pytestmark = pytest.mark.spark
 
 MACRO = Path("dbt/macros/almanac_is_bot.sql")
 
-# Includes every shape the finding calls out: the [bot] suffix, the curated
-# list, genuine CI accounts (separator / camelCase), and the human surnames
-# a bare `ci$` clause wrongly matched.
+# Every shape the finding calls out: [bot] suffix, curated list, real CI
+# accounts, and human surnames a bare `ci$` wrongly matched.
 LOGINS = [
     "dependabot[bot]",
     "renovate[bot]",

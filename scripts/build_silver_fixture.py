@@ -1,17 +1,8 @@
-"""Materialize the committed fixtures through Bronze -> Silver, for Gold.
+"""Land the committed fixtures through Bronze -> Silver, so Gold has real
+Delta tables to select from locally and in CI (no backfill to read there).
 
-Gold reads Silver, never a source archive or Bronze directly (design doc
-§3.3). Locally and in CI there is no backfill to read from, so this script
-exists purely to give Gold real Delta tables to select from -- the same
-committed fixtures every other test in this repo already uses (`modern-*`,
-`legacy-*`), landed through the real `almanac.pipeline` functions rather
-than a shortcut.
-
-Ephemeral output under `data/`, gitignored like the warehouse and
-metastore it feeds into via `almanac.gold.runner --silver-path`. Safe to
-rerun: both stages are idempotent (`replaceWhere` on their own
-partitions), so a second run replaces exactly the two eras it wrote the
-first time, rather than accumulating duplicates.
+Ephemeral output under gitignored ``data/``. Idempotent: a rerun replaces
+the two eras it wrote, not accumulates them.
 """
 
 from datetime import UTC, datetime
@@ -25,15 +16,13 @@ from almanac.pipeline.silver import run_silver
 from almanac.pipeline.source import SourceConfig
 from almanac.spark import local_session
 
-# (fixture glob, event_date, event_hour) -- the same slice
-# `tests/integration/test_pipeline.py` runs every era through.
+# (fixture glob, event_date, event_hour) -- the test_pipeline.py slice.
 _FIXTURES = (
     ("modern-*.jsonl.gz", "2025-08-13", 14),
     ("legacy-*.jsonl.gz", "2014-06-12", 14),
 )
 
-# Arbitrary but fixed, so a rerun is byte-for-byte reproducible rather than
-# stamping a fresh wall-clock time every time this script happens to run.
+# Fixed, so a rerun is byte-for-byte reproducible.
 _INGESTED_AT = datetime(2026, 9, 1, 0, 0, tzinfo=UTC)
 
 

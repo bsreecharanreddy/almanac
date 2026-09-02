@@ -8,28 +8,15 @@
 }}
 
 {#-
-  One row per pull request, as an accumulating snapshot (design doc §4.3):
-  columns fill in as lifecycle events arrive, and out-of-order batches
-  preserve the earliest timestamp.
+  One row per PR, an accumulating snapshot (§4.3). Every column comes from
+  an event-level field via `int_pr_events`, never `payload.pull_request.*`
+  (§12 trap 12); `merged` / `draft` are the era-bound, null-safe exception.
 
-  `contract: enforced` and `on_schema_change: fail` are set together in
-  schema.yml (dbt validates that pairing there, not here): a column added
-  or retyped is a deliberate change that should break the build, not drift
-  in silently.
-
-  Every column is derived from an event-level field via `int_pr_events` --
-  never `payload.pull_request.*`, which October 2025 gutted (§12 trap 12).
-  `merged` / `draft` are the one documented exception, carried from
-  Silver's parsed `pr_merged` / `pr_draft`, era-bound and null-safe.
-
-  Incremental strategy: any PR touched by a new event this batch is
-  **recomputed in full** from `int_pr_events`, not folded scalar by scalar.
-  That is what makes out-of-order arrival and author-exclusion correct
-  without carrying per-actor response detail in the row -- when the
-  `opened` event finally lands, the whole PR is rebuilt with its complete
-  response history, and the author is excluded properly. Untouched rows
-  pass through from `{{ this }}` unchanged. `last_ingested_at` is the
-  high-water mark that decides "touched".
+  Incremental: any PR touched by a new event this batch is recomputed in
+  full from `int_pr_events`, not folded scalar by scalar -- which is what
+  makes out-of-order arrival and author exclusion correct without carrying
+  per-actor detail in the row. Untouched rows pass through from `{{ this }}`.
+  `last_ingested_at` is the high-water mark that decides "touched".
 -#}
 
 {%- set fact_columns -%}
@@ -102,8 +89,8 @@ reviews as (
     group by repo_id, pr_number
 ),
 
--- Earliest response per actor, so the PR author can be excluded once known.
--- Bots stay in -- §5.1 segments by is_bot and never drops the population.
+-- Earliest response per actor, so the author is excludable. Bots stay in
+-- (§5.1 segments by is_bot, never drops the population).
 responses as (
     select repo_id, pr_number, actor_login, min(created_at) as responded_at
     from scope
@@ -168,9 +155,8 @@ computed as (
                  - unix_timestamp(assembled.opened_at)
         end as time_to_first_response_seconds,
         assembled.closed_at is null as is_censored,
-        -- Why this PR is out of the trainable population, stated rather
-        -- than the row silently missing (§5.1). NULL means "in the label",
-        -- and NULL iff `time_to_first_response_seconds` is non-null.
+        -- Why this PR is out of the trainable population (§5.1). NULL iff
+        -- time_to_first_response_seconds is non-null.
         case
             when assembled.author_login is null then 'author_unobserved'
             when coalesce(assembled.draft, false) then 'draft'

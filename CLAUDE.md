@@ -290,10 +290,14 @@ Currently present:
   this one has no incident behind it and says so in its own frontmatter
   rather than being dressed up as if it did. The skill is a
   simplify/name/edge-case/dedup/composition/mapping-dispatch/generator/
-  context-manager checklist applied while writing code; the hook is a
-  mechanical `git commit` reminder in the same register as
+  context-manager/comment-discipline checklist applied while writing code;
+  the hook is a mechanical `git commit` reminder in the same register as
   `story-bank-reminder.sh` — it cannot judge code quality, only remind
-  that the judgment should have happened.
+  that the judgment should have happened. **Comment discipline** (item 10,
+  added 2026-09-02): one-line docstrings, why-not-what comments, no
+  narrative paragraphs or measured-number essays in code — that story
+  lives in `docs/`. The Phase 0–1 modules were swept against it once in a
+  dedicated pass (2026-09-02); it applies to new code from there on.
 
 Deliberately deferred until earned, with the trigger that would justify
 each:
