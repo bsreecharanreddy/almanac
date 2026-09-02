@@ -12,15 +12,19 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) in progress — 2 of 9 tasks.**
+> Phase 2 (Gold + the Azure burn) in progress — 3 of 9 tasks.**
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (150 tests). It has also **run on a real Databricks cluster**: one day of
-> the firehose, 3.79M rows, measured. dbt now runs on Delta and its
-> incremental behaviour is enforced by a regression test, but **Gold has no
-> models yet, and there are no features and no model** — Phase 2 onward.
+> (151 tests). It has also **run on a real Databricks cluster**: one day of
+> the firehose, 3.79M rows, measured. **Gold now has its first real
+> model:** `dim_repo`, a Kimball SCD2 dimension on repo identity — a
+> rename closes the old row and opens exactly one current row, a
+> case-only rename is detected rather than folded away, and a repo
+> renamed twice yields three versions, not two, all verified against a
+> real three-run lifecycle rather than one build. **There are still no
+> features and no model** — later in Phase 2 and beyond.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of
@@ -31,6 +35,11 @@ review queue. The domain is incidental, and that is the point.
 > model from scratch and still reports success. It was **reproduced
 > deliberately before being fixed** — two consecutive runs, two
 > `CREATE OR REPLACE` commits, no `MERGE`, correct row counts throughout.
+> Task 3 found a fourth: a relative `--silver-path` resolved against the
+> wrong directory on a non-`default` schema, registering a metastore
+> table that pointed at nothing Silver ever wrote — caught because the
+> registration was exercised against real data rather than trusted from
+> the DDL reading correctly.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
@@ -131,7 +140,7 @@ doc rather than asserted here.
 
 ```text
 src/almanac/        extract (URLs, fetching) · explore (schema, measurement) · pipeline · gold · spark
-dbt/                the Gold project — models, sources, both targets
+dbt/                the Gold project — models, snapshots, sources, both targets
 tests/              unit tests + committed fixtures; tests never touch the network
 docs/design/        the authoritative architecture and phasing document
 docs/findings/      measurements, each with its method and sample size
@@ -146,7 +155,7 @@ docker/             containerized Spark + Delta, matching CI
 uv sync --all-extras --dev
 make check      # ruff + mypy --strict + pytest
 make test-all   # includes Spark tests
-make dbt        # the Gold layer, through the runner that builds the session first
+make dbt        # fixtures -> Silver, then the Gold layer through the runner that builds the session first
 make fixtures   # rebuild committed fixtures from the live archive
 ```
 
