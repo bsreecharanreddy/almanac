@@ -22,3 +22,6 @@ class Settings(BaseSettings):
     metastore_dir: Path = _REPO_ROOT / "data" / "metastore"
     http_timeout_seconds: float = 60.0
     max_fetch_attempts: int = 3
+    # Concurrent hourly downloads during a backfill; Phase 1 measured a third of
+    # billed time as single-threaded HTTP (2026-09-01-cluster-throughput.md).
+    fetch_concurrency: int = 8

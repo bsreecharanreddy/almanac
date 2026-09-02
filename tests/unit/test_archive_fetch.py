@@ -1,3 +1,5 @@
+import threading
+import time
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -6,7 +8,7 @@ import httpx
 import pytest
 
 from almanac.config import Settings
-from almanac.extract.archive import classify_response, fetch_hour
+from almanac.extract.archive import classify_response, fetch_hour, fetch_hours
 from almanac.extract.outcome import FetchStatus
 
 # --- the pure decision, exhaustively ---
@@ -150,3 +152,74 @@ def test_partial_download_leaves_no_file(tmp_path: Path) -> None:
     )
     assert result.status is FetchStatus.FAILED
     assert list(tmp_path.iterdir()) == []
+
+
+# --- the concurrent batch, for the backfill ---
+
+
+def _hours(day: date, count: int) -> list[tuple[date, int]]:
+    return [(day, h) for h in range(count)]
+
+
+def test_fetch_hours_returns_a_result_per_hour_in_input_order(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=request.url.path.encode())
+
+    results = fetch_hours(
+        _hours(date(2025, 7, 1), 24),
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=Settings(fetch_concurrency=8),
+    )
+    assert [r.status for r in results] == [FetchStatus.OK] * 24
+    assert [r.url for r in results] == [
+        f"https://data.gharchive.org/2025-07-01-{h}.json.gz" for h in range(24)
+    ]
+
+
+def test_fetch_hours_actually_runs_in_parallel(tmp_path: Path) -> None:
+    live = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal live, peak
+        with lock:
+            live += 1
+            peak = max(peak, live)
+        time.sleep(0.05)
+        with lock:
+            live -= 1
+        return httpx.Response(200, content=b"\x1f\x8b")
+
+    fetch_hours(
+        _hours(date(2025, 7, 1), 12),
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=Settings(fetch_concurrency=6),
+    )
+    assert peak > 1, "fetch_hours must issue overlapping requests"
+    assert peak <= 6, "and never more than fetch_concurrency at once"
+
+
+def test_fetch_hours_empty_input_is_empty_output(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be made for an empty hour list")
+
+    assert fetch_hours([], client=_client(handler), dest_dir=tmp_path, settings=Settings()) == []
+
+
+def test_fetch_hours_one_bad_hour_does_not_sink_the_batch(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/2025-07-01-3.json.gz":
+            return httpx.Response(502)
+        return httpx.Response(200, content=b"\x1f\x8b")
+
+    results = fetch_hours(
+        _hours(date(2025, 7, 1), 6),
+        client=_client(handler),
+        dest_dir=tmp_path,
+        settings=Settings(max_fetch_attempts=1),
+    )
+    assert results[3].status is FetchStatus.FAILED
+    assert [r.status for i, r in enumerate(results) if i != 3] == [FetchStatus.OK] * 5

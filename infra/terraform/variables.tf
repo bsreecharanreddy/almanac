@@ -68,3 +68,91 @@ variable "tags" {
     owner   = "sree"
   }
 }
+
+# The Phase 2 burn (databricks.tf). Nothing here provisions compute on apply.
+
+variable "databricks_node_type" {
+  type        = string
+  description = "Job-cluster SKU; same node Phase 1's calibration measured on, so rates compare."
+  default     = "Standard_D4ds_v6"
+}
+
+variable "backfill_workers" {
+  type        = number
+  description = "Worker count; num_workers = N provisions N+1 VMs (N workers + a driver)."
+  default     = 4
+}
+
+variable "enable_photon" {
+  type        = bool
+  description = "Photon on the backfill cluster. False to match the no-Photon calibration; the §8.2 A/B is a separate job."
+  default     = false
+}
+
+variable "backfill_start" {
+  type        = string
+  description = "First day of the backfill, YYYY-MM-DD."
+  default     = "2025-07-01"
+}
+
+variable "backfill_end" {
+  type        = string
+  description = "Last day of the backfill, inclusive."
+  default     = "2025-09-30"
+}
+
+variable "backfill_checkpoint_dir" {
+  type = string
+  # Not an abfss:// URI: BackfillCheckpoint is pathlib, and it must outlive
+  # the cluster for a resumed run to skip finished days. A UC volume works too.
+  description = "FUSE-mounted, persistent dir for the per-day resume markers."
+  default     = "/dbfs/FileStore/almanac/checkpoints/tier3"
+}
+
+variable "backfill_python_file" {
+  type        = string
+  description = "Workspace path of scripts/backfill.py, set at deploy time (repos sync or bundle)."
+  default     = "/Workspace/Repos/almanac/scripts/backfill.py"
+}
+
+variable "photon_ab_python_file" {
+  type        = string
+  description = "Workspace path of scripts/photon_ab.py."
+  default     = "/Workspace/Repos/almanac/scripts/photon_ab.py"
+}
+
+variable "photon_ab_out_dir" {
+  type        = string
+  description = "FUSE-mounted dir each A/B arm writes its measurement JSON to."
+  default     = "/dbfs/FileStore/almanac/photon_ab"
+}
+
+variable "photon_ab_dbt_dependencies" {
+  type = list(string)
+  # The Photon A/B times Gold too, so its clusters need the dbt extra the
+  # backfill does not. Keep in sync with pyproject.toml [project.optional-dependencies].dbt.
+  description = "dbt deps for the Photon A/B clusters, on top of backfill_pip_dependencies."
+  default = [
+    "dbt-core>=1.12.3,<1.13",
+    "dbt-spark[session]>=1.11.0,<1.12",
+  ]
+}
+
+variable "almanac_wheel" {
+  type        = string
+  description = "Built almanac wheel (uv build), installed on each job cluster. A bundle would resolve this from pyproject.toml."
+  default     = "/Workspace/Repos/almanac/dist/almanac-0.1.0-py3-none-any.whl"
+}
+
+variable "backfill_pip_dependencies" {
+  type = list(string)
+  # Keep in sync with pyproject.toml [project].dependencies -- a raw
+  # databricks_job cannot derive them; a bundle would.
+  description = "Runtime deps installed on each job cluster alongside the wheel."
+  default = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+  ]
+}
