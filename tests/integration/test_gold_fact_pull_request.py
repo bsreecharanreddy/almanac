@@ -92,6 +92,11 @@ def _build_gold(paths: dict[str, Path]) -> None:
             "build",
             "--select",
             "+fact_pull_request",
+            # cautious: skip the fact -> dim_repo relationships test, whose
+            # other parent this partial build does not include. `make dbt`
+            # (full build) and test_gold_contracts.py cover that test.
+            "--indirect-selection",
+            "cautious",
         ],
         capture_output=True,
         text=True,

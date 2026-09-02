@@ -4,9 +4,10 @@
         incremental_strategy='merge',
         unique_key=['repo_id', 'activity_date'],
         file_format='delta',
-        on_schema_change='sync_all_columns',
     )
 }}
+
+{#- `contract: enforced` + `on_schema_change: fail` are set in schema.yml. -#}
 
 {#-
   Daily activity per repo, on **event time** (`created_at`), not ingest
