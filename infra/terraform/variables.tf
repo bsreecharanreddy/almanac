@@ -101,6 +101,23 @@ variable "backfill_end" {
   default     = "2025-09-30"
 }
 
+variable "backfill_staging_dir" {
+  type = string
+  # Not /local_disk0: that's per-node ephemeral disk. fetch_hours() downloads
+  # each hour's .json.gz via plain Python I/O in the driver process, but the
+  # medallion job cluster runs with backfill_workers > 0 (multi-node, for
+  # Tasks 8-9's fetch parallelization) -- day.py's _land_bronze then reads
+  # that same path back as a distributed Spark job, and any read task
+  # scheduled on a worker node other than the driver hits
+  # FAILED_READ_FILE.FILE_NOT_EXIST, since the worker's own /local_disk0
+  # never had the file. Measured 2026-09-02 on the backfill job's first run
+  # to reach real Spark execution (defect #7). A UC volume is FUSE-mounted
+  # identically on every node, same fix shape as backfill_checkpoint_dir
+  # above; `almanac_dbx.burn.staging` is the one this fix actually used.
+  description = "FUSE-mounted scratch dir for each hour's downloaded .json.gz, visible from every cluster node."
+  default     = "/Volumes/almanac_dbx/burn/staging"
+}
+
 variable "backfill_checkpoint_dir" {
   type = string
   # Not an abfss:// URI: BackfillCheckpoint is pathlib, and it must outlive
