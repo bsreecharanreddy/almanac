@@ -11,7 +11,8 @@ architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
-> (Bronze + Silver) complete — 7 of 7, exit gate verified.**
+> (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
+> Phase 2 (Gold + the Azure burn) planned, not started.**
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
@@ -19,6 +20,12 @@ review queue. The domain is incidental, and that is the point.
 > (130 tests). It has also **run on a real Databricks cluster**: one day of
 > the firehose, 3.79M rows, measured. **No Gold, no features, no model
 > yet** — Phase 2 onward.
+> Planning Phase 2 found **two defects in that committed, CI-green Phase
+> 1 code** — Silver overwrote its whole table on every file, and read the
+> raw archive rather than Bronze. Both are invisible at a sample size of
+> one file, which is all Silver had been run against; both are the first
+> task of Phase 2. Recorded rather than quietly fixed, because the
+> interesting part is *why the tests passed*.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
