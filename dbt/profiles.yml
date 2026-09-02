@@ -1,0 +1,33 @@
+# Two targets, one adapter. Nothing about the models differs between them.
+almanac:
+  target: session
+  outputs:
+    # Local and CI. `method: session` runs dbt in-process against the
+    # SparkSession this repo already builds -- see `almanac.spark.dbt_session`
+    # for why that session, and not any session, is a correctness requirement.
+    session:
+      type: spark
+      method: session
+      schema: gold
+      host: NA # unused by the session method; the adapter still reads the field
+      threads: 1
+
+    # The burn (Task 8). Declared here so the profile is complete and
+    # reviewable now; the `PyHive` extra this method needs at connect time
+    # lands with the task that first exercises it, rather than being carried
+    # as an unused dependency until then.
+    #
+    # The env_var defaults are empty on purpose: dbt renders the whole
+    # profiles file before selecting a target, so a bare `env_var` with no
+    # default would make the local target unusable on any machine that has
+    # never touched Databricks.
+    databricks:
+      type: spark
+      method: http
+      host: "{{ env_var('DATABRICKS_HOST', '') }}"
+      endpoint: "{{ env_var('DATABRICKS_HTTP_PATH', '') }}"
+      token: "{{ env_var('DATABRICKS_TOKEN', '') }}"
+      schema: "{{ env_var('ALMANAC_GOLD_SCHEMA', 'gold') }}"
+      port: 443
+      use_ssl: true
+      threads: 4

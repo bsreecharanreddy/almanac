@@ -275,7 +275,7 @@ the hour, mirroring `bronze.py`.
 
 ---
 
-## Task 2: dbt scaffold on Delta, with the silent-rebuild regression test
+## Task 2: dbt scaffold on Delta, with the silent-rebuild regression test — **DONE**
 
 **Files:**
 - Create: `dbt/dbt_project.yml`, `dbt/profiles.yml`, `dbt/models/sources.yml`
@@ -286,7 +286,16 @@ the hour, mirroring `bronze.py`.
 - `dbt_session(warehouse, metastore) -> SparkSession` — Hive support on
 - Two dbt targets: `session` (local, CI) and `databricks` (the burn)
 
-- [ ] **Step 1: Write the failing test — the one the spike earned**
+- [x] **Step 1: Write the failing test — the one the spike earned**
+
+**As built, correcting the sketch below:** the sketch asserts on
+`gold.fact_pull_request`, which Task 4 creates — so a Task 2 test cannot
+reference it. The defect is a property of the *target*, not of any model,
+so the test drives a canary model in `tests/fixtures/dbt_canary/` against
+the profile this repository actually ships, and runs dbt **twice in two
+separate processes**. It was watched failing for the real reason before
+the fix: `['CREATE OR REPLACE TABLE AS SELECT', 'CREATE OR REPLACE TABLE
+AS SELECT']`. See STATUS.md's verification-log row.
 
 ```python
 def test_gold_model_merges_on_second_run_rather_than_rebuilding(dbt_project):
@@ -302,21 +311,25 @@ def test_gold_model_merges_on_second_run_rather_than_rebuilding(dbt_project):
     assert "MERGE" in ops[1:]
 ```
 
-- [ ] **Step 2: Persistent metastore in `spark.py`**
+- [x] **Step 2: Persistent metastore in `spark.py`**
 
 `enableHiveSupport()` plus an on-disk Derby path. Document *why* in the
 docstring, in the same register as `configure_spark_with_delta_pip`'s
 existing note — this is a correctness requirement wearing a configuration
 costume.
 
-- [ ] **Step 3: dbt project + both targets.** `session` for local and CI;
+- [x] **Step 3: dbt project + both targets.** *(As built: the `databricks`
+  target uses dbt-spark's `http` method, so one adapter serves both
+  targets rather than adding a second.)* `session` for local and CI;
   `databricks` reading host/token/warehouse from env for the burn.
   Nothing about the models differs between targets.
 
-- [ ] **Step 4: Declare Silver as dbt sources** with freshness where it
-  is meaningful.
+- [x] **Step 4: Declare Silver as dbt sources** with freshness where it
+  is meaningful. *(Freshness on `ingested_at`, never `created_at`. As
+  built, source **resolution** is unexercised until Task 3's first model
+  selects from one — stated in STATUS.md rather than implied here.)*
 
-- [ ] **Step 5: Wire `make dbt` and CI.** dbt runs in CI on fixtures.
+- [x] **Step 5: Wire `make dbt` and CI.** dbt runs in CI on fixtures.
   **CI is the only place the metastore config is exercised on a clean
   machine** — Phase 1's Task 2 finding was that a UTC CI runner is
   structurally blind to timezone defects; here the asymmetry runs the

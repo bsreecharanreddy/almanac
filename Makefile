@@ -1,4 +1,4 @@
-.PHONY: test test-all lint fmt typecheck check fixtures
+.PHONY: test test-all lint fmt typecheck check fixtures dbt
 
 test:
 	uv run pytest -m "not network" -v
@@ -21,3 +21,8 @@ check: lint typecheck test
 
 fixtures:
 	uv run python scripts/build_fixtures.py
+
+# Gold. Runs through the runner, never a bare `dbt` command: the SparkSession
+# has to exist, with Delta and a persistent metastore, before dbt asks for one.
+dbt:
+	uv run python -m almanac.gold.runner build
