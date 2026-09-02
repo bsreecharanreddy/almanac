@@ -127,6 +127,8 @@ def test_output_is_exactly_the_canonical_silver_shape(spark: SparkSession) -> No
         "pr_merged",
         "pr_draft",
         "is_pr_comment",
+        "push_size",
+        "push_distinct_size",
     }
 
 

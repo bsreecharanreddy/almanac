@@ -93,6 +93,24 @@ def test_issue_comment_pr_discriminator(spark: SparkSession, modern_events_path:
     assert comments.filter("issue_is_pr").count() == 55
 
 
+def test_push_size_is_extracted_from_the_payload_in_both_eras(
+    spark: SparkSession, modern_events_path: Path, legacy_events_path: Path
+) -> None:
+    """`agg_repo_daily` counts commit volume from `payload.size`, never
+    `size(commits)` -- the commits array is capped at 20 (§12 trap 3), and
+    force-pushes inflate `size`. `distinct_size` is modern-only.
+    """
+    modern = _parsed(spark, modern_events_path).filter("event_type = 'PushEvent'")
+    legacy = _parsed(spark, legacy_events_path).filter("event_type = 'PushEvent'")
+
+    assert modern.filter("push_size IS NULL").count() == 0
+    assert modern.filter("push_distinct_size IS NULL").count() == 0
+    assert modern.filter("push_size > 20").count() > 0, "trap 3: real pushes exceed the array cap"
+
+    assert legacy.filter("push_size IS NULL").count() == 0
+    assert legacy.filter("push_distinct_size IS NOT NULL").count() == 0
+
+
 def test_unknown_event_type_does_not_break_parsing(spark: SparkSession) -> None:
     """A new event type must never be able to break ingestion (CLAUDE.md).
 

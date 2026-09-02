@@ -79,6 +79,13 @@ EVENT_SCHEMA = StructType(
                     StructField("number", LongType()),
                     StructField("pull_request", _PULL_REQUEST),
                     StructField("issue", _ISSUE),
+                    # `PushEvent` commit volume. Use these, never
+                    # `size(commits)` -- the `commits` array is capped at 20
+                    # (§12 trap 3), so a 5,000-commit force-push reads as 20.
+                    # `distinct_size` is modern-only; legacy carries `size`
+                    # alone.
+                    StructField("size", LongType()),
+                    StructField("distinct_size", LongType()),
                 ]
             ),
         ),
@@ -101,6 +108,8 @@ RAW_COLUMNS = (
     "pr_merged",
     "pr_draft",
     "issue_is_pr",
+    "push_size",
+    "push_distinct_size",
 )
 
 
@@ -177,4 +186,6 @@ def parse_events(df: DataFrame, *, json_column: str = "raw_json") -> DataFrame:
         F.col("e.payload.pull_request.merged").alias("pr_merged"),
         F.col("e.payload.pull_request.draft").alias("pr_draft"),
         F.col("e.payload.issue.pull_request").isNotNull().alias("issue_is_pr"),
+        F.col("e.payload.size").alias("push_size"),
+        F.col("e.payload.distinct_size").alias("push_distinct_size"),
     )

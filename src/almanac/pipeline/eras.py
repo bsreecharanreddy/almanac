@@ -53,6 +53,10 @@ SILVER_COLUMNS = (
     "pr_merged",
     "pr_draft",
     "is_pr_comment",
+    # `agg_repo_daily` sums push volume from these -- never `size(commits)`,
+    # which §12 trap 3 caps at 20. `push_distinct_size` is null pre-2015.
+    "push_size",
+    "push_distinct_size",
 )
 
 # Written into the hash input wherever a field is null, so that a null
