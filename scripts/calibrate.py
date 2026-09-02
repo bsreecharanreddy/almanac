@@ -73,7 +73,9 @@ def main(day: str, bronze_path: str, staging_dir: str) -> dict[str, object]:
             started = time.monotonic()
             # read.text, not read.json: per-file inference disagrees between
             # hours of one day and Bronze may not transform (Task 7).
-            raw = spark.read.text(str(result.path)).withColumnRenamed("value", "raw_json")
+            # .as_uri(), not str(): forces the local filesystem regardless of
+            # fs.defaultFS (day.py._land_bronze has the measured failure mode).
+            raw = spark.read.text(result.path.as_uri()).withColumnRenamed("value", "raw_json")
             stamped = add_ingestion_metadata(raw, ingested_at=ingested_at, source_file=result.url)
             partitioned = stamped.withColumn(
                 "event_date", F.lit(hour.date().isoformat())
