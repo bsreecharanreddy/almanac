@@ -12,20 +12,25 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) in progress — 1 of 9 tasks.**
+> Phase 2 (Gold + the Azure burn) in progress — 2 of 9 tasks.**
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (148 tests). It has also **run on a real Databricks cluster**: one day of
-> the firehose, 3.79M rows, measured. **No Gold, no features, no model
-> yet** — Phase 2 onward.
+> (150 tests). It has also **run on a real Databricks cluster**: one day of
+> the firehose, 3.79M rows, measured. dbt now runs on Delta and its
+> incremental behaviour is enforced by a regression test, but **Gold has no
+> models yet, and there are no features and no model** — Phase 2 onward.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of
 > one file, which is all Silver had been run against. **Both are now
 > fixed** (Phase 2 Task 1), and recorded rather than quietly repaired,
-> because the interesting part is *why the tests passed*.
+> because the interesting part is *why the tests passed*. Task 2 hit the
+> same shape a third time: with an ephemeral metastore, dbt rebuilds every
+> model from scratch and still reports success. It was **reproduced
+> deliberately before being fixed** — two consecutive runs, two
+> `CREATE OR REPLACE` commits, no `MERGE`, correct row counts throughout.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
@@ -112,6 +117,7 @@ bind in both directions; it bound upward, from one month to a quarter.
 | Layer | Choice |
 |---|---|
 | Processing | PySpark 4.2.0, Delta Lake 4.4.0 |
+| Transform (Gold only) | dbt-core 1.12.3 + dbt-spark 1.11.0, `session` and `databricks` targets |
 | Cloud | Azure Databricks (Premium, Unity Catalog), ADLS Gen2, `westus3` |
 | Infrastructure | Terraform |
 | Language | Python 3.12 — `uv`, Pydantic v2, `ruff`, `mypy --strict`, `pytest` |
@@ -124,7 +130,8 @@ doc rather than asserted here.
 ## Layout
 
 ```text
-src/almanac/        extract (URLs, fetching) · explore (schema, measurement) · spark
+src/almanac/        extract (URLs, fetching) · explore (schema, measurement) · pipeline · gold · spark
+dbt/                the Gold project — models, sources, both targets
 tests/              unit tests + committed fixtures; tests never touch the network
 docs/design/        the authoritative architecture and phasing document
 docs/findings/      measurements, each with its method and sample size
@@ -139,6 +146,7 @@ docker/             containerized Spark + Delta, matching CI
 uv sync --all-extras --dev
 make check      # ruff + mypy --strict + pytest
 make test-all   # includes Spark tests
+make dbt        # the Gold layer, through the runner that builds the session first
 make fixtures   # rebuild committed fixtures from the live archive
 ```
 
