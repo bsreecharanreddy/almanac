@@ -12,19 +12,23 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) in progress — 3 of 9 tasks.**
+> Phase 2 (Gold + the Azure burn) in progress — 4 of 9 tasks.**
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (151 tests). It has also **run on a real Databricks cluster**: one day of
-> the firehose, 3.79M rows, measured. **Gold now has its first real
-> model:** `dim_repo`, a Kimball SCD2 dimension on repo identity — a
-> rename closes the old row and opens exactly one current row, a
-> case-only rename is detected rather than folded away, and a repo
-> renamed twice yields three versions, not two, all verified against a
-> real three-run lifecycle rather than one build. **There are still no
-> features and no model** — later in Phase 2 and beyond.
+> (158 tests). It has also **run on a real Databricks cluster**: one day of
+> the firehose, 3.79M rows, measured. **Gold has its first two models:**
+> `dim_repo`, a Kimball SCD2 dimension on repo identity — a rename closes
+> the old row and opens exactly one current row, a case-only rename is
+> detected rather than folded away, and a repo renamed twice yields three
+> versions, not two — and `fact_pull_request`, an event-native
+> accumulating snapshot: one row per PR, every column derived from the
+> event stream rather than the `payload.pull_request` object October 2025
+> gutted, and `least()` folding on every rerun so an out-of-order `opened`
+> event cannot overwrite a real timestamp with null. Both verified against
+> real multi-run lifecycles, not one build. **There are still no features
+> and no model** — later in Phase 2 and beyond.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of

@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: fact_pull_request
+    description: >
+      Accumulating-snapshot fact, one row per pull request, keyed on
+      (repo_id, pr_number). Every column is derived from an event-level
+      field, never from an embedded payload object (design doc §4.3a).
+      Enforced column contracts and the fact -> dim_repo relationship land
+      in Task 6.
+    columns:
+      - name: repo_id
+        description: Stable across all three schema eras (§12 trap 7).
+        data_tests: [not_null]
+      - name: pr_number
+        description: >
+          One of the five payload fields that survived the October 2025
+          reduction, so the key holds in every era.
+        data_tests: [not_null]
+      - name: opened_at
+        description: The `opened` event's own `created_at`. Null until observed.
+      - name: author_login
+        description: The `opened` event's `actor_login` (§4.3a). Null until observed.
+      - name: closed_at
+        description: The `closed` event's `created_at`. Null while the PR is open.
+      - name: first_review_at
+        description: Earliest `PullRequestReviewEvent`. Task 5 widens this to first human response.
+      - name: merged
+        description: >
+          From `payload.pull_request.merged` via Silver. Era-bound: null in
+          the reduced era, which carries no merge outcome.
+      - name: draft
+        description: >
+          From `payload.pull_request.draft` via Silver. Era-bound: null
+          before 2015 and in the reduced era. Never folded to false.
+      - name: is_censored
+        description: >
+          No terminal event observed. Excluded from the label in Task 5;
+          the rate is reported, not hidden (§5.1).
+      - name: last_ingested_at
+        description: >
+          High-water mark of the events folded into this row. Drives the
+          incremental filter so out-of-order batches neither re-read nor skip.
