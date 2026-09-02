@@ -9,17 +9,19 @@ test has to actually rerun it rather than inspecting one build.
 The defining property is that **out-of-order arrival preserves the
 earliest timestamp** -- the `opened` event for a PR can land in a later
 file than its `closed` event, and a plain `MERGE ... UPDATE SET` would
-overwrite the real `opened_at` with a null. `least()` over the batch and
-the stored row is what makes that safe, and the mutation that removes it
-reddens `test_out_of_order_open_after_close_keeps_both_timestamps`.
+overwrite the real `opened_at` with a null. The model handles this by
+recomputing any PR touched this batch in full from `int_pr_events`, so a
+touched PR always sees its complete event history; the mutation that
+reverts to a batch-only aggregate reddens
+`test_out_of_order_open_after_close_keeps_both_timestamps`.
 
-Only the handful of Silver columns the model selects are written here;
+Only the handful of Silver columns `int_pr_events` reads are written here;
 `test_pipeline.py` already covers Silver deriving them.
 """
 
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -31,10 +33,12 @@ pytestmark = [pytest.mark.spark, pytest.mark.integration]
 _SILVER_SCHEMA = (
     "repo_id long, pr_number long, created_at timestamp, event_type string, "
     "event_action string, actor_login string, pr_merged boolean, pr_draft boolean, "
-    "ingested_at timestamp"
+    "is_pr_comment boolean, ingested_at timestamp"
 )
 
-_Event = tuple[int, int, datetime, str, str | None, str | None, bool | None, bool | None, datetime]
+_Event = tuple[
+    int, int, datetime, str, str | None, str | None, bool | None, bool | None, bool | None, datetime
+]
 
 
 def _event(
@@ -48,8 +52,9 @@ def _event(
     actor: str | None = None,
     merged: bool | None = None,
     draft: bool | None = None,
+    is_pr_comment: bool | None = None,
 ) -> _Event:
-    """One Silver row in the shape `fact_pull_request` reads."""
+    """One Silver row in the shape `int_pr_events` reads."""
     return (
         repo_id,
         pr_number,
@@ -59,6 +64,7 @@ def _event(
         actor,
         merged,
         draft,
+        is_pr_comment,
         ingested_at,
     )
 
@@ -69,6 +75,7 @@ def _append_silver(spark: SparkSession, path: Path, rows: list[_Event]) -> None:
 
 
 def _build_gold(paths: dict[str, Path]) -> None:
+    # `+fact_pull_request`: the fact plus its upstream `int_pr_events` view.
     result = subprocess.run(
         [
             sys.executable,
@@ -84,7 +91,7 @@ def _build_gold(paths: dict[str, Path]) -> None:
             str(paths["silver_path"]),
             "build",
             "--select",
-            "fact_pull_request",
+            "+fact_pull_request",
         ],
         capture_output=True,
         text=True,
@@ -93,7 +100,7 @@ def _build_gold(paths: dict[str, Path]) -> None:
     assert result.returncode == 0, f"dbt build failed:\n{result.stdout}\n{result.stderr}"
 
 
-_TS_COLUMNS = ("opened_at", "closed_at", "first_review_at")
+_TS_COLUMNS = ("opened_at", "closed_at", "first_review_at", "first_response_at")
 
 
 def _fact(spark: SparkSession, warehouse: Path) -> DataFrame:
@@ -272,3 +279,204 @@ def test_second_build_merges_rather_than_rebuilding(
     assert ops[0] == "CREATE OR REPLACE TABLE AS SELECT"
     assert "MERGE" in ops[1:], f"second build did not merge; ops were {ops}"
     assert _fact(spark, gold_paths["warehouse"]).filter(F.col("repo_id") == 703).count() == 1
+
+
+# --- The label: time_to_first_human_response (§5.1) ------------------------
+
+OPEN = datetime(2025, 8, 13, 9, 0, tzinfo=UTC)
+
+
+def _comment(
+    repo_id: int,
+    pr_number: int,
+    at: datetime,
+    ingested: datetime,
+    actor: str,
+    *,
+    genuine_issue: bool = False,
+) -> _Event:
+    """An IssueCommentEvent, on a PR unless `genuine_issue`."""
+    return _event(
+        repo_id,
+        pr_number,
+        at,
+        ingested,
+        event_type="IssueCommentEvent",
+        actor=actor,
+        is_pr_comment=not genuine_issue,
+    )
+
+
+def test_label_counts_only_non_author_human_responses(
+    spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
+) -> None:
+    """One build, four PRs, each pinning one attribution rule."""
+    rows: list[_Event] = [
+        # PR 1: the author's own comment is not a response; the reviewer's is.
+        _event(900, 1, OPEN, T0, event_type="PullRequestEvent", action="opened", actor="ann"),
+        _comment(900, 1, OPEN + timedelta(hours=1), T0, "ann"),
+        _event(
+            900, 1, OPEN + timedelta(hours=3), T0, event_type="PullRequestReviewEvent", actor="bo"
+        ),
+        # PR 2: a genuine issue comment (is_pr_comment = false) never counts.
+        _event(900, 2, OPEN, T0, event_type="PullRequestEvent", action="opened", actor="ann"),
+        _comment(900, 2, OPEN + timedelta(hours=1), T0, "cy", genuine_issue=True),
+        # PR 3: opened by a bot; a human review still lands as the response.
+        _event(
+            900, 3, OPEN, T0, event_type="PullRequestEvent", action="opened", actor="renovate[bot]"
+        ),
+        _event(
+            900, 3, OPEN + timedelta(hours=2), T0, event_type="PullRequestReviewEvent", actor="di"
+        ),
+        # PR 4: legacy shape -- no PullRequestReviewEvent in that era, so the
+        # label rests on a review *comment* from someone other than the author.
+        _event(
+            1400,
+            4,
+            OPEN,
+            T0,
+            event_type="PullRequestEvent",
+            action="opened",
+            actor="el",
+            draft=None,
+        ),
+        _event(
+            1400,
+            4,
+            OPEN + timedelta(hours=5),
+            T0,
+            event_type="PullRequestReviewCommentEvent",
+            actor="fi",
+        ),
+    ]
+    _append_silver(spark, gold_paths["clean_path"], rows)
+    _build_gold(gold_paths)
+    fact = _fact(spark, gold_paths["warehouse"])
+
+    pr1 = _one(fact, 900, 1)
+    assert pr1["first_response_at"] == epoch(OPEN + timedelta(hours=3)), (
+        "author's own comment skipped"
+    )
+    assert pr1["time_to_first_response_seconds"] == 3 * 3600
+
+    pr2 = _one(fact, 900, 2)
+    assert pr2["first_response_at"] is None, "a genuine issue comment is not a PR response"
+    assert pr2["label_exclusion"] == "right_censored"
+
+    pr3 = _one(fact, 900, 3)
+    assert pr3["author_is_bot"] is True
+    assert pr3["first_response_at"] == epoch(OPEN + timedelta(hours=2)), (
+        "bot PRs are flagged, not dropped"
+    )
+
+    pr4 = _one(fact, 1400, 4)
+    assert pr4["first_review_at"] is None, "no PullRequestReviewEvent exists in the legacy era"
+    assert pr4["first_response_at"] == epoch(OPEN + timedelta(hours=5))
+    assert pr4["time_to_first_response_seconds"] == 5 * 3600
+
+
+def test_label_exclusions_are_stated_never_silent(
+    spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
+) -> None:
+    rows: list[_Event] = [
+        # Draft: a response exists, but a draft accrues no SLA time.
+        _event(
+            910,
+            1,
+            OPEN,
+            T0,
+            event_type="PullRequestEvent",
+            action="opened",
+            actor="ann",
+            draft=True,
+        ),
+        _event(
+            910, 1, OPEN + timedelta(hours=2), T0, event_type="PullRequestReviewEvent", actor="bo"
+        ),
+        # Null draft (legacy) is unknown, not "not a draft is false" -> still labelled.
+        _event(
+            910,
+            2,
+            OPEN,
+            T0,
+            event_type="PullRequestEvent",
+            action="opened",
+            actor="ann",
+            draft=None,
+        ),
+        _event(
+            910, 2, OPEN + timedelta(hours=2), T0, event_type="PullRequestReviewEvent", actor="bo"
+        ),
+        # No observed open -> author unknown -> the exclusion cannot be evaluated.
+        _event(
+            910, 3, OPEN + timedelta(hours=1), T0, event_type="PullRequestReviewEvent", actor="bo"
+        ),
+        # Opened and closed, but no response ever -> a stated exclusion, not
+        # a row with a null label and a null reason.
+        _event(910, 4, OPEN, T0, event_type="PullRequestEvent", action="opened", actor="ann"),
+        _event(
+            910,
+            4,
+            OPEN + timedelta(hours=4),
+            T0,
+            event_type="PullRequestEvent",
+            action="closed",
+            merged=False,
+        ),
+    ]
+    _append_silver(spark, gold_paths["clean_path"], rows)
+    _build_gold(gold_paths)
+    fact = _fact(spark, gold_paths["warehouse"])
+
+    draft = _one(fact, 910, 1)
+    assert draft["label_exclusion"] == "draft"
+    assert draft["time_to_first_response_seconds"] is None
+
+    null_draft = _one(fact, 910, 2)
+    assert null_draft["label_exclusion"] is None, "a null draft flag is not a draft"
+    assert null_draft["time_to_first_response_seconds"] == 2 * 3600
+
+    no_response = _one(fact, 910, 4)
+    assert no_response["label_exclusion"] == "closed_no_response"
+    assert no_response["time_to_first_response_seconds"] is None
+
+    # The core invariant: label is non-null exactly when there is no exclusion.
+    mismatched = fact.filter(
+        "(label_exclusion is null) != (time_to_first_response_seconds is not null)"
+    )
+    assert mismatched.count() == 0
+
+    orphan = _one(fact, 910, 3)
+    assert orphan["opened_at"] is None
+    assert orphan["label_exclusion"] == "author_unobserved"
+    assert orphan["time_to_first_response_seconds"] is None
+
+
+def test_label_is_stable_when_a_later_response_arrives(
+    spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
+) -> None:
+    """The governing principle for the label: once the first response is
+    observed, an event after it must not change the label."""
+    first = OPEN + timedelta(hours=2)
+    later = OPEN + timedelta(hours=6)
+
+    _append_silver(
+        spark,
+        gold_paths["clean_path"],
+        [
+            _event(920, 1, OPEN, T0, event_type="PullRequestEvent", action="opened", actor="ann"),
+            _event(920, 1, first, T0, event_type="PullRequestReviewEvent", actor="bo"),
+        ],
+    )
+    _build_gold(gold_paths)
+    assert _one(_fact(spark, gold_paths["warehouse"]), 920, 1)["first_response_at"] == epoch(first)
+
+    _append_silver(
+        spark,
+        gold_paths["clean_path"],
+        [_event(920, 1, later, T1, event_type="PullRequestReviewEvent", actor="cy")],
+    )
+    _build_gold(gold_paths)
+    row = _one(_fact(spark, gold_paths["warehouse"]), 920, 1)
+    assert row["first_response_at"] == epoch(first), "a later response must not move the label"
+    assert row["time_to_first_response_seconds"] == 2 * 3600

@@ -96,6 +96,8 @@ def _parsed_defaults() -> dict[str, Column]:
         "pr_merged": F.lit(None).cast("boolean"),
         "pr_draft": F.lit(None).cast("boolean"),
         "issue_is_pr": F.lit(None).cast("boolean"),
+        "push_size": F.lit(None).cast("long"),
+        "push_distinct_size": F.lit(None).cast("long"),
         "event_date": F.lit("2025-08-13"),
         "event_hour": F.lit(14),
     }
