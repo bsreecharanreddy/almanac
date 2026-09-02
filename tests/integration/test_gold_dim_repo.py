@@ -75,7 +75,15 @@ def _build_gold(*, warehouse: Path, metastore: Path, target_path: Path, silver_p
             str(silver_path),
             "build",
             "--select",
-            "dim_repo+",
+            "dim_repo",
+            # No `+`: the descendant graph pulls in the fact/agg -> dim_repo
+            # relationships tests, and `--indirect-selection` cannot exclude
+            # a *directly* selected test. `cautious` still drops those two
+            # (their fact/agg parent is unselected) while keeping the
+            # snapshot's own `assert_dim_repo_scd2` / `not_null`. `make dbt`
+            # runs the relationships tests in the full build.
+            "--indirect-selection",
+            "cautious",
         ],
         capture_output=True,
         text=True,

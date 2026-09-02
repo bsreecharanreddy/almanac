@@ -4,7 +4,6 @@
         incremental_strategy='merge',
         unique_key=['repo_id', 'pr_number'],
         file_format='delta',
-        on_schema_change='sync_all_columns',
     )
 }}
 
@@ -12,6 +11,11 @@
   One row per pull request, as an accumulating snapshot (design doc §4.3):
   columns fill in as lifecycle events arrive, and out-of-order batches
   preserve the earliest timestamp.
+
+  `contract: enforced` and `on_schema_change: fail` are set together in
+  schema.yml (dbt validates that pairing there, not here): a column added
+  or retyped is a deliberate change that should break the build, not drift
+  in silently.
 
   Every column is derived from an event-level field via `int_pr_events` --
   never `payload.pull_request.*`, which October 2025 gutted (§12 trap 12).

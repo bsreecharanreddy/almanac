@@ -70,6 +70,10 @@ def _build_gold(paths: dict[str, Path]) -> None:
             "build",
             "--select",
             "agg_repo_daily",
+            # cautious: don't run the fact -> dim_repo relationships test,
+            # whose other parent this partial build does not include.
+            "--indirect-selection",
+            "cautious",
         ],
         capture_output=True,
         text=True,
