@@ -6,8 +6,8 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase 0 (Exploration) complete — 9 of 9. Phase 1 in progress — 6 of
-7.** The active plan is
+**Phase 0 (Exploration) complete — 9 of 9. Phase 1 complete — 7 of 7,
+exit gate verified.** The active plan is
 `docs/plans/2026-09-01-phase-1-pipeline-plan.md` (7 tasks: declarative
 source config, Bronze, gap detection, era normalization, dedup, quality +
 quarantine, and an Azure calibration run). Work is on branch
@@ -22,6 +22,58 @@ and a conserving clean/quarantine split. Measured on the fixtures —
 modern 2,000 raw → 2,000 clean, 0 quarantined; legacy 2,000 raw → 1,997
 clean + 3 quarantined (all `repo_id_present`, the three records carrying
 no `repository` object) + 0 removed.
+
+### Tier 3's span, derived — the number Phase 1 existed to buy
+
+Committed here with its arithmetic, as design doc §4.5 step 4 requires,
+**before** any backfill starts. Measured on Databricks job run
+`404509887846902`, 2026-09-01.
+
+```
+measured  one day (2025-08-13, 24/24 hours)  = 2.012 GB gz, 3,794,323 rows
+          billed cluster time                = 523.5 s = 0.14542 h
+          throughput                         = 13.84 GB gz / billed cluster-hour
+          cluster rate (5 VMs @ $0.474)      = $2.370 / hr
+          $ per day-of-data                  = 0.14542 x 2.370 = $0.3446
+
+derived   budget for Tier 3 = 0.40 x $184    = $73.60
+          affordable days   = 73.60 / 0.3446 = 214 days
+          Q3 2025                            = 92 days
+          cost of the full quarter           = 92 x 0.3446 = $31.71 (17.2%)
+```
+
+**Tier 3 grows from "1 month" to the full Q3 2025 quarter** — 2025-07-01
+to 2025-09-30, ~185 GB gz — at 17.2% of the credit against a 40% cap,
+**2.3× headroom**. §4.5 says the rule binds in both directions; it bound
+upward. The headroom is what absorbs a full-medallion run being slower
+than the Bronze-only rate this was measured at.
+
+**The recorded cluster cost was 25% low.** §4.5 had $1.896/hr for
+"4 × `D4ds_v6`" — the component rates reproduce that exactly at four
+nodes, but `num_workers: 4` provisions **five** VMs, four workers and a
+driver. Corrected to $2.370/hr, and "97 cluster-hours on $184" is really
+77.6.
+
+### Phase 1 exit gate — verified
+
+| Gate | Status |
+|---|---|
+| `make check` green | ✅ ruff, `mypy --strict`, 130 tests |
+| CI green on the PR | ✅ every task's commit |
+| Re-running an hour is idempotent | ✅ `replaceWhere`, tested and mutation-checked |
+| Cross-hour duplicates removed (trap 4) | ✅ Task 5, tested for the first time |
+| Legacy timestamps land as UTC | ✅ the `-07:00` case asserted on epochs |
+| Legacy events get a stable content-hash id | ✅ and the key was corrected after it merged real events |
+| Repo-name case preserved end to end | ✅ Task 4 |
+| `clean + quarantined == input` | ✅ asserted as an equation with duplicates named |
+| Every quality rule null-safe | ✅ `coalesce(expr, False)`, mutation-checked |
+| All three schema eras ingest | ✅ both fixtures end to end; `reduced_v3` labelled |
+| Missing hours reported, never filled | ✅ Task 3; the calibration reported 24/24 |
+| Cluster throughput measured on Azure | ✅ findings doc committed |
+| Tier 3's span derived with arithmetic | ✅ above |
+| 0 clusters running, teardown verified | ✅ all five job clusters auto-terminated |
+| STATUS.md updated in each task's commit | ✅ seven commits, seven rows |
+| README refreshed | ✅ including the diagram when Silver landed |
 
 **Cloud resources now exist and are running** (`terraform apply`,
 2026-09-01): resource group, ADLS Gen2 with bronze/silver/gold/features
@@ -47,27 +99,26 @@ Every other figure in the docs remains bracketed or absent by design.
 
 ## Next
 
-**Phase 1 Task 7 — calibration on Azure.** The deadline-critical
-measurement: real cluster throughput in GB per cluster-hour, which every
-remaining cost figure in the design is derived from rather than guessed
-at. Tier 3's span depends on it. Two things to carry into it — the dedup
-window is a full shuffle keyed on `event_id` and is the obvious candidate
-for the dominant cost, and `terraform destroy` between sessions remains
-the standing rule against the Sep 24 credit expiry.
+**Phase 2.** Gold, SCD2 repo dimension, the accumulating snapshot, and
+`fact_pull_request` — which the label depends on. The Tier 3 backfill runs
+against the span derived above, and the Photon A/B reuses that same slice
+so both arms are compared under identical conditions.
 
-One design question is deliberately left open rather than answered inline:
-a *membership* check on `event_type` is worth having as a schema-drift
-signal, but it needs a measured list of known types and it belongs at
-`warn` severity — a new GitHub event type is drift to flag, not data to
-reject.
+Carried forward from Phase 1, none of it blocking:
 
-**Phase 1 gate** (all 7 tasks): Bronze→Silver runs end to end from
-`conf/sources/gharchive.yml` against the committed fixtures, all three
-schema eras ingest, the clean/quarantine split is asserted to conserve
-records, adjacent-hour duplicates are exercised for real (Phase 0 never
-tested trap 4), and a calibration run on Azure produces a **measured**
-GB/cluster-hour figure — the number every remaining cost estimate in the
-design rests on.
+- **A third of the calibration's billed time was single-threaded HTTP
+  download**, not compute (174.3 s of 523.5 s). Parallelising the fetch is
+  the obvious cost lever for the backfill.
+- **The dedup window is a full shuffle keyed on `event_id`** and is the
+  candidate for the dominant cost at 92 days rather than one.
+- **A membership check on `event_type`** is worth having as a schema-drift
+  signal, but it needs a measured list of known types and belongs at
+  `warn` severity — a new GitHub event type is drift to flag, not data to
+  reject.
+- **The measured throughput is Bronze-only.** §4.5 step 1 describes
+  bronze → silver → gold; Task 7's plan specifies Bronze. The 2.3× headroom
+  is the margin, and if the full pipeline is worse than that, Tier 3
+  shrinks — which is the rule working, not a failure.
 
 ## Hard dates
 
@@ -113,3 +164,4 @@ failures.
 | 2026-09-01 | Phase 1 Task 4 — era normalization | `make check` (ruff, ruff format, mypy --strict, 103 tests); a 3-timezone probe of the legacy content hash; four mutations | **Green, 103 tests (was 91), and design-changing — the third member of the timestamp family, on the *identity* side.** The plan hashes `created_at` by casting the timestamp to a string, but casting a timestamp to string **renders it in the session timezone**. Probed before trusting it: one legacy event hashed three different ways under `UTC`, `America/New_York` and `Asia/Kolkata`. That hash is the surrogate `event_id` for every pre-2015 event — persisted, and the only id those events will ever have — so a backfill and a later incremental run under different session timezones would re-ingest **all of legacy history** as new rows with dedup unable to notice. Now hashed from the **epoch second**, which is an instant and carries no rendering. The planned `test_content_hash_is_stable_across_runs` could not have caught this: it compares two calls inside one session, so it pins determinism and says nothing about the variable that actually moves. Together with Task 2 (naive datetime → wrong instant stored) and Task 3 (naive vs aware → false 24-hour outage), that is the same root cause surfacing on the write, comparison, and identity sides in three consecutive tasks. **A second correctness fix in the same function:** `concat_ws` skips nulls, which the plan's comment credits with preventing a hash collapse — true, but on its own it also makes `("a", null, "c")` and `("a", "c", null)` render identically, silently merging two real legacy events that have no native id to fall back on. Null fields now write a sentinel and hold their position; a test constructs the colliding pair. **Three further plan defects:** (1) every planned timestamp assertion compares a *collected* datetime against an aware one, which contradicts the rule Task 2 established two days of work earlier and fails on every machine — rewritten as epoch comparisons via a new shared `tests/helpers.py` (which also required making `tests/` a package; it was not one); (2) `normalize_events` never selects the canonical columns despite the task declaring exactly which eight it produces, leaking `created_at_raw`, `actor_raw` and `id` into Silver — leaving two id columns, one null on every legacy row, which is the shape a later dedup is most likely to key on by mistake. **That is the second consecutive task whose declared interface and actual code disagreed** (Task 3 was the first), so the contract is now asserted as a test rather than stated in prose; (3) era labels were string literals rather than `SchemaEra`, despite the task declaring it consumes that enum — now taken from the enum, with a test asserting the Spark labels agree with `era_for`'s Python answer at both boundaries, from both sides. Each of the four guards was mutation-checked and each is killed by exactly one test. **`to_timestamp` was verified, not assumed, to parse the legacy `-07:00` offset** — it does. |
 | 2026-09-01 | Phase 1 Task 5 — cross-hour deduplication | `make check` (ruff, ruff format, mypy --strict, 111 tests); a null-`event_id` probe; five mutations | **Green, 111 tests (was 103). §12 trap 4 is now tested rather than merely measured** — Phase 0 recorded a duplicate ratio of 1 in 6.0M and explicitly noted its sample used non-adjacent hours, so the across-the-boundary case had never been exercised. It is now, and the realistic bug that would break it (`Window.partitionBy("event_id", "event_hour")`, i.e. per-partition dedup) reddens exactly that test. **New finding, found by asking what the function does with input the pipeline does not currently produce:** `Window.partitionBy("event_id")` groups every null into one frame, so **four genuinely distinct id-less events deduplicate down to one** — measured, 4 in and 1 out. Two rows with no id cannot be shown to be the same event, so collapsing them is deletion, not deduplication. Silver's declared order is normalize → dedup → quality split, which puts the `event_id_present` *reject* rule — a rule that exists in the Task 1 config, so the project already treats a null id as realistic input — strictly too late to protect against it; it would report a single bad record where the rest had already been destroyed, under-stating the damage by exactly its own size. `normalize_events` structurally cannot emit a null id today, and that is precisely what made this worth pinning: the invariant was nowhere stated and nowhere tested. Id-less rows now pass through untouched. **Four plan defects:** (1) `test_earliest_occurrence_is_the_one_kept` asserts on a *collected* datetime — the third consecutive task in which Task 2's epoch rule had to be re-applied to planned test code; (2) the planned test helper is annotated `-> "DataFrame"` with a `# noqa: F821` suppressing a name that is simply never imported, and `data: list[tuple]` fails `mypy --strict`'s `disallow_any_generics`; (3) `duplicate_stats(df) -> Row | Any` collapses to plain `Any`, silently disabling type checking at every call site — narrowed to `Row`; (4) the `ingested_at` tiebreak the docstring documents had no test, so removing it left the suite green. Five mutations run, each killed by exactly one test. **Two observations carried forward rather than acted on:** `duplicate_stats` returns a bare `Row` while Task 3's sibling report type is a frozen dataclass (`GapReport`) — inconsistent, but the plan declares `Row` and nothing consumes it yet; and the dedup window is a full shuffle keyed on `event_id`, plausibly the dominant cost in Task 7's calibration run, which is a thing to measure there rather than estimate here. |
 | 2026-09-01 | Phase 1 Task 6 — quality rules, quarantine split, and the Bronze→Silver runner | `make check` (ruff, ruff format, mypy --strict, 130 tests); both committed fixtures run end to end; a collision probe against a real legacy hour; five mutations | **Green, 130 tests (was 111). Silver is complete, and running real data through it found that the pipeline was silently deleting real events.** Legacy events carry no native id, so Task 4 hashes `(created_at, actor_login, repo_id, event_type)` to make one — a field set the plan describes as "the minimal set that distinguishes two genuinely different events". Measured against a real legacy hour: **two colliding pairs in 2,000 events, and neither pair was a duplicate.** One actor pushed two different commit ranges to one repo inside the same second; another opened issues #13232 and #13229 inside the same second. Dedup deleted one of each — roughly **1 in 1,000 legacy events, silently**. Phase 0's measured duplicate ratio of 1 in 6.0M could not have caught it: that sample was modern data, which carries native ids and never reaches this hash. `event_url` is non-null on all 2,000 sampled and takes the same hour to **zero** collisions; it is stable content (a canonical URL naming the specific commit range or issue) rather than a serialization artifact, which is the line that keeps the rest of the payload out of the key. The legacy fixture went from 1,995 clean to 1,997. **Task 4 and Task 5 could not be composed at all.** `normalize_events` did not carry `ingested_at`, which is exactly the column `deduplicate` orders on — so the Silver order the plan declares (normalize, then dedup) raised `UNRESOLVED_COLUMN` the first time anything tried it. Both tasks were green, and so was CI, because nothing had wired them together; the same omission also made `created_at_not_future` — a rule declared back in Task 1 — unrunnable, since it compares against `ingested_at`. That is the **third consecutive task with an interface gap, and the first between two already-committed modules** rather than between a plan's prose and its code. `ingested_at` is now part of the Silver contract, and a new test applies each declared rule on its own so a failure names the rule instead of failing the pipeline with one unresolved column. **The plan lists `silver.py` under "Files: Create" and never specifies it** — `run_silver` was written from the design's declared Silver order. It takes `ingested_at` as a required argument rather than reading the clock, per Task 2's finding: a clock read would make a replay of the same file produce different rows *and still pass a count-based idempotency check*. Era dispatch lives at the read boundary and is read from the parsed schema rather than the filename's date. Legacy `repo_name` is reconstructed as `owner/name` to match modern's already-qualified `owner/repo` — 1,997 of 2,000 legacy records carry both — because leaving it unqualified would make the column mean two different things either side of 2015 and Phase 2's SCD2 would read the era boundary as a mass rename of every repo that survived it; joined with `concat`, which propagates nulls, not `concat_ws`, which would emit a bare unqualified name. **Four further plan defects:** (1) the integration test opens `2025-08-13-14.jsonl.gz`, which does not exist — the fixture is `modern-2025-08-13-14.jsonl.gz`, and `conftest.py` already had session fixtures resolving both eras; (2) its test parameters are unannotated, the fourth task in a row `mypy --strict`'s `disallow_incomplete_defs` has rejected planned test code; (3) `-> "F.Column"` is not a real path — `Column` comes from `pyspark.sql`; (4) conservation is asserted as `clean + quarantined <= raw`, which dropping every row satisfies — rewritten as an equation with the removed duplicates named and added back, and the `integration` marker registered. **Task 1's open question settled:** `event_type_known` only asserted `event_type IS NOT NULL`, and that name would have appeared in quarantine analysis as though a membership check had run; renamed to `event_type_present`. Five mutations run, each killed by exactly one test. |
+| 2026-09-01 | Phase 1 Task 7 — calibration on Azure | Databricks job run `404509887846902`, `westus3`; five runs, 0.436 cluster-hours, **$1.03** total; `make check` (130 tests) | **Green, and the number Phase 1 existed to buy is measured: 13.84 GB gz per billed cluster-hour.** One day (2025-08-13), 24/24 hours with no gaps, 3,794,323 rows, 2.012 GB gz — within 4% of Phase 0's independent ~2.1 GB/day estimate. **The plan's script could not have run.** Verified locally before spending anything: `write_bronze` partitions by `event_date`/`event_hour` and the planned script never adds those columns, so it fails with `DELTA_PARTITION_COLUMN_NOT_FOUND` — after paying for cluster startup. It also calls `hours_in_range` with datetimes when it takes dates and yields `(date, hour)` pairs (Task 3's defect, third appearance), and `len()` on that generator. `expected_hours` from Task 3 replaced all of it. **One measurement decision changed the answer materially:** the plan asks for a single wall-clock figure, which cannot separate a slow cluster from a slow network. Timing fetch and Spark separately gives 36.72 GB/hr by Spark time, 19.50 by wall clock, and **13.84 per *billed* cluster-hour once setup is counted** — the only one of the three that is what you actually pay for. A single-timer measurement would have understated the bill by a third. **A third of the billed time (174.3 s of 523.5 s) was single-threaded HTTP download**, which is the obvious Phase 2 cost lever and is deliberately not built now. **Four failed runs, each a fact worth recording** rather than a fix guessed at: the job launcher will not read `python_file` from a Unity Catalog volume even with `READ_VOLUME` granted (workspace files work — and the first grant fix *didn't* work, which is what said the component had been misnamed); **public DBFS root is disabled on this workspace**; and `spark.read.json` infers a different schema for different hours of the same day, so hour N's write rejects hour N+1. That last one is a data finding, not a config one, and its fix is a design correction: **Bronze now reads raw text, not parsed JSON** — parsing is a transformation and Bronze never transforms, which is exactly what Task 2's own Bronze tests already assumed with their `raw_json string` schema. Raw text also has one schema for every hour and every era. **The recorded cluster cost was 25% low:** §4.5 had $1.896/hr for "4 × `D4ds_v6`", and live Azure Retail Prices API rates reproduce that exactly at four nodes — but `num_workers: 4` provisions five VMs, four workers and a driver. Corrected to $2.370/hr. **Tier 3 derived and committed with its arithmetic above: the full Q3 2025 quarter, 92 days, $31.71, 17.2% of the credit against a 40% cap.** §4.5 says the rule binds in both directions; it bound upward, from one month to a quarter. Teardown verified: 0 active clusters. |

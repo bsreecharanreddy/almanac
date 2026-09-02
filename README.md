@@ -11,13 +11,14 @@ architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
-> (Bronze + Silver) in progress — 6 of 7.**
+> (Bronze + Silver) complete — 7 of 7, exit gate verified.**
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (130 tests). **No Gold, no features, no model yet** — later phases. The
-> one task left in Phase 1 is a calibration run on Azure.
+> (130 tests). It has also **run on a real Databricks cluster**: one day of
+> the firehose, 3.79M rows, measured. **No Gold, no features, no model
+> yet** — Phase 2 onward.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
@@ -84,13 +85,18 @@ which is the entire point of doing it first:
 | **The bot heuristic was wrong** | 1,002 distinct matching logins | **869 (86.7%) were human surnames.** Volume-ranked inspection had shown 100% true positives — structurally blind, since bots are high-volume by definition |
 | **SCD2 is warranted** | 1,071,901 repos across Q3 2025 | **3,792** renames against a gate of 50. Case-only renames exist, so comparison must be case-sensitive |
 | **Availability, not quota, picks the region** | `az vm list-skus --all`, 4 regions | Every Databricks node type is `NotAvailableForSubscription` in `eastus2`/`eastus`, all zones. Deployed to **`westus3`** |
+| **Cluster throughput, measured not estimated** | One day (2025-08-13) on 4 × `D4ds_v6` + driver, DBR 17.3 LTS | **13.84 GB gz per *billed* cluster-hour** — 3.79M rows, $0.34/day-of-data. Timing compute and network separately mattered: the Spark-only rate is 36.72 and a single wall-clock timer would have understated the bill by a third |
+| **The recorded cluster cost was 25% low** | Azure Retail Prices API, `westus3` | `num_workers: 4` provisions **five** VMs — four workers and a driver. The recorded $1.896/hr counted workers only; it is $2.370/hr |
 
 Full write-ups in [`docs/findings/`](docs/findings/), each carrying its
 method and its sample size.
 
-**Largest open unknown:** cluster throughput. Nothing has run on Spark at
-scale yet, and every cost figure in the design depends on it — so Tier 3's
-span is derived from a calibration run rather than chosen up front.
+**That unknown is now closed.** Cluster throughput was the last unmeasured
+input, and every cost figure in the design depended on it — so Tier 3's
+span was derived from a calibration run rather than chosen up front. It
+came out at **13.84 GB gz per billed cluster-hour**, which made the full
+Q3 2025 quarter affordable at 17.2% of the credit. The rule was written to
+bind in both directions; it bound upward, from one month to a quarter.
 
 ## Stack
 
