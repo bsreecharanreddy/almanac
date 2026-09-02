@@ -58,7 +58,10 @@ max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # Comparing against expected literals is normal and readable in tests.
-"tests/**/*.py" = ["PLR2004"]
+# PLR0913: a test builder that spells out every field of the row it lands
+# is clearer than one taking a config object -- the explicit keywords are
+# what make the call site readable at a glance.
+"tests/**/*.py" = ["PLR2004", "PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"

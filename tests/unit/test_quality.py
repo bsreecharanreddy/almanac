@@ -7,7 +7,7 @@ from pyspark.sql import SparkSession
 from almanac.pipeline.eras import normalize_events
 from almanac.pipeline.quality import apply_rules, split
 from almanac.pipeline.source import QualityRule, Severity, SourceConfig
-from tests.helpers import one
+from tests.helpers import one, raw
 
 pytestmark = pytest.mark.spark
 
@@ -89,21 +89,18 @@ def test_every_declared_rule_resolves_against_the_silver_shape(spark: SparkSessi
     pipeline with one unresolved column.
     """
     silver = normalize_events(
-        spark.createDataFrame(
-            [
-                (
-                    "2025-08-13T14:00:00Z",
-                    "a",
-                    1,
-                    "o/r",
-                    "PushEvent",
-                    "9",
-                    None,
-                    datetime(2026, 9, 2, 12, 0, tzinfo=UTC),
-                )
-            ],
-            "created_at_raw string, actor_raw string, repo_id long, repo_name string, "
-            "event_type string, id string, event_url string, ingested_at timestamp",
+        raw(
+            spark,
+            (
+                "2025-08-13T14:00:00Z",
+                "a",
+                1,
+                "o/r",
+                "PushEvent",
+                "9",
+                None,
+                datetime(2026, 9, 2, 12, 0, tzinfo=UTC),
+            ),
         )
     )
     for rule in SourceConfig.load(Path("conf/sources/gharchive.yml")).quality_rules:

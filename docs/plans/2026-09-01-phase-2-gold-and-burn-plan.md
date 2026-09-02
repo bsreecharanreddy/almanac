@@ -184,23 +184,31 @@ counts looked correct in the broken run.
 
 ---
 
-## Task 1: Silver reads Bronze, partitions its writes, and keeps the payload
+## Task 1: Silver reads Bronze, partitions its writes, and keeps the payload — **DONE**
 
 **Files:**
 - Modify: `src/almanac/pipeline/silver.py`, `src/almanac/pipeline/eras.py`
 - Create: `src/almanac/pipeline/payloads.py`
 - Test: `tests/unit/test_payloads.py`, `tests/unit/test_silver_writes.py`
 
-**Interfaces:**
-- `read_bronze(spark, path, *, event_date, event_hour) -> DataFrame`
-- `parse_payload(df, *, era) -> DataFrame` (pure)
-- `run_silver(...)` gains partitioned `replaceWhere` writes
+**Interfaces** (as built; the plan's first draft is corrected below):
+- `read_bronze(spark, path, *, event_date) -> DataFrame`
+- `parse_events(df, *, json_column="raw_json") -> DataFrame` (pure)
+- `run_silver(spark, bronze_path, output_path, *, event_date, config)` —
+  partitioned `replaceWhere` writes, and **no `ingested_at` parameter**: it
+  is stamped by Bronze and read back with the row.
+
+**The grain is a day, not an hour.** §12 trap 4 is that duplicate event ids
+occur across hour-file boundaries, so an hour-at-a-time Silver would dedup
+inside each file and never see the boundary — quietly undoing Task 5 of
+Phase 1 while every unit test stayed green. Duplicates spanning a *day*
+boundary stay out of scope, stated rather than accidental.
 
 **This task closes Defects A and B and is a hard precondition for every
 other task.** Gold cannot be built on a Silver that carries no payload,
 and the backfill cannot run on a Silver that overwrites itself.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Three, each pinning one defect:
 
@@ -221,13 +229,26 @@ def test_silver_parses_from_bronze_raw_json(spark, tmp_path):
     """Defect B. Silver's input is a Bronze table, not a .json.gz path."""
 ```
 
-- [ ] **Step 2: Add `event_date`/`event_hour` to `SILVER_COLUMNS`**
+- [x] **Step 2: Add `event_date`/`event_hour` to `SILVER_COLUMNS`**
 
-Derived from `created_at`, not from the filename — a late-arriving event
-belongs to the hour it happened in. Both go in `SILVER_COLUMNS`; the
-docstring already explains why that tuple is the enforced contract.
+**Corrected against reality, 2026-09-01.** This step originally read
+"derived from `created_at`, not from the filename — a late-arriving event
+belongs to the hour it happened in." That is wrong, and the committed
+legacy fixture disproves it: one archive file named hour 14 holds events
+from 14:05 to 15:01 at `-07:00`, which is **UTC 21:05 to 22:01 — 1,957
+events in hour 21 and 43 in hour 22**. Deriving the partition from
+`created_at` scatters a single source file across two partitions, and no
+`replaceWhere` scoped to an hour can then replace that file's contribution
+idempotently.
 
-- [ ] **Step 3: Parse from Bronze's `raw_json`**
+So `event_date`/`event_hour` are **carried through from Bronze** and
+describe the archive file a row was ingested from. `created_at` remains the
+event-time column, and every temporal question downstream — every fact,
+every feature, every point-in-time join — is asked of it. Partitioning by
+ingest and reasoning by event time is the standard split, and conflating
+them here would have made the write non-reproducible.
+
+- [x] **Step 3: Parse from Bronze's `raw_json`**
 
 `spark.read.format("delta").load(bronze).selectExpr("from_json(raw_json, schema)")`.
 The schema is **explicit, not inferred** — Task 7 already measured that
@@ -235,7 +256,7 @@ per-file inference disagrees between hours of the same day, which is what
 broke the calibration's first Delta write. Era dispatch reads the parsed
 struct exactly as `is_legacy` does today.
 
-- [ ] **Step 4: Per-type payload columns**
+- [x] **Step 4: Per-type payload columns**
 
 `payloads.py`, pure, three-way era dispatch. Minimum for §5.1's label:
 `action`, `pr_number`, `is_pr_comment`, `merged`, `draft`. `merged` and
@@ -243,12 +264,12 @@ struct exactly as `is_legacy` does today.
 because "not a draft" and "the era had no drafts" are different facts and
 collapsing them makes the legacy slice look like 106 non-draft PRs.
 
-- [ ] **Step 5: Partitioned writes**
+- [x] **Step 5: Partitioned writes**
 
 `.partitionBy("event_date", "event_hour")` with `replaceWhere` scoped to
 the hour, mirroring `bronze.py`.
 
-- [ ] **Step 6: Verify** — `make check` green; then **mutate**: revert
+- [x] **Step 6: Verify** — `make check` green; then **mutate**: revert
   `replaceWhere` to `mode("overwrite")` and confirm exactly the Defect A
   test reddens.
 
@@ -301,7 +322,7 @@ costume.
   structurally blind to timezone defects; here the asymmetry runs the
   other way, and a laptop with a warm metastore is blind to this one.
 
-- [ ] **Step 6: Verify** — `make check` + `make dbt` green.
+- [x] **Step 6: Verify** — `make check` + `make dbt` green.
 
 ---
 

@@ -32,8 +32,27 @@ SILVER_COLUMNS = (
     "repo_id",
     "repo_name",
     "event_type",
+    "event_action",
     "schema_era",
     "ingested_at",
+    # Bronze's partitioning, carried through rather than recomputed. These
+    # describe the archive file a row was ingested from, *not* its event
+    # time -- `created_at` is the event-time column and every temporal
+    # question downstream is asked of it. Measured on the committed legacy
+    # fixture: one file named hour 14 holds events from 14:05 to 15:01 at
+    # `-07:00`, which is UTC 21:05 to 22:01 -- 1,957 rows in hour 21 and 43
+    # in hour 22. Deriving the partition from `created_at` would scatter one
+    # source file across two partitions, and no `replaceWhere` scoped to an
+    # hour could then replace that file's contribution idempotently.
+    "event_date",
+    "event_hour",
+    # Carried for Gold. `(repo_id, pr_number)` is `fact_pull_request`'s
+    # natural key and holds in all three eras: `number` is one of the five
+    # fields that survived the October 2025 payload reduction.
+    "pr_number",
+    "pr_merged",
+    "pr_draft",
+    "is_pr_comment",
 )
 
 # Written into the hash input wherever a field is null, so that a null
@@ -109,10 +128,25 @@ def normalize_events(df: DataFrame) -> DataFrame:
         .otherwise(F.lit(SchemaEra.LEGACY_V1.value))
     )
 
+    # `issue.pull_request` does not exist in the legacy era at all -- 0 of
+    # 194 legacy `IssueCommentEvent` carry it, against 55 of 92 modern ones.
+    # A structural `IS NOT NULL` would therefore report every legacy issue
+    # comment as "not on a PR", which is a claim that era's data cannot
+    # support. Null means unknown; false would be a fabricated negative, and
+    # §5.1's label would silently lose every legacy comment. Gold can still
+    # resolve those by joining `(repo_id, pr_number)` against known PRs,
+    # because GitHub numbers issues and PRs from one per-repo sequence.
+    is_pr_comment = F.when(
+        (F.col("schema_era") == SchemaEra.LEGACY_V1.value)
+        | (F.col("event_type") != "IssueCommentEvent"),
+        F.lit(None).cast("boolean"),
+    ).otherwise(F.col("issue_is_pr"))
+
     out = (
         df.withColumn("created_at", created)
         .withColumn("schema_era", era)
         .withColumn("actor_login", F.col("actor_raw"))
+        .withColumn("is_pr_comment", is_pr_comment)
     )
 
     has_native = F.col("id").isNotNull() & (F.length(F.col("id")) > 0)
