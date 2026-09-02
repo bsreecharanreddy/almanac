@@ -1,0 +1,29 @@
+name: gharchive
+url_template: "https://data.gharchive.org/{year}-{month:02d}-{day:02d}-{hour}.json.gz"
+format: json
+partition_by: [event_date, event_hour]
+
+quality_rules:
+  - name: event_id_present
+    expression: "event_id IS NOT NULL AND length(event_id) > 0"
+    severity: reject
+  - name: created_at_present
+    expression: "created_at IS NOT NULL"
+    severity: reject
+  - name: created_at_not_future
+    expression: "created_at <= ingested_at"
+    severity: reject
+  - name: repo_id_present
+    expression: "repo_id IS NOT NULL"
+    severity: reject
+  - name: actor_login_present
+    expression: "actor_login IS NOT NULL AND length(actor_login) > 0"
+    severity: warn
+  # Named for what it checks. It was `event_type_known`, which claimed more
+  # than `IS NOT NULL` delivers -- and that name would have appeared in
+  # quarantine analysis as though a *membership* check had run. A real
+  # known-set check is worth having, but it belongs at `warn`: GitHub adds
+  # event types, and a new one is drift to flag, not data to reject.
+  - name: event_type_present
+    expression: "event_type IS NOT NULL"
+    severity: reject

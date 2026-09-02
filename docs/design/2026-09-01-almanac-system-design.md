@@ -175,6 +175,38 @@ governs computation and display, not how a string carrying an explicit
 offset is read. This gets an explicit regression test asserting a legacy
 timestamp lands at the correct UTC instant.
 
+**Measured 2026-09-01, Phase 1 Task 2 — the same trap exists on the
+write side, and in the test harness.** Session timezone does not govern
+PySpark's conversion of a Python `datetime` in *either* direction.
+Measured across **three driver timezones**, not one, because the first
+run could not distinguish "shifted by the driver offset" from "shifted by
+four hours":
+
+| Driver `user.timezone` | aware → `F.lit` | **naive** → `F.lit` | Spark → `.first()` |
+|---|---|---|---|
+| `America/New_York` (−4) | 0s | **+4h** | −4h |
+| `UTC` (0) | 0s | **0s** | 0s |
+| `Asia/Kolkata` (+5:30) | 0s | **−5h30** | +5h30 |
+
+The rule, now supported rather than guessed: **an aware datetime is always
+stored correctly; a naive one is read as driver-local wall time; a
+collected timestamp is returned as driver-local wall time.** Nothing
+raises in any case — the values are valid timestamps, just the wrong
+instants.
+
+The `UTC` row is the dangerous one. **Every defect here is invisible on a
+UTC CI runner** and appears only on a developer machine, so CI is
+structurally unable to catch this class and the guard has to be in the
+code. Two consequences, both now enforced rather than documented:
+
+1. `add_ingestion_metadata` **rejects a naive `datetime`**. `datetime.now()`
+   is naive, so the wrong call is the one a caller writes by default.
+2. **No test asserts on a collected Python `datetime`.** Comparisons are on
+   `unix_timestamp()` — an instant, unambiguous. Confirmed by the table
+   above: a naive-datetime assertion is green on a UTC runner and red on a
+   laptop, the worst available failure shape — environment-dependent, and
+   passing exactly where nobody is looking.
+
 ### 4.2 Silver
 
 Typed, deduped, validated, per-type flattened. One common `silver.events`
@@ -313,7 +345,7 @@ introducing them would poison the label.
 | **0 — Fixtures** | ~4 hours, committed to the repo | ~350 MB | TDD. Tests never touch the network. |
 | **1 — Local dev** | 1 week of Q3 2025 | ~14 GB gz | All pipeline development in the local container. |
 | **2 — Legacy** | 1 month of 2014 (720 files) | ~3.9 GB gz | Full schema-evolution path. Effectively free. |
-| **3 — Cloud volume proof** | 1 month of Q3 2025, **full firehose, unsampled** | ~62 GB gz | The Azure burn. The honest "processed the real firehose on a real cluster" claim, with measured throughput and cost per run. |
+| **3 — Cloud volume proof** | **Full Q3 2025 (Jul 1 – Sep 30), full firehose, unsampled** — derived from the calibration run, not chosen | **~185 GB gz** (92 x 2.012 measured) | The Azure burn. The honest "processed the real firehose on a real cluster" claim, with measured throughput and cost per run. **$31.71, 17.2% of the credit.** |
 | **4 — Modeling** | **Q3 2025 (Jul 1 – Sep 30), repo-sampled** | tuned to budget | Features, temporal splits, drift. Span without the volume bill. |
 
 Tiers 3 and 4 answer different questions deliberately. Tier 3 proves the
@@ -340,9 +372,9 @@ Everything needed is measured except one thing:
 |---|---|
 | Slice size (GB gz per day) | measured — ~2.1 GB/day at the 86 MB/hr mean |
 | Expansion ratio | measured — 7.17× |
-| Cluster cost | measured — **$1.896/hr** (4 × `D4ds_v6`, Premium) |
-| Credit remaining | **97 cluster-hours** on $184 |
-| **Cluster throughput (GB gz/hr)** | **unknown — nothing has run on Spark yet** |
+| Cluster cost | measured — **$2.370/hr** (4 × `D4ds_v6` **workers plus a driver — 5 VMs**, Premium). Was recorded as $1.896/hr, which counted the workers only; `num_workers: 4` provisions five machines. **Corrected 2026-09-01, +25%.** |
+| Credit remaining | **77.6 cluster-hours** on $184 at the corrected rate (was stated as 97 at the four-node rate) |
+| **Cluster throughput (GB gz/hr)** | **measured 2026-09-01 — 13.84 GB gz per *billed* cluster-hour** (36.72 by Spark time alone, 19.50 by wall clock). See `docs/findings/2026-09-01-cluster-throughput.md`. |
 
 So the procedure, fixed in advance so the answer is not rationalized
 afterwards:
@@ -996,7 +1028,7 @@ Each of these is a real property of GH Archive, each goes in
 
 **Open — and load-bearing for the four items added 2026-09-01:**
 
-- [ ] **Cluster throughput (GB gz per cluster-hour)** — nothing has run on Spark yet. Gates Tier 3's span (§4.5) and every dollar figure downstream of it. **The single most consequential unmeasured number in the design.**
+- [x] **Cluster throughput (GB gz per cluster-hour)** — **measured 2026-09-01: 13.84 GB gz per billed cluster-hour**, one day (2025-08-13, 24/24 hours, 3,794,323 rows, 2.012 GB gz) through Bronze on 4 × `D4ds_v6` workers plus a driver, DBR 17.3 LTS, no Photon. $0.3446 per day-of-data. Tier 3 derived from it as the **full Q3 2025 quarter** at 17.2% of the credit — the rule bound upward. Two caveats carried forward: the rate is Bronze-only, and the 2.3× headroom under the 40% cap is what absorbs a slower full-medallion run. `docs/findings/2026-09-01-cluster-throughput.md`.
 - [ ] **DBUs consumed per node-hour** — the one assumed input in the cost model. A sensitivity table covers the plausible range; the Premium decision holds across all of it, but the *absolute* cost per run does not
 - [ ] **Photon's per-layer effect** on wall-clock and DBUs consumed (§8.2). Hypothesised to be near zero on bronze
 - [ ] **Model Serving cold-start distribution** (§8.1) — "10–20 seconds" is community-sourced and must not be quoted until measured
