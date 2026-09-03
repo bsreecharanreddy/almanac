@@ -137,14 +137,44 @@ _SCHEMA = (
 
 def test_only_opened_pull_request_events_become_spine_rows(spark: SparkSession) -> None:
     rows = [
-        (1, 10, datetime(2025, 8, 13, 9, tzinfo=UTC), "PullRequestEvent", "opened", "alice",
-         None, False, None, datetime(2025, 8, 13, 9, 5, tzinfo=UTC)),
+        (
+            1,
+            10,
+            datetime(2025, 8, 13, 9, tzinfo=UTC),
+            "PullRequestEvent",
+            "opened",
+            "alice",
+            None,
+            False,
+            None,
+            datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+        ),
         # A closed event for the same PR must not also become a spine row.
-        (1, 10, datetime(2025, 8, 14, 9, tzinfo=UTC), "PullRequestEvent", "closed", "bob",
-         True, False, None, datetime(2025, 8, 14, 9, 5, tzinfo=UTC)),
+        (
+            1,
+            10,
+            datetime(2025, 8, 14, 9, tzinfo=UTC),
+            "PullRequestEvent",
+            "closed",
+            "bob",
+            True,
+            False,
+            None,
+            datetime(2025, 8, 14, 9, 5, tzinfo=UTC),
+        ),
         # A review event is not an "opened" event at all.
-        (1, 10, datetime(2025, 8, 13, 12, tzinfo=UTC), "PullRequestReviewEvent", None, "carol",
-         None, None, None, datetime(2025, 8, 13, 12, 5, tzinfo=UTC)),
+        (
+            1,
+            10,
+            datetime(2025, 8, 13, 12, tzinfo=UTC),
+            "PullRequestReviewEvent",
+            None,
+            "carol",
+            None,
+            None,
+            None,
+            datetime(2025, 8, 13, 12, 5, tzinfo=UTC),
+        ),
     ]
     events = spark.createDataFrame(rows, _SCHEMA)
 
@@ -195,16 +225,13 @@ def build_pr_opened_spine(events: DataFrame) -> DataFrame:
     `as_of_timestamp` is the opening event's own `created_at` -- the
     instant every as-of join in this package treats as "now" for that PR.
     """
-    return (
-        events.where(
-            (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "opened")
-        )
-        .select(
-            "repo_id",
-            "pr_number",
-            F.col("actor_login").alias("author_login"),
-            F.col("created_at").alias("as_of_timestamp"),
-        )
+    return events.where(
+        (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "opened")
+    ).select(
+        "repo_id",
+        "pr_number",
+        F.col("actor_login").alias("author_login"),
+        F.col("created_at").alias("as_of_timestamp"),
     )
 ```
 
@@ -386,11 +413,15 @@ def test_no_qualifying_row_leaves_features_null_rather_than_dropping_the_spine_r
         "repo_id long, as_of_timestamp timestamp",
     )
     feature_table = spark.createDataFrame(
-        [(1, datetime(2025, 8, 14, tzinfo=UTC), 999)],  # repo 1's only row is in the future; repo 2 has none at all
+        [
+            (1, datetime(2025, 8, 14, tzinfo=UTC), 999)
+        ],  # repo 1's only row is in the future; repo 2 has none at all
         "repo_id long, event_time timestamp, value long",
     )
 
-    result = {r["repo_id"]: r["value"] for r in as_of_join(spine, feature_table, on=["repo_id"]).collect()}
+    result = {
+        r["repo_id"]: r["value"] for r in as_of_join(spine, feature_table, on=["repo_id"]).collect()
+    }
 
     assert result == {1: None, 2: None}
 ```
@@ -630,17 +661,51 @@ _SCHEMA = (
 )
 
 
-def _row(repo_id, pr_number, created_at, event_type, *, action=None, actor=None, merged=None, draft=None):
-    return (repo_id, pr_number, created_at, event_type, action, actor, merged, draft, None,
-            created_at)
+_Row = tuple[
+    int, int | None, datetime, str, str | None, str | None, bool | None, bool | None, None, datetime
+]
 
 
-def test_repo_activity_is_cumulative_and_keyed_on_the_events_own_timestamp(spark: SparkSession) -> None:
+def _row(
+    repo_id: int,
+    pr_number: int | None,
+    created_at: datetime,
+    event_type: str,
+    *,
+    action: str | None = None,
+    actor: str | None = None,
+    merged: bool | None = None,
+    draft: bool | None = None,
+) -> _Row:
+    return (
+        repo_id,
+        pr_number,
+        created_at,
+        event_type,
+        action,
+        actor,
+        merged,
+        draft,
+        None,
+        created_at,
+    )
+
+
+def test_repo_activity_is_cumulative_and_keyed_on_the_events_own_timestamp(
+    spark: SparkSession,
+) -> None:
     events = spark.createDataFrame(
         [
             _row(1, None, datetime(2025, 8, 10, tzinfo=UTC), "WatchEvent", actor="alice"),
             _row(1, None, datetime(2025, 8, 11, tzinfo=UTC), "WatchEvent", actor="dependabot[bot]"),
-            _row(1, 5, datetime(2025, 8, 12, tzinfo=UTC), "PullRequestEvent", action="opened", actor="bob"),
+            _row(
+                1,
+                5,
+                datetime(2025, 8, 12, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="bob",
+            ),
         ],
         _SCHEMA,
     )
@@ -656,10 +721,18 @@ def test_repo_activity_is_cumulative_and_keyed_on_the_events_own_timestamp(spark
     # Spark's UTC-configured session (spark.py's spark.sql.session.timeZone)
     # and carries no such ambiguity.
     day1 = one(result.where(F.col("event_time") == F.lit(datetime(2025, 8, 10, tzinfo=UTC))))
-    assert (day1["events_total_to_date"], day1["bot_events_to_date"], day1["prs_opened_to_date"]) == (1, 0, 0)
+    assert (
+        day1["events_total_to_date"],
+        day1["bot_events_to_date"],
+        day1["prs_opened_to_date"],
+    ) == (1, 0, 0)
 
     day3 = one(result.where(F.col("event_time") == F.lit(datetime(2025, 8, 12, tzinfo=UTC))))
-    assert (day3["events_total_to_date"], day3["bot_events_to_date"], day3["prs_opened_to_date"]) == (3, 1, 1)
+    assert (
+        day3["events_total_to_date"],
+        day3["bot_events_to_date"],
+        day3["prs_opened_to_date"],
+    ) == (3, 1, 1)
     assert day3["bot_share_to_date"] == pytest.approx(1 / 3)
 
 
@@ -667,8 +740,13 @@ def test_pr_static_carries_open_time_attributes_with_no_temporal_join(spark: Spa
     events = spark.createDataFrame(
         [
             _row(
-                1, 5, datetime(2025, 8, 12, tzinfo=UTC), "PullRequestEvent",
-                action="opened", actor="dependabot[bot]", draft=True,
+                1,
+                5,
+                datetime(2025, 8, 12, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="dependabot[bot]",
+                draft=True,
             )
         ],
         _SCHEMA,
@@ -724,9 +802,13 @@ def compute_repo_activity(events: DataFrame) -> DataFrame:
         .orderBy("created_at")
         .rowsBetween(Window.unboundedPreceding, Window.currentRow)
     )
-    scoped = events.where(F.col("repo_id").isNotNull()).withColumn(
-        "_is_bot", F.coalesce(is_bot_column(F.col("actor_login")), F.lit(False)).cast("int")
-    ).withColumn("_is_pr_open", _opened().cast("int"))
+    scoped = (
+        events.where(F.col("repo_id").isNotNull())
+        .withColumn(
+            "_is_bot", F.coalesce(is_bot_column(F.col("actor_login")), F.lit(False)).cast("int")
+        )
+        .withColumn("_is_pr_open", _opened().cast("int"))
+    )
 
     events_total = F.count(F.lit(1)).over(window)
     bot_events = F.sum("_is_bot").over(window)
@@ -771,7 +853,12 @@ guaranteed to exist by then; the version above is what actually ran.
 `ruff` also flagged `_row`'s eight positional parameters (`PLR0917`);
 fixed with `*` after `event_type`, matching
 `test_gold_fact_pull_request.py`'s own `_event` helper, which every call
-site above already reflects.
+site above already reflects. `mypy --strict` (run against the whole repo
+at Task 7's `make check`, which is what actually caught this — a
+per-file `mypy` scoped to only the new source files missed it) then
+rejected `_row` itself for having no type annotations at all; fixed with
+a `_Row` type alias, matching `test_gold_fact_pull_request.py`'s `_Event`
+pattern once more.
 
 - [ ] **Step 8: Write the failing test for `compute_author_activity` — including the "unknown, not zero" case**
 
@@ -781,15 +868,41 @@ def test_author_activity_prior_pr_count_and_merge_rate(spark: SparkSession) -> N
     events = spark.createDataFrame(
         [
             # PR1: alice opens day 1, merges day 3.
-            _row(1, 1, datetime(2025, 8, 1, tzinfo=UTC), "PullRequestEvent", action="opened", actor="alice"),
             _row(
-                1, 1, datetime(2025, 8, 3, tzinfo=UTC), "PullRequestEvent",
-                action="closed", actor="alice", merged=True,
+                1,
+                1,
+                datetime(2025, 8, 1, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="alice",
+            ),
+            _row(
+                1,
+                1,
+                datetime(2025, 8, 3, tzinfo=UTC),
+                "PullRequestEvent",
+                action="closed",
+                actor="alice",
+                merged=True,
             ),
             # PR2: alice opens day 5, still open.
-            _row(1, 2, datetime(2025, 8, 5, tzinfo=UTC), "PullRequestEvent", action="opened", actor="alice"),
+            _row(
+                1,
+                2,
+                datetime(2025, 8, 5, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="alice",
+            ),
             # PR3: alice opens day 6 -- PR2 has not closed yet.
-            _row(1, 3, datetime(2025, 8, 6, tzinfo=UTC), "PullRequestEvent", action="opened", actor="alice"),
+            _row(
+                1,
+                3,
+                datetime(2025, 8, 6, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="alice",
+            ),
         ],
         _SCHEMA,
     )
@@ -859,7 +972,10 @@ def compute_author_activity(events: DataFrame) -> DataFrame:
     ).agg(
         F.count(F.col("prior.pr_number")).alias("prior_pr_count"),
         F.avg(
-            F.when(F.col("prior.pr_number").isNotNull(), F.when(F.col("prior.merged"), 1.0).otherwise(0.0))
+            F.when(
+                F.col("prior.pr_number").isNotNull(),
+                F.when(F.col("prior.merged"), 1.0).otherwise(0.0),
+            )
         ).alias("prior_merge_rate"),
     )
 ```
@@ -1020,9 +1136,15 @@ from almanac.features.registration import primary_key_sql
 
 def test_a_temporal_table_gets_a_timeseries_primary_key() -> None:
     drop_sql, add_sql = primary_key_sql(
-        schema="features", table="author_activity", entity_cols=["author_login"], event_time_col="event_time"
+        schema="features",
+        table="author_activity",
+        entity_cols=["author_login"],
+        event_time_col="event_time",
     )
-    assert drop_sql == "ALTER TABLE features.author_activity DROP CONSTRAINT IF EXISTS author_activity_pk"
+    assert (
+        drop_sql
+        == "ALTER TABLE features.author_activity DROP CONSTRAINT IF EXISTS author_activity_pk"
+    )
     assert add_sql == (
         "ALTER TABLE features.author_activity ADD CONSTRAINT author_activity_pk "
         "PRIMARY KEY (author_login, event_time TIMESERIES)"
@@ -1033,7 +1155,9 @@ def test_a_non_temporal_table_gets_a_plain_composite_primary_key() -> None:
     """pr_static carries no event_time -- registering it as TIMESERIES
     would misrepresent it as a temporal lookup table it is not.
     """
-    _, add_sql = primary_key_sql(schema="features", table="pr_static", entity_cols=["repo_id", "pr_number"])
+    _, add_sql = primary_key_sql(
+        schema="features", table="pr_static", entity_cols=["repo_id", "pr_number"]
+    )
     assert add_sql == (
         "ALTER TABLE features.pr_static ADD CONSTRAINT pr_static_pk PRIMARY KEY (repo_id, pr_number)"
     )
@@ -1059,7 +1183,9 @@ from pyspark.sql import SparkSession
 from almanac.gold.sources import table_location
 
 
-def register_feature_table(spark: SparkSession, *, table: str, path: str, schema: str = "features") -> None:
+def register_feature_table(
+    spark: SparkSession, *, table: str, path: str, schema: str = "features"
+) -> None:
     location = table_location(path)
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema}")
     spark.sql(f"CREATE TABLE IF NOT EXISTS {schema}.{table} USING DELTA LOCATION '{location}'")
@@ -1078,7 +1204,9 @@ def primary_key_sql(
     if event_time_col is not None:
         keys.append(f"{event_time_col} TIMESERIES")
     drop_sql = f"ALTER TABLE {schema}.{table} DROP CONSTRAINT IF EXISTS {constraint}"
-    add_sql = f"ALTER TABLE {schema}.{table} ADD CONSTRAINT {constraint} PRIMARY KEY ({', '.join(keys)})"
+    add_sql = (
+        f"ALTER TABLE {schema}.{table} ADD CONSTRAINT {constraint} PRIMARY KEY ({', '.join(keys)})"
+    )
     return drop_sql, add_sql
 ```
 
@@ -1180,7 +1308,11 @@ from dataclasses import dataclass
 from pyspark.sql import DataFrame, SparkSession
 
 from almanac.cli import run_cli
-from almanac.features.groups import compute_author_activity, compute_pr_static, compute_repo_activity
+from almanac.features.groups import (
+    compute_author_activity,
+    compute_pr_static,
+    compute_repo_activity,
+)
 from almanac.features.registration import primary_key_sql, register_feature_table
 from almanac.spark import local_session
 
@@ -1206,7 +1338,12 @@ def _active_or_local_session() -> SparkSession:
 
 
 def run_features(
-    spark: SparkSession, *, silver_path: str, features_path: str, register: bool, schema: str = "features"
+    spark: SparkSession,
+    *,
+    silver_path: str,
+    features_path: str,
+    register: bool,
+    schema: str = "features",
 ) -> None:
     """Recompute every feature table from the whole of Silver, overwriting each.
 
@@ -1224,14 +1361,19 @@ def run_features(
         if register:
             register_feature_table(spark, table=spec.name, path=path, schema=schema)
             drop_sql, add_sql = primary_key_sql(
-                schema=schema, table=spec.name, entity_cols=spec.entity_cols, event_time_col=spec.event_time_col
+                schema=schema,
+                table=spec.name,
+                entity_cols=spec.entity_cols,
+                event_time_col=spec.event_time_col,
             )
             spark.sql(drop_sql)
             spark.sql(add_sql)
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Recompute the feature platform's tables from Silver.")
+    parser = argparse.ArgumentParser(
+        description="Recompute the feature platform's tables from Silver."
+    )
     parser.add_argument("--silver-path", required=True)
     parser.add_argument("--features-path", required=True)
     parser.add_argument("--schema", default="features")
@@ -1331,31 +1473,49 @@ _SCHEMA = (
 
 def _write_silver(spark: SparkSession, path: Path) -> None:
     rows = [
-        (1, 5, datetime(2025, 8, 13, 9, tzinfo=UTC), "PullRequestEvent", "opened", "alice",
-         None, False, None, datetime(2025, 8, 13, 9, 5, tzinfo=UTC)),
+        (
+            1,
+            5,
+            datetime(2025, 8, 13, 9, tzinfo=UTC),
+            "PullRequestEvent",
+            "opened",
+            "alice",
+            None,
+            False,
+            None,
+            datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+        ),
     ]
     spark.createDataFrame(rows, _SCHEMA).write.format("delta").save(str(path / "clean"))
 
 
-def test_run_features_writes_all_three_tables_and_is_idempotent(spark: SparkSession, tmp_path: Path) -> None:
+def test_run_features_writes_all_three_tables_and_is_idempotent(
+    spark: SparkSession, tmp_path: Path
+) -> None:
     silver_path = tmp_path / "silver"
     features_path = tmp_path / "features"
     _write_silver(spark, silver_path)
 
-    run_features(spark, silver_path=str(silver_path), features_path=str(features_path), register=False)
+    run_features(
+        spark, silver_path=str(silver_path), features_path=str(features_path), register=False
+    )
 
     for name in ("author_activity", "repo_activity", "pr_static"):
         assert spark.read.format("delta").load(str(features_path / name)).count() >= 1
 
     first_pr_static = spark.read.format("delta").load(str(features_path / "pr_static")).collect()
 
-    run_features(spark, silver_path=str(silver_path), features_path=str(features_path), register=False)
+    run_features(
+        spark, silver_path=str(silver_path), features_path=str(features_path), register=False
+    )
     second_pr_static = spark.read.format("delta").load(str(features_path / "pr_static")).collect()
 
     assert sorted(map(str, first_pr_static)) == sorted(map(str, second_pr_static))
 
 
-def test_main_wires_the_parsed_arguments_through_to_a_real_run(spark: SparkSession, tmp_path: Path) -> None:
+def test_main_wires_the_parsed_arguments_through_to_a_real_run(
+    spark: SparkSession, tmp_path: Path
+) -> None:
     """The CLI path, exercised for real -- `SparkSession.getActiveSession()`
     picks up this test's own session, so `main()` never falls back to
     building a new one, and no mocking is needed to prove the wiring works.
@@ -1366,9 +1526,7 @@ def test_main_wires_the_parsed_arguments_through_to_a_real_run(spark: SparkSessi
     features_path = tmp_path / "features"
     _write_silver(spark, silver_path)
 
-    code = main(
-        ["--silver-path", str(silver_path), "--features-path", str(features_path)]
-    )
+    code = main(["--silver-path", str(silver_path), "--features-path", str(features_path)])
 
     assert code == 0
     assert spark.read.format("delta").load(str(features_path / "author_activity")).count() >= 0
@@ -1416,12 +1574,16 @@ _SCHEMA = (
 )
 
 
-def _event(repo_id: int, created_at: datetime, ingested_at: datetime, actor: str) -> tuple:
+_Event = tuple[int, None, datetime, str, None, str, None, None, None, datetime]
+
+
+def _event(repo_id: int, created_at: datetime, ingested_at: datetime, actor: str) -> _Event:
     return (repo_id, None, created_at, "WatchEvent", None, actor, None, None, None, ingested_at)
 
 
 def _latest_version(spark: SparkSession, path: Path) -> int:
-    return DeltaTable.forPath(spark, str(path)).history(1).select("version").collect()[0]["version"]
+    row = DeltaTable.forPath(spark, str(path)).history(1).select("version").collect()[0]
+    return int(row["version"])
 
 
 def test_pinning_the_delta_version_reproduces_the_original_result_after_a_late_arrival(
@@ -1431,14 +1593,16 @@ def test_pinning_the_delta_version_reproduces_the_original_result_after_a_late_a
     t = datetime(2025, 8, 13, 12, tzinfo=UTC)
 
     spark.createDataFrame(
-        [_event(1, datetime(2025, 8, 10, tzinfo=UTC), datetime(2025, 8, 10, 1, tzinfo=UTC), "alice")],
+        [
+            _event(
+                1, datetime(2025, 8, 10, tzinfo=UTC), datetime(2025, 8, 10, 1, tzinfo=UTC), "alice"
+            )
+        ],
         _SCHEMA,
     ).write.format("delta").save(str(events_path))
     v1 = _latest_version(spark, events_path)
 
-    spine = spark.createDataFrame(
-        [(1, t)], "repo_id long, as_of_timestamp timestamp"
-    )
+    spine = spark.createDataFrame([(1, t)], "repo_id long, as_of_timestamp timestamp")
 
     def as_of_result(version: int) -> list[Row]:
         events = spark.read.format("delta").option("versionAsOf", version).load(str(events_path))
@@ -1459,9 +1623,13 @@ def test_pinning_the_delta_version_reproduces_the_original_result_after_a_late_a
     pinned = as_of_result(v1)
     live = as_of_result(v2)
 
-    assert pinned == original  # reproducible: the pinned version is untouched by the append
-    assert live[0]["events_total_to_date"] == 2  # the straggler is leak-free (event_time < t) but changes the "live" answer
-    assert live != original  # which is exactly why the version gets pinned at build time, not re-derived from "current"
+    # Reproducible: the pinned version is untouched by the append.
+    assert pinned == original
+    # Leak-free (event_time < t) but changes the "live" answer -- exactly
+    # why the version gets pinned at build time, not re-derived from
+    # "current".
+    assert live[0]["events_total_to_date"] == 2
+    assert live != original
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -1470,6 +1638,15 @@ Run: `uv run pytest tests/integration/test_features_leakage.py -v -m integration
 Expected: PASS (1 passed) — confirms `as_of_join` and `compute_repo_activity`
 already satisfy the invariant; if it fails, the bug is in one of those two,
 not in this test.
+
+**Found while executing this task**: `mypy --strict` rejected `_event`'s
+bare `-> tuple` return (missing type arguments) and `_latest_version`'s
+`collect()[0]["version"]` (`Row` indexing returns `Any`, not `int`).
+Fixed with a `_Event` type alias (matching
+`test_gold_fact_pull_request.py`'s own `_Event` pattern) and an explicit
+`int(...)` cast; the version above is what actually ran, both new tests
+pass, and the two existing tests this task exercises (Task 1-6's own)
+were re-run to confirm nothing broke.
 
 - [ ] **Step 5: Commit**
 
