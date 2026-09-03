@@ -17,7 +17,13 @@ fmt:
 typecheck:
 	uv run mypy src tests
 
-check: lint typecheck test
+check:
+	@echo "[1/3] lint"
+	@$(MAKE) lint
+	@echo "[2/3] typecheck"
+	@$(MAKE) typecheck
+	@echo "[3/3] test"
+	@$(MAKE) test
 
 fixtures:
 	uv run python scripts/build_fixtures.py
