@@ -26,20 +26,7 @@ def test_metadata_columns_added(spark: SparkSession) -> None:
 
 
 def test_ingested_at_is_the_value_passed_in_not_wall_clock(spark: SparkSession) -> None:
-    """Replay is the whole point of Bronze, and replay is only deterministic
-    if ``ingested_at`` is an argument rather than ``current_timestamp()``.
-    Without this the substitution is invisible: every other test in this
-    module passes with a wall-clock stamp -- checked, they do.
-
-    The assertion is on the **epoch second**, deliberately, and not on the
-    datetime that ``.first()`` returns. PySpark converts a Spark timestamp
-    to a *naive* Python datetime using the **driver's** local timezone, not
-    ``spark.sql.session.timeZone``. Measured on this machine
-    (``user.timezone=America/New_York``): a correctly stored 12:00Z reads
-    back as ``08:00``. Comparing collected datetimes would therefore pass on
-    a UTC CI runner and fail on a developer laptop -- the worst failure
-    shape there is. An epoch is an instant and has no such ambiguity.
-    """
+    """Replay is only deterministic if ingested_at is a fixed parameter, not the clock."""
     raw = spark.createDataFrame([("{}",)], "raw_json string")
     out = add_ingestion_metadata(raw, ingested_at=INGESTED, source_file="f.gz")
     stored = one(out.selectExpr("unix_timestamp(ingested_at) AS epoch"))["epoch"]
@@ -47,17 +34,7 @@ def test_ingested_at_is_the_value_passed_in_not_wall_clock(spark: SparkSession) 
 
 
 def test_naive_ingested_at_is_rejected(spark: SparkSession) -> None:
-    """A naive datetime is silently read as **driver-local** time.
-
-    Measured: ``datetime(2026, 9, 2, 12, 0)`` with no tzinfo stores epoch
-    1788364800 -- 16:00Z, four hours off -- on a UTC-4 driver, and stores
-    the correct instant on a UTC one. Nothing errors and nothing renders
-    oddly, because the value is a valid timestamp; it is just the wrong one.
-
-    ``datetime.now()`` is naive, so this is the call a caller writes by
-    default. Rejecting it at the boundary is cheaper than finding it in a
-    point-in-time feature six phases later.
-    """
+    """A naive datetime is silently read as **driver-local** time."""
     raw = spark.createDataFrame([("{}",)], "raw_json string")
     with pytest.raises(ValueError, match="timezone-aware"):
         add_ingestion_metadata(raw, ingested_at=datetime(2026, 9, 2, 12, 0), source_file="f.gz")

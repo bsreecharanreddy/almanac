@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
-# PreToolUse/Bash hook: when a commit stages docs/STATUS.md -- this repo's
-# marker for "a task just closed out" -- remind that the interview story
-# bank gist may need the story before the moment is lost.
-#
-# Purely incident-derived, and the most-earned control in this repo. On a
-# prior project the equivalent trigger was documented failing to self-fire
-# on *every* occasion across roughly a dozen sessions; the story bank was
-# only ever updated when the user asked directly. Care demonstrably did not
-# work, so this is mechanized instead.
-#
-# Fires only on STATUS.md commits, not on every commit, so it stays
-# low-noise -- a reminder that fires constantly is a reminder that gets
-# ignored, which is the failure mode it exists to prevent.
+# PreToolUse/Bash hook: on a commit staging docs/STATUS.md (this repo's "task
+# closed out" marker), remind that the story-bank gist may need the story.
+# Rationale and incident history: CLAUDE.md, `.claude/` tooling section.
 set -euo pipefail
 
 input="$(cat)"
@@ -21,20 +11,7 @@ printf '%s' "$cmd" | grep -qE '\bgit\s+commit\b' || exit 0
 
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 
-# Determine the files this commit will actually contain. If the same command
-# also stages (`git add`), the index is still empty at PreToolUse time -- the
-# hook runs *before* the command does -- so fall back to the working tree.
-# Found for real: the first three commits in this repo were all made with
-# `git add -A && git commit`, and neither hook fired on any of them.
-files_for_commit() {
-  local staged
-  staged="$(git diff --cached --name-only 2>/dev/null || true)"
-  if printf '%s' "$1" | grep -qE '\bgit\s+add\b'; then
-    printf '%s\n%s\n' "$staged" "$(git status --porcelain 2>/dev/null | sed 's/^...//')"
-  else
-    printf '%s\n' "$staged"
-  fi | sed '/^$/d' | sort -u
-}
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 staged="$(files_for_commit "$cmd")"
 printf '%s\n' "$staged" | grep -q '^docs/STATUS\.md$' || exit 0

@@ -31,3 +31,15 @@ jobs:
       # -m "not network" keeps CI off data.gharchive.org: a third-party
       # host outage must never turn this build red.
       - run: uv run pytest -m "not network" -v
+
+      # Gold, on a cold machine. `almanac.spark.dbt_session`'s persistent
+      # metastore is a correctness requirement, and a laptop with a warm
+      # metastore directory is structurally blind to a regression in it --
+      # the mirror image of Phase 1 Task 2's finding that a UTC CI runner is
+      # blind to timezone defects. This is the only place it runs cold.
+      #
+      # `dim_repo` (Task 3) selects from a real source, so Gold needs real
+      # Silver data first -- the committed fixtures, landed through Bronze
+      # and Silver exactly as `tests/integration/test_pipeline.py` does.
+      - run: uv run python scripts/build_silver_fixture.py
+      - run: uv run python -m almanac.gold.runner --silver-path data/gold_fixture/silver build

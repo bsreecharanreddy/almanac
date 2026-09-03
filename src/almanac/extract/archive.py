@@ -1,5 +1,7 @@
 """The I/O edge for GH Archive. All decisions live in classify_response."""
 
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
@@ -48,14 +50,13 @@ def fetch_hour(
 
         status = classify_response(response.status_code, len(response.content))
 
-        # A 404 or an empty file is a fact about the data. Retrying either
-        # wastes time and cannot change the answer.
+        # 404 / empty is a fact about the data -- retrying cannot change it.
         if status in (FetchStatus.ABSENT, FetchStatus.EMPTY):
             return FetchResult(url, status, None, 0, attempt)
 
         if status is FetchStatus.OK:
-            # Write to .part then rename: a crash mid-write must never leave
-            # a truncated file that a later run mistakes for complete.
+            # .part then rename: a crash mid-write must not leave a file a
+            # later run mistakes for complete.
             tmp.write_bytes(response.content)
             tmp.replace(final)
             return FetchResult(url, status, final, len(response.content), attempt)
@@ -64,3 +65,30 @@ def fetch_hour(
 
     tmp.unlink(missing_ok=True)
     return FetchResult(url, FetchStatus.FAILED, None, 0, attempt, last_error)
+
+
+def fetch_hours(
+    hours: Iterable[tuple[date, int]],
+    *,
+    client: httpx.Client,
+    dest_dir: Path,
+    settings: Settings,
+) -> list[FetchResult]:
+    """Fetch many hourly files concurrently; results stay in ``hours`` order.
+
+    ``fetch_hour`` absorbs every ``httpx`` error into a ``FAILED``/``ABSENT``
+    result, so one missing hour never aborts the batch. A non-network fault
+    (a full disk) still propagates, for the day-level checkpoint to catch.
+    """
+    ordered = list(hours)
+    if not ordered:
+        return []
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    def _fetch(pair: tuple[date, int]) -> FetchResult:
+        day, hour = pair
+        return fetch_hour(day, hour, client=client, dest_dir=dest_dir, settings=settings)
+
+    with ThreadPoolExecutor(max_workers=min(settings.fetch_concurrency, len(ordered))) as pool:
+        return list(pool.map(_fetch, ordered))

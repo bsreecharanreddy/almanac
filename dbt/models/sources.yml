@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Silver, written by `almanac.pipeline.silver` as Delta and registered
+      into the metastore by the Gold runner. dbt reads Silver and never
+      writes it -- the medallion boundary is enforced by which tool owns
+      which layer, not by convention.
+    # env_var, not a literal: two Photon A/B arms run concurrently against one
+    # metastore, and sharing `silver` made the second arm read the first arm's
+    # data (2026-09-03-photon-ab.md). ALMANAC_SILVER_SCHEMA is read here and by
+    # `runner.default_source_schema`, so the name is stated once.
+    schema: "{{ env_var('ALMANAC_SILVER_SCHEMA', 'silver') }}"
+    tables:
+      - name: events
+        description: Deduplicated, era-normalized events that passed every quality rule.
+        # Freshness is measured on `ingested_at` -- processing time -- and
+        # never on `created_at`. They are different clocks (CLAUDE.md), and
+        # a backfill of 2015 data has a perfectly healthy pipeline looking
+        # a decade stale if event time is used here.
+        loaded_at_field: ingested_at
+        freshness:
+          warn_after: {count: 6, period: hour}
+          error_after: {count: 24, period: hour}
+
+      - name: events_quarantine
+        description: >
+          Records that failed at least one quality rule, carrying
+          `_failed_rules` as an array so quarantine is analyzable by rule.
+        # No freshness check: an empty quarantine is the healthy state, so
+        # "nothing landed recently" is not evidence of anything.

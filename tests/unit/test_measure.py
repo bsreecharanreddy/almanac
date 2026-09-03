@@ -30,20 +30,12 @@ def test_bot_regex_match_is_reported_separately_from_suffix() -> None:
 
 @pytest.mark.parametrize("login", ["robotframework", "Abbott"])
 def test_the_documented_false_positives_are_not_actually_false_positives(login: str) -> None:
-    """The inherited claim about this rule was wrong, and it is pinned here.
-
-    `robotframework` and `Abbott` are named in the source material as false
-    positives of ``(?i)(bot|automation|ci)$``. Neither matches it: the rule
-    is anchored at the end, `robotframework` ends in "work", and `Abbott`
-    ends in "tt". They would only be false positives of an *unanchored*
-    search for "bot". Verified, not assumed.
-    """
+    """The inherited claim about this rule was wrong, and it is pinned here."""
     assert classify_bot(login) is BotMatch.NONE
 
 
-# Real logins, taken from 6.0M measured events. A bare `ci$` clause
-# flagged every one of these as a bot; 869 of 1,002 distinct ci-ending
-# logins were like this. See docs/findings/2026-09-01-bot-classification.md.
+# Real logins a bare `ci$` clause wrongly flagged (869 of 1,002 ci-ending
+# logins -- docs/findings/2026-09-01-bot-classification.md).
 @pytest.mark.parametrize(
     "login",
     [
@@ -74,18 +66,7 @@ def test_real_ci_accounts_are_still_caught(login: str) -> None:
 
 @pytest.mark.parametrize("login", ["cw-circleci", "seek-oss-circleci"])
 def test_known_recall_cost_of_requiring_a_separator(login: str) -> None:
-    """Pinned as a KNOWN MISS, not an oversight.
-
-    Requiring a separator before "ci" removed 869 human surnames from the
-    match set. It also costs the true positives whose name embeds a CI
-    service rather than suffixing it -- "circleci" ends in "ci" but has
-    "e" before it, not a separator.
-
-    Accepted deliberately: the precision gain is ~869 distinct logins, the
-    recall cost is a much smaller set that a curated entry can recover if
-    it ever matters. Recorded rather than papered over, so the tradeoff is
-    visible in ADR-005 instead of being rediscovered later.
-    """
+    """Pinned as a KNOWN MISS, not an oversight."""
     assert classify_bot(login) is BotMatch.NONE
 
 

@@ -2,29 +2,18 @@ from datetime import UTC, datetime
 
 import pytest
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
 
 from almanac.explore.schema import era_for
 from almanac.pipeline.eras import normalize_events
-from tests.helpers import epoch_of, one
+from tests.helpers import RawRow, epoch_of, one, raw
 
 pytestmark = pytest.mark.spark
-
-RAW_SCHEMA = (
-    "created_at_raw string, actor_raw string, repo_id long, "
-    "repo_name string, event_type string, id string, "
-    "event_url string, ingested_at timestamp"
-)
-
-type RawRow = tuple[str, str | None, int | None, str, str, str | None, str | None, datetime]
 
 INGESTED = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 
 LEGACY: RawRow = ("2014-06-12T03:00:00-07:00", "abc", 1, "o/r", "PushEvent", None, None, INGESTED)
 MODERN: RawRow = ("2025-08-13T14:00:00Z", "abc", 1, "o/r", "PushEvent", "999", None, INGESTED)
-
-
-def raw(spark: SparkSession, *rows: RawRow) -> DataFrame:
-    return spark.createDataFrame(list(rows), RAW_SCHEMA)
 
 
 def instant(year: int, month: int, day: int, hour: int, minute: int) -> int:
@@ -33,11 +22,7 @@ def instant(year: int, month: int, day: int, hour: int, minute: int) -> int:
 
 
 def test_legacy_timestamp_offset_is_converted_not_truncated(spark: SparkSession) -> None:
-    """Measured: pre-2015 `created_at` carries -07:00.
-
-    A naive parse reads 2014-06-12T03:00:00-07:00 as 03:00 UTC. It is
-    10:00 UTC. Seven hours, silently, on every legacy event.
-    """
+    """Measured: pre-2015 `created_at` carries -07:00."""
     assert epoch_of(normalize_events(raw(spark, LEGACY)), "created_at") == instant(
         2014, 6, 12, 10, 0
     )
@@ -63,8 +48,7 @@ def test_modern_event_id_is_the_native_id(spark: SparkSession) -> None:
 
 
 def test_content_hash_is_stable_across_runs(spark: SparkSession) -> None:
-    # If the hash were not deterministic, dedup would fail and every
-    # re-run would duplicate legacy history.
+    # A non-deterministic hash would duplicate legacy history on every re-run.
     first = one(normalize_events(raw(spark, LEGACY)))["event_id"]
     second = one(normalize_events(raw(spark, LEGACY)))["event_id"]
     assert first == second
@@ -96,10 +80,7 @@ def test_era_is_labelled_on_every_row(spark: SparkSession) -> None:
 
 
 def test_repo_name_case_is_preserved(spark: SparkSession) -> None:
-    """Measured: case-only renames exist (GLB -> glb).
-
-    Lower-casing here would make them invisible to SCD2 in Phase 2.
-    """
+    """Measured: case-only renames exist (GLB -> glb)."""
     row: RawRow = (
         "2025-08-13T14:00:00Z",
         "a",
@@ -114,13 +95,7 @@ def test_repo_name_case_is_preserved(spark: SparkSession) -> None:
 
 
 def test_output_is_exactly_the_canonical_silver_shape(spark: SparkSession) -> None:
-    """The declared contract, asserted rather than assumed.
-
-    Leaking `created_at_raw`, `actor_raw` and `id` downstream would leave
-    two id columns in Silver -- one of them null for every legacy event --
-    which is precisely the shape a later dedup is most likely to key on by
-    mistake.
-    """
+    """The declared contract, asserted rather than assumed."""
     assert set(normalize_events(raw(spark, MODERN)).columns) == {
         "event_id",
         "event_id_source",
@@ -129,19 +104,22 @@ def test_output_is_exactly_the_canonical_silver_shape(spark: SparkSession) -> No
         "repo_id",
         "repo_name",
         "event_type",
+        "event_action",
         "schema_era",
         "ingested_at",
+        "event_date",
+        "event_hour",
+        "pr_number",
+        "pr_merged",
+        "pr_draft",
+        "is_pr_comment",
+        "push_size",
+        "push_distinct_size",
     }
 
 
 def test_spark_era_labels_agree_with_the_python_implementation(spark: SparkSession) -> None:
-    """One rule, two implementations; they must not drift apart.
-
-    `era_for` decides eras in Python for exploration, this module decides
-    them again in Spark for the pipeline. Both boundaries are asserted from
-    either side, so moving one without the other mislabels history instead
-    of failing.
-    """
+    """One rule, two implementations; they must not drift apart."""
     boundaries = [
         datetime(2014, 12, 31, 23, 59, tzinfo=UTC),
         datetime(2015, 1, 1, 0, 0, tzinfo=UTC),
@@ -158,15 +136,7 @@ def test_spark_era_labels_agree_with_the_python_implementation(spark: SparkSessi
 
 
 def test_content_hash_does_not_depend_on_the_session_timezone(spark: SparkSession) -> None:
-    """The dedup key must be a property of the event, not of the cluster.
-
-    Measured against the planned implementation, which hashed the timestamp
-    *rendered* as a string: one event produced three different ids under
-    UTC, America/New_York and Asia/Kolkata. This id is persisted and is the
-    only one a legacy event will ever have, so a backfill and a later
-    incremental run under different session timezones would re-ingest all
-    of legacy history as new rows without dedup noticing.
-    """
+    """The dedup key must be a property of the event, not of the cluster."""
     original = spark.conf.get("spark.sql.session.timeZone", "UTC")
     assert original is not None
     try:
@@ -180,14 +150,7 @@ def test_content_hash_does_not_depend_on_the_session_timezone(spark: SparkSessio
 
 
 def test_nulls_hold_their_position_in_the_content_hash(spark: SparkSession) -> None:
-    """Two different events, each null in a different field, are not one event.
-
-    `concat_ws` skips nulls rather than propagating them, which stops one
-    missing field collapsing every row's hash -- but on its own it also
-    makes ("a", null, "c") and ("a", "c", null) render identically. For
-    legacy events that is a silent merge of two real events with no native
-    id to fall back on.
-    """
+    """Two different events, each null in a different field, are not one event."""
     no_actor: RawRow = (
         "2014-06-12T03:00:00-07:00",
         None,
@@ -213,15 +176,7 @@ def test_nulls_hold_their_position_in_the_content_hash(spark: SparkSession) -> N
 
 
 def test_same_actor_repo_second_and_type_are_still_two_events(spark: SparkSession) -> None:
-    """The collision measured in a real legacy hour, pinned.
-
-    One actor pushed two different commit ranges to one repo inside the same
-    second; another opened two different issues inside the same second. On
-    `(created_at, actor_login, repo_id, event_type)` alone both pairs hash
-    identically, and dedup deletes one of each -- roughly 1 in 1,000 legacy
-    events, silently. Phase 0's 1-in-6.0M duplicate ratio was measured on
-    modern data, which carries native ids and never reaches this hash.
-    """
+    """The collision measured in a real legacy hour, pinned."""
     push_a: RawRow = (
         "2014-06-12T14:07:42-07:00",
         "oschettler",
@@ -244,3 +199,29 @@ def test_same_actor_repo_second_and_type_are_still_two_events(spark: SparkSessio
     )
     ids = {r["event_id"] for r in normalize_events(raw(spark, push_a, push_b)).collect()}
     assert len(ids) == 2
+
+
+def _issue_comment(spark: SparkSession, created_at: str, *, on_a_pr: bool) -> DataFrame:
+    row: RawRow = (created_at, "abc", 1, "o/r", "IssueCommentEvent", "1", None, INGESTED)
+    return raw(spark, row).withColumn("issue_is_pr", F.lit(on_a_pr))
+
+
+def test_legacy_issue_comments_report_unknown_not_false(spark: SparkSession) -> None:
+    """`issue.pull_request` does not exist before 2015, so neither does the answer."""
+    legacy = one(
+        normalize_events(_issue_comment(spark, "2014-06-12T03:00:00-07:00", on_a_pr=False))
+    )
+    assert legacy["is_pr_comment"] is None
+
+
+def test_modern_issue_comments_report_the_measured_answer(spark: SparkSession) -> None:
+    on_pr = one(normalize_events(_issue_comment(spark, "2025-08-13T14:00:00Z", on_a_pr=True)))
+    on_issue = one(normalize_events(_issue_comment(spark, "2025-08-13T14:00:00Z", on_a_pr=False)))
+    assert on_pr["is_pr_comment"] is True
+    assert on_issue["is_pr_comment"] is False
+
+
+def test_non_comment_events_have_no_pr_comment_answer(spark: SparkSession) -> None:
+    """The question does not apply to a push, so the column must not answer it."""
+    pushed = raw(spark, MODERN).withColumn("issue_is_pr", F.lit(False))
+    assert one(normalize_events(pushed))["is_pr_comment"] is None

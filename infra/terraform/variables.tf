@@ -68,3 +68,145 @@ variable "tags" {
     owner   = "sree"
   }
 }
+
+# The Phase 2 burn (databricks.tf). Nothing here provisions compute on apply.
+
+variable "databricks_node_type" {
+  type        = string
+  description = "Job-cluster SKU; same node Phase 1's calibration measured on, so rates compare."
+  default     = "Standard_D4ds_v6"
+}
+
+variable "backfill_workers" {
+  type        = number
+  description = "Worker count; num_workers = N provisions N+1 VMs (N workers + a driver)."
+  default     = 4
+}
+
+variable "enable_photon" {
+  type        = bool
+  description = "Photon on the backfill cluster. False to match the no-Photon calibration; the §8.2 A/B is a separate job."
+  default     = false
+}
+
+variable "backfill_start" {
+  type        = string
+  description = "First day of the backfill, YYYY-MM-DD."
+  default     = "2025-07-01"
+}
+
+variable "backfill_end" {
+  type        = string
+  description = "Last day of the backfill, inclusive."
+  default     = "2025-09-30"
+}
+
+variable "backfill_staging_dir" {
+  type = string
+  # Not /local_disk0: that's per-node ephemeral disk. fetch_hours() downloads
+  # each hour's .json.gz via plain Python I/O in the driver process, but the
+  # medallion job cluster runs with backfill_workers > 0 (multi-node, for
+  # Tasks 8-9's fetch parallelization) -- day.py's _land_bronze then reads
+  # that same path back as a distributed Spark job, and any read task
+  # scheduled on a worker node other than the driver hits
+  # FAILED_READ_FILE.FILE_NOT_EXIST, since the worker's own /local_disk0
+  # never had the file. Measured 2026-09-02 on the backfill job's first run
+  # to reach real Spark execution (defect #7). A UC volume is FUSE-mounted
+  # identically on every node, same fix shape as backfill_checkpoint_dir
+  # above; `almanac_dbx.burn.staging` is the one this fix actually used.
+  description = "FUSE-mounted scratch dir for each hour's downloaded .json.gz, visible from every cluster node."
+  default     = "/Volumes/almanac_dbx/burn/staging"
+}
+
+variable "backfill_checkpoint_dir" {
+  type = string
+  # Not an abfss:// URI: BackfillCheckpoint is pathlib, and it must outlive
+  # the cluster for a resumed run to skip finished days. Not /dbfs/FileStore
+  # either -- measured 2026-09-02, this workspace has public DBFS root
+  # disabled (`Error: Public DBFS root is disabled`, same restriction Task 7
+  # hit once before, now confirmed to cover FileStore too). A Unity Catalog
+  # volume is FUSE-mounted and pathlib-compatible without that restriction;
+  # `almanac_dbx.burn.checkpoints` is the one this run actually used.
+  description = "FUSE-mounted, persistent dir for the per-day resume markers."
+  default     = "/Volumes/almanac_dbx/burn/checkpoints/tier3"
+}
+
+variable "backfill_python_file" {
+  type = string
+  # /Workspace/Repos/... assumes a Databricks Repo linked to this repo's git
+  # remote; this workspace has no Git credential configured for it, so the
+  # actual run used `databricks sync` to a plain workspace path instead.
+  description = "Workspace path of scripts/backfill.py, set at deploy time (repos sync or bundle)."
+  default     = "/Workspace/Shared/almanac/scripts/backfill.py"
+}
+
+variable "photon_ab_python_file" {
+  type        = string
+  description = "Workspace path of scripts/photon_ab.py."
+  default     = "/Workspace/Shared/almanac/scripts/photon_ab.py"
+}
+
+variable "source_config_workspace_path" {
+  type = string
+  # scripts/backfill.py and scripts/photon_ab.py both default
+  # --source-config to the relative path conf/sources/gharchive.yml, which
+  # resolves against the repo root -- true for `make`/CI, false for a
+  # Databricks job task's working directory. Measured 2026-09-02: the
+  # first real run failed FileNotFoundError on exactly this, before either
+  # script read a single byte of data. Passed explicitly rather than fixed
+  # by relying on the script's CWD assumption.
+  description = "Workspace path of the synced conf/sources/gharchive.yml, passed explicitly to both scripts."
+  default     = "/Workspace/Shared/almanac/conf/sources/gharchive.yml"
+}
+
+variable "photon_ab_out_dir" {
+  type = string
+  # Same DBFS-root-disabled finding as backfill_checkpoint_dir above; a UC
+  # volume (`almanac_dbx.burn.photon_ab`) replaces it.
+  description = "FUSE-mounted dir each A/B arm writes its measurement JSON to."
+  default     = "/Volumes/almanac_dbx/burn/photon_ab"
+}
+
+variable "photon_ab_dbt_dependencies" {
+  type = list(string)
+  # The Photon A/B times Gold too, so its clusters need the dbt extra the
+  # backfill does not. Keep in sync with pyproject.toml [project.optional-dependencies].dbt.
+  description = "dbt deps for the Photon A/B clusters, on top of backfill_pip_dependencies."
+  default = [
+    "dbt-core>=1.12.3,<1.13",
+    "dbt-spark[session]>=1.11.0,<1.12",
+  ]
+}
+
+variable "almanac_wheel" {
+  type        = string
+  description = "Built almanac wheel (uv build), installed on each job cluster. A bundle would resolve this from pyproject.toml."
+  default     = "/Workspace/Shared/almanac/dist/almanac-0.1.0-py3-none-any.whl"
+}
+
+variable "backfill_pip_dependencies" {
+  type = list(string)
+  # Keep in sync with pyproject.toml [project].dependencies -- a raw
+  # databricks_job cannot derive them; a bundle would.
+  description = "Runtime deps installed on each job cluster alongside the wheel."
+  default = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+  ]
+}
+
+variable "gold_python_file" {
+  type        = string
+  description = "Workspace path of scripts/gold.py, the job entrypoint for almanac.gold.runner."
+  default     = "/Workspace/Shared/almanac/scripts/gold.py"
+}
+
+variable "gold_project_dir" {
+  type = string
+  # The synced dbt/ directory holds dbt_project.yml and profiles.yml together,
+  # so one path serves as both --project-dir and --profiles-dir.
+  description = "Workspace path of the synced dbt project."
+  default     = "/Workspace/Shared/almanac/dbt"
+}

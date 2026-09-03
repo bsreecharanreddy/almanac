@@ -12,20 +12,66 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) planned, not started.**
+> Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.**
+> **The full medallion has run on a real quarter of the firehose:**
+> Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
+> 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
+> estimate and 6.5% of the credit. Gold then built over that quarter for
+> **$0.78**, 23 of 23 dbt nodes green, including point-in-time
+> correctness, row conservation and referential integrity to `dim_repo`
+> **at 341M-row scale** rather than on fixtures. Measured throughput is
+> published per layer — **32.89 GB gz per billed cluster-hour** for
+> Bronze + Silver together, **2.4x better** than Phase 1's Bronze-only
+> calibration, which resolved a pre-registered risk in the opposite
+> direction to the one it was written for.
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (130 tests). It has also **run on a real Databricks cluster**: one day of
-> the firehose, 3.79M rows, measured. **No Gold, no features, no model
-> yet** — Phase 2 onward.
+> (242 tests). **Gold's Kimball layer:** `dim_repo` (SCD2 on repo identity — a rename closes the old
+> row and opens exactly one current row, case-only renames detected, a
+> double rename yields three versions); `fact_pull_request`, an
+> event-native accumulating snapshot carrying the **§5.1 label** —
+> `time_to_first_response_seconds`, the first response from someone other
+> than the PR author, with every PR either labelled or carrying a stated
+> reason it is not (draft, right-censored, author unobserved); and
+> `agg_repo_daily`, the daily activity mart — "stars gained" not a running
+> total, commit volume from `payload.size` not the 20-capped array. Every
+> fact column comes from the event stream, never the `payload.pull_request`
+> object October 2025 gutted; the two consumer models carry **enforced
+> column contracts** and a `relationships` check to `dim_repo`, both proven
+> to fail the build by a break-it test. All three verified against real
+> multi-run lifecycles, not one build. The **GitHub REST API second
+> source** is built and tested (never against the live network) — and
+> §4.5a's "a new source onboards via YAML alone, zero new Python" claim is
+> **falsified and the failure accounted for**: a file mirror would pass it,
+> a paginated, authenticated, rate-limited API took ~120 lines of Python.
+> The **Photon A/B** ran three replicate pairs and is published including
+> the part that did not come out: Silver **2.14x** and Gold **1.38x**, and
+> Bronze **withheld as indeterminate** — re-running an identical arm varies
+> by up to 30% here, which is larger than the ~15% effect being tested, so
+> a single run produced opposite verdicts on two occasions. The harness was
+> fixed to refuse the question rather than answer it. The decision it
+> informs is **do not enable Photon**: break-even on its DBU multiplier
+> lands at 1.55–2.16 against a multiplier of roughly 2x, so it is a wash,
+> and the real lever is Bronze's single-threaded gzip at 64% of execution.
+> **There are still no features and no model** — Phase 3 and beyond,
+> deferred on purpose rather than missing.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
-> raw archive rather than Bronze. Both are invisible at a sample size of
-> one file, which is all Silver had been run against; both are the first
-> task of Phase 2. Recorded rather than quietly fixed, because the
-> interesting part is *why the tests passed*.
+> raw archive rather than Bronze. Both were invisible at a sample size of
+> one file, which is all Silver had been run against. **Both are now
+> fixed** (Phase 2 Task 1), and recorded rather than quietly repaired,
+> because the interesting part is *why the tests passed*. Task 2 hit the
+> same shape a third time: with an ephemeral metastore, dbt rebuilds every
+> model from scratch and still reports success. It was **reproduced
+> deliberately before being fixed** — two consecutive runs, two
+> `CREATE OR REPLACE` commits, no `MERGE`, correct row counts throughout.
+> Task 3 found a fourth: a relative `--silver-path` resolved against the
+> wrong directory on a non-`default` schema, registering a metastore
+> table that pointed at nothing Silver ever wrote — caught because the
+> registration was exercised against real data rather than trusted from
+> the DDL reading correctly.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
@@ -71,8 +117,8 @@ flowchart LR
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
-  class GHA,B,S done
-  class API,G,F,R,E,V,BI todo
+  class GHA,B,S,G done
+  class API,F,R,E,V,BI todo
 ```
 
 Solid = built and green. Dashed = designed, not built.
@@ -94,6 +140,8 @@ which is the entire point of doing it first:
 | **Availability, not quota, picks the region** | `az vm list-skus --all`, 4 regions | Every Databricks node type is `NotAvailableForSubscription` in `eastus2`/`eastus`, all zones. Deployed to **`westus3`** |
 | **Cluster throughput, measured not estimated** | One day (2025-08-13) on 4 × `D4ds_v6` + driver, DBR 17.3 LTS | **13.84 GB gz per *billed* cluster-hour** — 3.79M rows, $0.34/day-of-data. Timing compute and network separately mattered: the Spark-only rate is 36.72 and a single wall-clock timer would have understated the bill by a third |
 | **The recorded cluster cost was 25% low** | Azure Retail Prices API, `westus3` | `num_workers: 4` provisions **five** VMs — four workers and a driver. The recorded $1.896/hr counted workers only; it is $2.370/hr |
+| **One archive file's events span two UTC hours** | Committed legacy fixture, 2,000 events | A file named hour 14 holds events from 14:05 to 15:01 at `-07:00` — **1,957 in UTC hour 21, 43 in hour 22**. So Silver partitions by *ingest* (the file) and reasons by *event time* (`created_at`); deriving the partition from `created_at` would scatter one file across two of them and break idempotent replacement |
+| **The PR-comment discriminator does not exist before 2015** | 2,000 events per era | `issue.pull_request` is present on 55 of 92 modern `IssueCommentEvent` and **0 of 194 legacy** ones. Reported as null, not false — a fabricated negative would silently drop the whole legacy era from the label, which already has no `PullRequestReviewEvent` there |
 
 Full write-ups in [`docs/findings/`](docs/findings/), each carrying its
 method and its sample size.
@@ -110,6 +158,7 @@ bind in both directions; it bound upward, from one month to a quarter.
 | Layer | Choice |
 |---|---|
 | Processing | PySpark 4.2.0, Delta Lake 4.4.0 |
+| Transform (Gold only) | dbt-core 1.12.3 + dbt-spark 1.11.0, `session` and `databricks` targets |
 | Cloud | Azure Databricks (Premium, Unity Catalog), ADLS Gen2, `westus3` |
 | Infrastructure | Terraform |
 | Language | Python 3.12 — `uv`, Pydantic v2, `ruff`, `mypy --strict`, `pytest` |
@@ -122,7 +171,8 @@ doc rather than asserted here.
 ## Layout
 
 ```text
-src/almanac/        extract (URLs, fetching) · explore (schema, measurement) · spark
+src/almanac/        extract (URLs, fetching) · explore (schema, measurement) · pipeline · gold · spark
+dbt/                the Gold project — models, snapshots, sources, both targets
 tests/              unit tests + committed fixtures; tests never touch the network
 docs/design/        the authoritative architecture and phasing document
 docs/findings/      measurements, each with its method and sample size
@@ -137,6 +187,7 @@ docker/             containerized Spark + Delta, matching CI
 uv sync --all-extras --dev
 make check      # ruff + mypy --strict + pytest
 make test-all   # includes Spark tests
+make dbt        # fixtures -> Silver, then the Gold layer through the runner that builds the session first
 make fixtures   # rebuild committed fixtures from the live archive
 ```
 

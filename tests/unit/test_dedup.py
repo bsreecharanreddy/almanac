@@ -29,11 +29,7 @@ def test_exact_duplicate_within_one_hour_removed(spark: SparkSession) -> None:
 
 
 def test_duplicate_across_adjacent_hours_removed(spark: SparkSession) -> None:
-    """Design doc §12 trap 4 -- the case Phase 0 measured but never tested.
-
-    The same event id appearing in hour 14 and hour 15 must collapse to one
-    row. Deduplicating per-partition would keep both.
-    """
+    """Design doc §12 trap 4 -- the case Phase 0 measured but never tested."""
     df = rows(spark, ("e1", T14, 14, 1, T14), ("e1", T15, 15, 1, T15))
     assert deduplicate(df).count() == 1
 
@@ -46,12 +42,7 @@ def test_earliest_occurrence_is_the_one_kept(spark: SparkSession) -> None:
 
 
 def test_ingestion_time_breaks_a_tie_on_event_time(spark: SparkSession) -> None:
-    """Two copies stamped with the same event time must still resolve.
-
-    Without a second ordering key the winner is whichever row the shuffle
-    happened to place first, so a re-run could pick the other copy and
-    every downstream id derived from this row would move.
-    """
+    """Two copies stamped with the same event time must still resolve."""
     early = datetime(2025, 8, 13, 16, 0, tzinfo=UTC)
     late = datetime(2025, 8, 13, 18, 0, tzinfo=UTC)
     df = rows(spark, ("e1", T, 14, 1, late), ("e1", T, 14, 2, early))
@@ -64,11 +55,7 @@ def test_distinct_events_are_untouched(spark: SparkSession) -> None:
 
 
 def test_every_column_of_the_kept_row_survives(spark: SparkSession) -> None:
-    """Dedup must not quietly reshape the rows it keeps.
-
-    A `groupBy`-shaped implementation, or a stray projection, drops columns
-    while leaving every count in this file correct.
-    """
+    """Dedup must not quietly reshape the rows it keeps."""
     df = rows(spark, ("e1", T14, 14, 7, T14), ("e1", T15, 15, 7, T15))
     out = deduplicate(df)
     assert out.columns == df.columns
@@ -85,15 +72,7 @@ def test_stats_report_what_was_removed(spark: SparkSession) -> None:
 
 
 def test_events_without_an_id_are_never_collapsed(spark: SparkSession) -> None:
-    """Four distinct id-less events are four events, not one.
-
-    A window partitioned by `event_id` groups every null into one frame, so
-    the natural implementation keeps exactly one of them -- measured, four
-    in and one out. Silver deduplicates before it splits clean from
-    quarantined, so the `event_id_present` reject rule fires too late to
-    catch it and would report one bad record where the rest had already
-    been destroyed.
-    """
+    """Four distinct id-less events are four events, not one."""
     idless: list[DedupRow] = [(None, T, 14, r, T) for r in (1, 2, 3, 4)]
     out = deduplicate(rows(spark, *idless))
     assert out.count() == 4

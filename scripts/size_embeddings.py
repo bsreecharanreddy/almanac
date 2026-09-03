@@ -1,12 +1,5 @@
-"""Measure real embedding throughput and project it to Tier 4 scale.
-
-A sizing spike, not library code. Its output is a number that decides
-Phase 5's scope: if embedding the modeling slice is a multi-day CPU job,
-Phase 5 needs narrowing, and finding that out in week nine is the
-expensive version.
-
-Run with the dependency injected rather than declared, since this is not
-a Phase 0 dependency:
+"""Measure embedding throughput and project it to Tier 4 scale -- a sizing
+spike that decides Phase 5's scope.
 
     uv run --with sentence-transformers python scripts/size_embeddings.py
 """
@@ -48,10 +41,8 @@ def collect_texts(settings: Settings) -> list[str]:
 
 
 def main() -> int:
-    # Imported inside main deliberately, not at module scope: this is a
-    # spike and sentence-transformers is NOT a project dependency -- it is
-    # injected at run time via `uv run --with`. A top-level import would
-    # break test collection and mypy for everyone who has not installed it.
+    # In-function: sentence-transformers is injected via `uv run --with`, not
+    # a project dependency, so a top-level import would break collection and mypy.
     from sentence_transformers import SentenceTransformer  # noqa: PLC0415
 
     settings = Settings()
