@@ -89,8 +89,8 @@ def _run(args: argparse.Namespace) -> int:
 
 
 def _compare(args: argparse.Namespace) -> int:
-    off = ArmMeasurement(**json.loads(args.off.read_text()))
-    on = ArmMeasurement(**json.loads(args.on.read_text()))
+    off = [ArmMeasurement(**json.loads(p.read_text())) for p in args.off]
+    on = [ArmMeasurement(**json.loads(p.read_text())) for p in args.on]
     comparison = compare_arms(
         off,
         on,
@@ -123,8 +123,10 @@ def main(argv: list[str] | None = None) -> int:
     run.set_defaults(func=_run)
 
     compare = sub.add_parser("compare", help="diff two measured arms into the §8.2 table")
-    compare.add_argument("--off", type=Path, required=True)
-    compare.add_argument("--on", type=Path, required=True)
+    # nargs="+": one run per arm cannot separate a small effect from this
+    # cluster's run-to-run noise, so the comparison takes replicates.
+    compare.add_argument("--off", type=Path, nargs="+", required=True)
+    compare.add_argument("--on", type=Path, nargs="+", required=True)
     compare.add_argument("--usd-per-dbu", type=float, required=True)
     compare.add_argument("--usd-per-node-hour", type=float, required=True)
     compare.add_argument("--num-nodes", type=int, required=True)
