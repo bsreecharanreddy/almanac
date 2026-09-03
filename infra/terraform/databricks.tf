@@ -127,7 +127,17 @@ resource "databricks_job" "photon_ab" {
           # Same defect #7 fix as the backfill job: process_day()'s Bronze
           # landing is the identical code path, so the same multi-node
           # staging-dir problem applies here too.
-          "--staging-dir", var.backfill_staging_dir,
+          #
+          # Per arm, not shared. The two arms carry no depends_on, so they run
+          # concurrently, and both measure the same calibration day -- pointed
+          # at one directory they would race on identical filenames:
+          # fetch_hour does not skip an existing file, it re-downloads and
+          # write_bytes/replace's the same 2025-08-13-N.json.gz.part out from
+          # under the other cluster while Spark may be reading it. A subdir
+          # per arm also keeps each arm's fetch independently measured, and
+          # leaves the 7 leftover 2025-09-30 files (open item in
+          # 2026-09-02-burn-deploy-and-first-run-defects.md) undisturbed.
+          "--staging-dir", "${var.backfill_staging_dir}/photon_ab_${task.value}",
           # Left on /local_disk0 deliberately: Gold's dbt run hasn't been
           # exercised on this cluster yet, so it's unconfirmed whether it
           # hits the same multi-node problem, and an embedded Derby

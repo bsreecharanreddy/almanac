@@ -115,6 +115,24 @@ the cluster is still alive, once after it terminates. Candidate 1 predicts
 the files are gone in the first listing and present in the second; candidate
 2 predicts they are present in both.
 
+**Update, 2026-09-02 23:20**, re-listed while deploying the Photon A/B —
+still exactly those 7 files, hours later and long after the cluster died.
+That adds nothing against candidate 1 or 2 (both predict permanence) and
+only closes out eventual consistency for good.
+
+But one detail already recorded here cuts against candidate 1 and was not
+read carefully enough the first time: **hours 3–9 is a contiguous middle
+block.** A shutdown truncating an in-flight loop leaves a *suffix* — it
+cannot delete 0–2, skip 3–9, and then resume deleting 10–23. Skipping a run
+of entries in the middle is the `readdir`-mutation signature, not the
+truncation one. This is weaker than it first looks, because `Path.glob`
+yields in *directory* order, not numeric order, so numeric contiguity need
+not mean iteration-order contiguity — but it is evidence pointing the
+opposite way to "largely ruled out", and candidate 2 should not be treated
+as closed. The settling observation above is still the thing to run, and
+still has not been run: the Photon A/B does not exercise this path at all
+(`_clear_downloads` belongs to the backfill loop, not `process_day`).
+
 ## The pattern across all nine
 
 None of these are exotic, and none would show up in `terraform validate`,
