@@ -12,14 +12,23 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) in progress — 7 of 9 tasks.**
+> Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.**
+> **The full medallion has run on a real quarter of the firehose:**
+> Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
+> 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
+> estimate and 6.5% of the credit. Gold then built over that quarter for
+> **$0.78**, 23 of 23 dbt nodes green, including point-in-time
+> correctness, row conservation and referential integrity to `dim_repo`
+> **at 341M-row scale** rather than on fixtures. Measured throughput is
+> published per layer — **32.89 GB gz per billed cluster-hour** for
+> Bronze + Silver together, **2.4x better** than Phase 1's Bronze-only
+> calibration, which resolved a pre-registered risk in the opposite
+> direction to the one it was written for.
 > **Bronze → Silver runs end to end** on both committed fixtures — era
 > normalization, cross-hour dedup, null-safe quality rules and a
 > conserving quarantine split — alongside the ingestion edge, local Spark
 > + Delta, CI, cloud infrastructure and the declarative source contract
-> (175 tests). It has also **run on a real Databricks cluster**: one day of
-> the firehose, 3.79M rows, measured. **Gold's Kimball layer is built
-> locally:** `dim_repo` (SCD2 on repo identity — a rename closes the old
+> (242 tests). **Gold's Kimball layer:** `dim_repo` (SCD2 on repo identity — a rename closes the old
 > row and opens exactly one current row, case-only renames detected, a
 > double rename yields three versions); `fact_pull_request`, an
 > event-native accumulating snapshot carrying the **§5.1 label** —
@@ -37,8 +46,17 @@ review queue. The domain is incidental, and that is the point.
 > §4.5a's "a new source onboards via YAML alone, zero new Python" claim is
 > **falsified and the failure accounted for**: a file mirror would pass it,
 > a paginated, authenticated, rate-limited API took ~120 lines of Python.
-> **There are still no features and no model** — later in Phase 2 and
-> beyond.
+> The **Photon A/B** ran three replicate pairs and is published including
+> the part that did not come out: Silver **2.14x** and Gold **1.38x**, and
+> Bronze **withheld as indeterminate** — re-running an identical arm varies
+> by up to 30% here, which is larger than the ~15% effect being tested, so
+> a single run produced opposite verdicts on two occasions. The harness was
+> fixed to refuse the question rather than answer it. The decision it
+> informs is **do not enable Photon**: break-even on its DBU multiplier
+> lands at 1.55–2.16 against a multiplier of roughly 2x, so it is a wash,
+> and the real lever is Bronze's single-threaded gzip at 64% of execution.
+> **There are still no features and no model** — Phase 3 and beyond,
+> deferred on purpose rather than missing.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of
@@ -99,8 +117,8 @@ flowchart LR
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
-  class GHA,B,S done
-  class API,G,F,R,E,V,BI todo
+  class GHA,B,S,G done
+  class API,F,R,E,V,BI todo
 ```
 
 Solid = built and green. Dashed = designed, not built.

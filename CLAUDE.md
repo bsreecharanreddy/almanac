@@ -59,8 +59,13 @@ a year later.**
 
 ## Current status
 
-**Phase 0 and Phase 1 complete and merged to `main`; Phase 2 in
-progress — 7 of 9 tasks, on branch `phase-2-gold`.** `docs/STATUS.md` holds it at
+**Phase 0 and Phase 1 complete and merged to `main`; Phase 2 at 9 of 9
+tasks with the Azure burn done, on branch `phase-2-gold` (PR #9).** The full
+medallion has run on Q3 2025 — 341,060,851 rows for $11.96, then Gold over
+that quarter for $0.78 — and the Photon A/B is published with its Bronze leg
+withheld as indeterminate. What remains before the phase closes is the exit
+gate's `terraform destroy`, per-layer DBUs, and §13's open items.
+`docs/STATUS.md` holds it at
 task granularity — deliberately not duplicated here, because two places
 recording the same thing means one of them is wrong, and this section
 proved that the hard way: it read *"implementation not started"* through
