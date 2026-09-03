@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from datetime import date
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from pyspark.sql import SparkSession
 from almanac.burn.backfill import backfill
 from almanac.burn.checkpoint import BackfillCheckpoint
 from almanac.burn.context import BurnContext, LakePaths
+from almanac.cli import run_cli
 from almanac.config import Settings
 from almanac.pipeline.source import SourceConfig
 from almanac.spark import local_session
@@ -59,4 +59,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    run_cli(main)
