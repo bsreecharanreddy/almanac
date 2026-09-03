@@ -22,7 +22,7 @@ from almanac.burn.day import process_day
 from almanac.burn.photon import ArmMeasurement, compare_arms
 from almanac.cli import run_cli
 from almanac.config import Settings
-from almanac.gold.runner import GoldTarget, run_dbt
+from almanac.gold.runner import DEFAULT_PROJECT_DIR, GoldTarget, run_dbt
 from almanac.pipeline.source import SourceConfig
 from almanac.spark import local_session
 
@@ -70,7 +70,16 @@ def _run(args: argparse.Namespace) -> int:
             client=client,
             settings=Settings(),
         )
-        gold = GoldTarget(warehouse=args.warehouse, metastore=args.metastore)
+        # project_dir/profiles_dir explicitly, never GoldTarget's relative
+        # default: a job task's cwd is not the repo root, which is the same
+        # thing that made --source-config's relative default fail (defect #3).
+        gold = GoldTarget(
+            warehouse=args.warehouse,
+            metastore=args.metastore,
+            project_dir=args.project_dir,
+            profiles_dir=args.project_dir,
+            target_path=args.target_path,
+        )
         arm = measure_arm(spark, ctx, gold, photon=args.photon, dbus=args.dbus)
 
     payload = json.dumps(arm.__dict__, indent=2)
@@ -105,6 +114,10 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--warehouse", required=True)
     run.add_argument("--metastore", type=Path, required=True)
     run.add_argument("--source-config", type=Path, default=Path("conf/sources/gharchive.yml"))
+    run.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
+    # dbt writes target/ under --project-dir, which on a cluster is a workspace
+    # path it cannot write to.
+    run.add_argument("--target-path", type=Path, default=None)
     run.add_argument("--dbus", type=float, default=0.0, help="run's DBU total from the billing API")
     run.add_argument("--out", type=Path, required=True)
     run.set_defaults(func=_run)

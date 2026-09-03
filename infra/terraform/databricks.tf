@@ -103,6 +103,11 @@ resource "databricks_job" "photon_ab" {
         data_security_mode = "SINGLE_USER"
         single_user_name   = data.databricks_current_user.me.user_name
         custom_tags        = var.tags
+        # This arm times Gold too, so it needs the same dbt log redirect the
+        # gold job has: dbt logs relative to --project-dir, a workspace path.
+        spark_env_vars = {
+          DBT_LOG_PATH = "/local_disk0/dbt_logs"
+        }
       }
     }
   }
@@ -148,6 +153,12 @@ resource "databricks_job" "photon_ab" {
           "--metastore", "/local_disk0/metastore",
           "--out", "${var.photon_ab_out_dir}/arm_${task.value}.json",
           "--source-config", var.source_config_workspace_path,
+          # Explicit for the same reason --source-config is: GoldTarget's
+          # default project dir is the relative "dbt", and a job task's cwd is
+          # not the repo root (defect #3). --target-path off the workspace,
+          # which the cluster cannot write to.
+          "--project-dir", var.gold_project_dir,
+          "--target-path", "/local_disk0/dbt_target",
         ]
       }
 
