@@ -285,6 +285,88 @@ and the reason the project is worth building.
   computed `as_of` T is byte-identical whether it is computed today or
   recomputed a year from now from the same Delta version
 
+### 4.4a Phase 3 concretized — hand-rolled joins, UC registered (2026-09-03)
+
+Written via `almanac-design-decision` and a brainstorming pass, before any
+Phase 3 code.
+
+**Scope: offline only.** §9's Phase 3 row lists the offline store,
+as-of joins, feature specs, and the leakage suite — not the online store
+or the vector index (the latter is explicitly Phase 5). An online store
+with no serving endpoint to feed is speculative infrastructure; it is
+built in Phase 4, alongside the endpoint that needs it.
+
+**The as-of join is hand-rolled, not delegated to a managed feature
+store.** Checked live (2026-09-03): Databricks has folded its feature
+store into Unity Catalog as "Feature Engineering in Unity Catalog" —
+`create_training_set` performs a native point-in-time join against any
+UC table carrying a `TIMESERIES` primary key, with online-table sync
+built in ([docs](https://docs.databricks.com/aws/en/machine-learning/feature-store/time-series)).
+That is a legitimate current option, and was weighed against Feast
+(which pushes the join/transform logic outside its own framework, so
+adopting it would not remove the need to write this logic — only add a
+second piece of infrastructure to operate). Neither survives against
+this project's own history: §3.1's peer-of-Gold separation, `dim_repo`'s
+SCD2, Silver's dedup, and the null-safe quality rules were all built by
+hand specifically because that is where this project's differentiated
+engineering story lives — and point-in-time correctness is CLAUDE.md's
+one governing invariant, stated as "invisible in code review and
+impossible to bluff." Handing that specific mechanism to a vendor
+function is a different trade than handing it DBU pricing math.
+**Decision: the join is `almanac.features`'s own code, tested by this
+project's own leakage suite against that code — not against a vendor's
+documented contract.**
+
+**Middle path: UC registration for governance, without UC for
+correctness.** Confirmed live (2026-09-03) against
+[Databricks' UC feature-tables docs](https://docs.databricks.com/aws/en/machine-learning/feature-store/uc/feature-tables-uc):
+declaring a table a UC time-series feature table is pure DDL —
+
+```sql
+ALTER TABLE <table> ADD CONSTRAINT <name>
+  PRIMARY KEY (<entity_col>, <event_time_col> TIMESERIES);
+```
+
+— available from DBR 13.3 LTS (this project runs 17.3 LTS), with no
+dependency on the `databricks-feature-engineering` client. Every
+feature-platform table gets this constraint once built, purely for UC
+lineage and Features-UI discoverability; the join computation itself
+never calls a Databricks feature-engineering API.
+
+**Components.** `almanac/features/`: one append-only Delta table per
+feature group in the `features` container (provisioned since Phase 0),
+each keyed on its entity column(s) plus `event_time`, computed from
+Silver directly — never from Gold, per §3.1. A single as-of join utility
+takes a *spine* (entity_id, as_of_timestamp pairs) and, per feature
+group, filters to `event_time < as_of_timestamp` (strict; boundary-
+tested) and takes the latest row per entity via a window function
+(`row_number() over (partition by entity_id order by event_time desc)`),
+then joins each feature group onto the spine.
+
+**v1 feature groups — scoped to what Phase 4's SLA-risk model (§5)
+needs, not a speculative general framework:**
+
+| Feature group | Entity key | What | Source |
+|---|---|---|---|
+| `author_activity` | `author_login` | Prior PR count, merge rate, average response latency, as-of the author's own PR-open time | Silver events |
+| `repo_activity` | `repo_id` | Rolling event volume, bot share, PR velocity | Silver events — Silver-native, not a read of `agg_repo_daily` (§3.1) |
+| `pr_static` | `(repo_id, pr_number)` | `is_draft`, `is_bot_author`, day-of-week/hour of `opened_at` — already known at prediction time, carried through the same spine rather than joined temporally | Silver events |
+
+**The spine is the PR-opened event population** —
+`(repo_id, pr_number, author_login, opened_at)` — **recomputed from
+Silver on the feature-platform side**, not read from `fact_pull_request`.
+It is the same population §5.1's label targets, but re-deriving it here
+rather than reading Gold's fact is what keeps §3.1's "peer of Gold, not
+downstream of it" a structural fact rather than a claim.
+
+**Leakage suite**, testing the CLAUDE.md invariant directly: write Delta
+version 1 of a feature table with events up to T, append version 2 with
+events after T, compute the as-of-T join against both versions via
+`VERSION AS OF`, assert byte-identical output. Plus an explicit boundary
+test that `event_time == as_of_timestamp` is excluded — the off-by-one
+class of bug this project has already hit twice (SCD2, dedup) and caught
+the same way, with a targeted test rather than by inspection.
+
 ---
 
 ### 4.5 Dataset scope — how much data, and why
