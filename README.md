@@ -12,7 +12,8 @@ review queue. The domain is incidental, and that is the point.
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.**
+> Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.
+> Phase 3 (offline feature platform) — 8 of 8 tasks.**
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -55,8 +56,21 @@ review queue. The domain is incidental, and that is the point.
 > informs is **do not enable Photon**: break-even on its DBU multiplier
 > lands at 1.55–2.16 against a multiplier of roughly 2x, so it is a wash,
 > and the real lever is Bronze's single-threaded gzip at 64% of execution.
-> **There are still no features and no model** — Phase 3 and beyond,
-> deferred on purpose rather than missing.
+> **Phase 3 built the offline feature platform, still no model.** Three
+> v1 feature groups — `author_activity`, `repo_activity`, `pr_static` —
+> computed Silver-native (never a read of `fact_pull_request` or
+> `agg_repo_daily`, per §3.1's peer-of-Gold rule), joined onto a spine via
+> a hand-rolled point-in-time `as_of_join` rather than Databricks Feature
+> Engineering or Feast. Every table also gets a Unity Catalog
+> `TIMESERIES` primary key via plain DDL for governance/lineage only —
+> the join itself stays hand-owned. The centerpiece invariant is tested
+> directly, not just inferred from the join's own boundary test: pinning
+> a Delta version reproduces a feature vector byte-for-byte after a
+> later, point-in-time-valid append changes the live answer. Online
+> store and vector index stay deferred to Phase 4/5 on purpose. **Live UC
+> registration against a real Databricks target is still unverified** —
+> the SQL is unit-tested, execution is deferred to Phase 3's cloud
+> verification step.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of
@@ -109,16 +123,18 @@ flowchart LR
 
   GHA --> B
   API --> B
-  B --> S --> G --> F
+  B --> S
+  S --> G
+  S --> F
+  G --> BI[Power BI]
   F --> R --> E
   F --> V
   V --> F
-  G --> BI[Power BI]
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
-  class GHA,B,S,G done
-  class API,F,R,E,V,BI todo
+  class GHA,B,S,G,F done
+  class API,R,E,V,BI todo
 ```
 
 Solid = built and green. Dashed = designed, not built.

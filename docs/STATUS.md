@@ -133,57 +133,45 @@ Every other figure in the docs remains bracketed or absent by design.
 
 ## Next
 
-**Phase 2 is done**, merged to `main` (PR #9, `8506c5f`): the Tier 3 backfill
-ran ($14.62, 341,060,851 rows, 0 quarantined), Gold built on the real quarter
-($0.85), the Photon A/B published with Bronze withheld as indeterminate and
-Silver/Gold measured losses (decision: do not enable Photon), and the one
-remaining §13 measurement (DBU/node-hour) closed. **One exit-gate item is
-deliberately still open**: `terraform destroy` has not run — the workspace
-and storage account (with the real Gold/Silver/Bronze data Phase 3 builds on)
-are still live in `westus3`, kept up on purpose rather than by oversight,
-since destroying now would force a paid re-burn to get that data back. A
-lifecycle guard or a separated storage state is needed before the standing
-destroy rule can apply again safely; tracked as an open item, not blocking
-Phase 3.
+**Phase 3 (offline feature platform) is done — 8 of 8 tasks, exit gate
+verified.** `docs/plans/2026-09-03-phase-3-feature-platform-plan.md`
+executed task by task (`26d0dd5` spine → `444ef3d` as-of join → `3c4a8c8`
+bot classifier + v1 feature groups → `e80c750` assembly → `47a38f3` UC
+registration SQL → `3a15d08` runner/CLI → `bdb0fb6` leakage suite +
+runner integration test → this commit's wrap-up). Every exit-gate row
+(the strict-`<` boundary, cold start never dropping a spine row, an
+unclosed prior PR counted as unknown rather than not-merged, Silver-only
+reads, the pinned-Delta-version reproducibility invariant, runner
+idempotency) is backed by a real, currently-green test — see the
+Task 1–7 verification-log rows above for what each one actually proved
+and which real bugs were caught along the way (a naive-timezone
+comparison, module-level `Column` constants breaking test collection,
+and a whole-repo-only-visible `mypy --strict` gap in a test helper).
 
-**Phase 3 (feature platform) plan is written, implementation not started.**
-`docs/plans/2026-09-03-phase-3-feature-platform-plan.md` (8 TDD tasks: the
-PR-opened spine; the as-of join engine, built through three TDD cycles —
-ordinary case, the strict-`<` boundary, cold start never dropping a spine
-row; the three v1 feature groups; assembly; UC registration SQL; the
-runner/CLI; the leakage suite; exit-gate wrap-up). Written from §4.4a, one
-real correctness subtlety found and resolved during planning rather than
-discovered later: `author_activity`'s `prior_merge_rate` cannot treat a
-prior PR that has not closed yet as "not merged" — its outcome is unknown,
-not zero — so it needs a self-join keyed on each prior PR's own close time,
-not a simple running average. "Average response latency" is cut from v1
-for a stated reason (would duplicate `int_pr_events.sql`'s multi-event-type
-classification for one signal), not silently dropped.
+**Two exit-gate items are deliberately still open, not silently marked
+done:**
 
-**Tasks 1–7 are done.** Both Phase 1 defects are fixed, Silver carries the
-payload Gold needs (including `push_size`), dbt runs Delta through a
-session whose persistent metastore is enforced by a regression test,
-`dim_repo` is a real SCD2 dimension, `fact_pull_request` is an event-native
-accumulating snapshot carrying the §5.1 label, `agg_repo_daily` is the
-daily activity mart, the two consumer models carry **enforced column
-contracts** plus `relationships` to `dim_repo` (a wrong output type or a
-dangling reference reddens `dbt build`, each proven by a copied-project
-break-it test), and the GitHub REST API second source is built and tested
-— with §4.5a's "zero new Python" claim **falsified and the failure
-accounted for** (`docs/findings/2026-09-02-second-source.md`).
+- **`terraform destroy` has not run** (carried from Phase 2) — the
+  workspace and storage account holding the real 341M-row Gold/Silver/
+  Bronze quarter that Phase 3's feature tables are built from are still
+  live in `westus3`, kept up on purpose since destroying now would force
+  a paid re-burn to get that data back before Sep 24. A lifecycle guard
+  or a separated storage state is needed before the standing destroy
+  rule can apply again safely.
+- **Live UC `TIMESERIES` registration is unverified against a real
+  Databricks target.** `primary_key_sql`'s `DROP`/`ADD CONSTRAINT` pair
+  is unit-tested as pure string-building only (`test_features_registration.py`);
+  executing it for real against the still-live workspace is Phase 3's
+  cloud verification step, the same Terraform/cloud-gated pattern Photon
+  A/B and the backfill already used, and belongs in this file when it
+  runs — not claimed here.
 
-**The gap named at Task 2 is closed.** `register_silver_sources`
-(`almanac/gold/sources.py`) registers Silver's `clean`/`quarantine` Delta
-paths as external metastore tables before dbt runs — Silver itself never
-registers anything (design doc §3.3: Bronze and Silver are pure PySpark,
-no metastore concept), so without this `source('silver', 'events')`
-cannot resolve no matter how correct the YAML declaration is. CI and
-`make dbt` both now run `scripts/build_silver_fixture.py` first, landing
-the committed fixtures through the real Bronze → Silver pipeline, so
-Gold's `dbt build` step is a real build rather than the no-op smoke test
-it was through Task 2. The Tier 3 backfill runs against the span derived
-above, and the Photon A/B reuses Phase 1's calibration slice so both arms
-are compared under identical conditions.
+**Next up: Phase 4 (model + MLflow).** Train against
+`assemble_training_set`'s output, register through MLflow's UC model
+registry, and stand up Model Serving — the `R`/`E` nodes the README's
+architecture diagram still marks `todo`. The online store and vector
+index (§9: Phase 4/5) stay deferred until a serving endpoint exists to
+feed them, per §4.4a's scope decision.
 
 Carried forward from Phase 1, none of it blocking:
 
