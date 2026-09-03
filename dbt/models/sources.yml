@@ -7,7 +7,11 @@ sources:
       into the metastore by the Gold runner. dbt reads Silver and never
       writes it -- the medallion boundary is enforced by which tool owns
       which layer, not by convention.
-    schema: silver
+    # env_var, not a literal: two Photon A/B arms run concurrently against one
+    # metastore, and sharing `silver` made the second arm read the first arm's
+    # data (2026-09-03-photon-ab.md). ALMANAC_SILVER_SCHEMA is read here and by
+    # `runner.default_source_schema`, so the name is stated once.
+    schema: "{{ env_var('ALMANAC_SILVER_SCHEMA', 'silver') }}"
     tables:
       - name: events
         description: Deduplicated, era-normalized events that passed every quality rule.

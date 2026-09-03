@@ -105,8 +105,17 @@ resource "databricks_job" "photon_ab" {
         custom_tags        = var.tags
         # This arm times Gold too, so it needs the same dbt log redirect the
         # gold job has: dbt logs relative to --project-dir, a workspace path.
+        #
+        # The schemas are per arm because the arms share one metastore and run
+        # concurrently. Sharing them made run 693303490917119's Gold row
+        # unusable: `CREATE TABLE IF NOT EXISTS` let one arm win `silver.events`
+        # so the other read its data, and both merged into the same managed
+        # gold tables. Also keeps the arms clear of the real `silver`/`gold`,
+        # which the gold job owns.
         spark_env_vars = {
-          DBT_LOG_PATH = "/local_disk0/dbt_logs"
+          DBT_LOG_PATH          = "/local_disk0/dbt_logs"
+          ALMANAC_SILVER_SCHEMA = "ab_${job_cluster.key}_silver"
+          ALMANAC_GOLD_SCHEMA   = "ab_${job_cluster.key}_gold"
         }
       }
     }

@@ -9,7 +9,8 @@ metastore onto it. So the order is load bearing -- session first, dbt second
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dbt.cli.main import dbtRunner, dbtRunnerResult
@@ -21,6 +22,18 @@ from almanac.spark import dbt_session
 
 DEFAULT_PROJECT_DIR = Path("dbt")
 SESSION_TARGET = "session"
+SILVER_SCHEMA_ENV = "ALMANAC_SILVER_SCHEMA"
+
+
+def default_source_schema() -> str:
+    """The Silver schema, read from the environment so it is stated once.
+
+    ``register_silver_sources`` creates the table and dbt's ``sources.yml``
+    resolves ``source('silver', ...)`` against a schema name; the two must
+    agree or dbt resolves a table nothing registered. Both read this variable,
+    so a caller running two isolated arms sets it in one place.
+    """
+    return os.environ.get(SILVER_SCHEMA_ENV, "silver")
 
 
 @dataclass(frozen=True)
@@ -38,6 +51,7 @@ class GoldTarget:
     metastore: Path
     project_dir: Path = DEFAULT_PROJECT_DIR
     profiles_dir: Path | None = None
+    source_schema: str = field(default_factory=default_source_schema)
     name: str = SESSION_TARGET
     target_path: Path | None = None
 
@@ -77,6 +91,7 @@ def run_dbt(
                 spark,
                 clean_path=f"{silver_path}/clean",
                 quarantine_path=f"{silver_path}/quarantine",
+                schema=target.source_schema,
             )
     return dbtRunner().invoke([*command, *target.cli_flags()])
 
