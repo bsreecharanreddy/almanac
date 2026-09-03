@@ -41,7 +41,9 @@ def measure_arm(
     result = process_day(spark, _CALIBRATION_DAY, ctx)
 
     started = time.monotonic()
-    dbt_result = run_dbt(["build"], gold, silver_path=Path(ctx.paths.silver))
+    # No Path(): ctx.paths.silver is an abfss:// URI on a cluster, and Path
+    # collapses the '//' into a relative path Spark cannot resolve.
+    dbt_result = run_dbt(["build"], gold, silver_path=ctx.paths.silver)
     gold_seconds = time.monotonic() - started
     if not dbt_result.success:
         raise SystemExit("dbt build failed; this arm is not measurable")
@@ -100,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--bronze-path", required=True)
     run.add_argument("--silver-path", required=True)
     run.add_argument("--staging-dir", type=Path, required=True)
-    run.add_argument("--warehouse", type=Path, required=True)
+    run.add_argument("--warehouse", required=True)
     run.add_argument("--metastore", type=Path, required=True)
     run.add_argument("--source-config", type=Path, default=Path("conf/sources/gharchive.yml"))
     run.add_argument("--dbus", type=float, default=0.0, help="run's DBU total from the billing API")

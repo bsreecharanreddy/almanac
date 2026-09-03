@@ -39,7 +39,7 @@ def local_session(app_name: str = DEFAULT_APP_NAME) -> SparkSession:
 
 
 def dbt_session(
-    *, warehouse: Path, metastore: Path, app_name: str = f"{DEFAULT_APP_NAME}-dbt"
+    *, warehouse: str, metastore: Path, app_name: str = f"{DEFAULT_APP_NAME}-dbt"
 ) -> SparkSession:
     """The session dbt runs against. Hive support here is a correctness requirement.
 

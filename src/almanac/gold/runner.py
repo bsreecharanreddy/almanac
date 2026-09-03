@@ -31,7 +31,10 @@ class GoldTarget:
     can run a throwaway project against the profile this repo ships.
     """
 
-    warehouse: Path
+    # warehouse is a str, metastore a Path, and the asymmetry is the point:
+    # the warehouse may be an abfss:// URI, which Path would corrupt, while the
+    # metastore is a Derby database file and is genuinely local.
+    warehouse: str
     metastore: Path
     project_dir: Path = DEFAULT_PROJECT_DIR
     profiles_dir: Path | None = None
@@ -58,7 +61,7 @@ class GoldTarget:
 
 
 def run_dbt(
-    command: list[str], target: GoldTarget, *, silver_path: Path | None = None
+    command: list[str], target: GoldTarget, *, silver_path: str | None = None
 ) -> dbtRunnerResult:
     """Run one dbt command against the local session or a remote warehouse.
 
@@ -72,8 +75,8 @@ def run_dbt(
         if silver_path is not None:
             register_silver_sources(
                 spark,
-                clean_path=silver_path / "clean",
-                quarantine_path=silver_path / "quarantine",
+                clean_path=f"{silver_path}/clean",
+                quarantine_path=f"{silver_path}/quarantine",
             )
     return dbtRunner().invoke([*command, *target.cli_flags()])
 
@@ -81,7 +84,7 @@ def run_dbt(
 def main(argv: list[str] | None = None) -> int:
     settings = Settings()
     parser = argparse.ArgumentParser(description="Run dbt for the Gold layer.")
-    parser.add_argument("--warehouse", type=Path, default=settings.warehouse_dir)
+    parser.add_argument("--warehouse", default=str(settings.warehouse_dir))
     parser.add_argument("--metastore", type=Path, default=settings.metastore_dir)
     parser.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
     parser.add_argument("--profiles-dir", type=Path, default=None)
@@ -89,7 +92,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-path", type=Path, default=None)
     parser.add_argument(
         "--silver-path",
-        type=Path,
         default=None,
         help=(
             "Base dir holding Silver's clean/ and quarantine/ subdirs; "

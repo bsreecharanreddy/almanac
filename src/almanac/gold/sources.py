@@ -10,21 +10,32 @@ from pathlib import Path
 from pyspark.sql import SparkSession
 
 
+def table_location(path: str) -> str:
+    """A LOCATION Spark can resolve: URIs untouched, local paths made absolute.
+
+    Not ``Path`` anywhere on this route. ``Path('abfss://c@acct/x')`` collapses
+    the '//' to 'abfss:/c@acct/x', which is then a *relative* path, so
+    ``.resolve()`` anchors it under the driver's cwd -- Spark reported
+    "Missing cloud file system scheme" and the A/B arm died at the Gold step.
+    A relative *local* path still has to be resolved, for the reason below.
+    """
+    return path if "://" in path else str(Path(path).resolve())
+
+
 def register_silver_sources(
-    spark: SparkSession, *, clean_path: Path, quarantine_path: Path, schema: str = "silver"
+    spark: SparkSession, *, clean_path: str, quarantine_path: str, schema: str = "silver"
 ) -> None:
     """Point ``{schema}.events`` / ``.events_quarantine`` at Silver's output.
 
     ``CREATE TABLE ... LOCATION`` registers an external table -- a pointer at
     files Silver owns, not a copy. ``IF NOT EXISTS`` makes a repeat call a
-    no-op. Paths are resolved to absolute first: a relative ``LOCATION`` on a
-    non-``default`` schema silently nests under that schema's managed dir and
-    registers a table pointing at nothing, failing only at first read.
+    no-op. Local paths are resolved to absolute first: a relative ``LOCATION``
+    on a non-``default`` schema silently nests under that schema's managed dir
+    and registers a table pointing at nothing, failing only at first read.
     """
-    clean_path, quarantine_path = clean_path.resolve(), quarantine_path.resolve()
+    clean, quarantine = table_location(clean_path), table_location(quarantine_path)
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema}")
-    spark.sql(f"CREATE TABLE IF NOT EXISTS {schema}.events USING DELTA LOCATION '{clean_path}'")
+    spark.sql(f"CREATE TABLE IF NOT EXISTS {schema}.events USING DELTA LOCATION '{clean}'")
     spark.sql(
-        f"CREATE TABLE IF NOT EXISTS {schema}.events_quarantine "
-        f"USING DELTA LOCATION '{quarantine_path}'"
+        f"CREATE TABLE IF NOT EXISTS {schema}.events_quarantine USING DELTA LOCATION '{quarantine}'"
     )
