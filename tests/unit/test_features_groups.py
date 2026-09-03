@@ -25,17 +25,22 @@ _SCHEMA = (
 )
 
 
+_Row = tuple[
+    int, int | None, datetime, str, str | None, str | None, bool | None, bool | None, None, datetime
+]
+
+
 def _row(
-    repo_id,
-    pr_number,
-    created_at,
-    event_type,
+    repo_id: int,
+    pr_number: int | None,
+    created_at: datetime,
+    event_type: str,
     *,
-    action=None,
-    actor=None,
-    merged=None,
-    draft=None,
-):
+    action: str | None = None,
+    actor: str | None = None,
+    merged: bool | None = None,
+    draft: bool | None = None,
+) -> _Row:
     return (
         repo_id,
         pr_number,
