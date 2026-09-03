@@ -9,12 +9,12 @@ metastore onto it. So the order is load bearing -- session first, dbt second
 from __future__ import annotations
 
 import argparse
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from dbt.cli.main import dbtRunner, dbtRunnerResult
 
+from almanac.cli import run_cli
 from almanac.config import Settings
 from almanac.gold.sources import register_silver_sources
 from almanac.spark import dbt_session
@@ -117,4 +117,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    run_cli(main)

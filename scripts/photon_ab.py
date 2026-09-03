@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from datetime import date
 from pathlib import Path
@@ -21,6 +20,7 @@ from pyspark.sql import SparkSession
 from almanac.burn.context import BurnContext, LakePaths
 from almanac.burn.day import process_day
 from almanac.burn.photon import ArmMeasurement, compare_arms
+from almanac.cli import run_cli
 from almanac.config import Settings
 from almanac.gold.runner import GoldTarget, run_dbt
 from almanac.pipeline.source import SourceConfig
@@ -121,4 +121,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    run_cli(main)
