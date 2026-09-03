@@ -663,6 +663,101 @@ the censoring rate is reported rather than hidden.
 against a naive baseline. A model that fails to beat its baseline is a
 documented finding, not a failure to hide.
 
+### 5.2 Phase 4 concretized — regression target, single-node training, live now (2026-09-03)
+
+Written via brainstorming, before any Phase 4 code. Phase 3 finished
+today, ~18 days ahead of §9's original Sep 21–Oct 4 window — the schedule
+assumptions below are revised accordingly, not carried over unexamined.
+
+**The label was never assembled past Gold, and that gap is closed
+deliberately, not silently.** §4.4a's feature platform never reads Gold
+(§3.1) — but `time_to_first_response_seconds` / `label_exclusion` /
+`is_censored` exist only in `fact_pull_request.sql`, and a training set
+needs both sides. **Decision: a new training-set-assembly step, outside
+`almanac/features/`, joins the label columns onto the feature rows by
+`(repo_id, pr_number)`, both pinned to matching Delta versions.** §3.1's
+rule was about avoiding leakage inside *point-in-time feature
+computation*; a label is definitionally about the future outcome, so the
+same reproducibility discipline (pin the version, per Task 7's leakage
+suite) applies without extending the same "never touch Gold" boundary to
+a different kind of data. The alternative — reimplementing
+`int_pr_events.sql`'s response classification and the censoring logic a
+second time in Python — was rejected as duplicating already-tested logic
+for no correctness gain.
+
+**Regression on seconds, not classification against a threshold.**
+§5.1's five-category `label_exclusion` taxonomy was built for a
+continuous duration and is already enforced by Gold's own tests;
+reframing as binary breach/no-breach would force an undocumented decision
+about where `closed_no_response` falls that the taxonomy doesn't answer.
+Training targets `time_to_first_response_seconds` directly, over rows
+where `label_exclusion IS NULL`. The `/score/pr-review-risk` "risk score"
+is the predicted duration compared against an SLA threshold applied at
+serving time, not baked into the model — so the threshold can be retuned
+without retraining. **The threshold's actual value is measured from the
+real distribution during implementation, not assumed here** — the same
+discipline §13 already applies to every other number in this document.
+
+**Single-node training, not Spark MLlib.** §5.1 itself argues the volume
+is modest — "the model never needs the full firehose... only the
+platform does, and only once" — so Spark's job stops at building the
+training set; the labelled frame is collected to pandas once (the
+governing invariant already proves reproducibility, and pandas is not
+back in that concern once the frame is materialized) and trained with
+**LightGBM** (4.7.0, current on PyPI as of today) plus a naive baseline
+via scikit-learn (1.9.0, current). No model registers unless it beats
+the baseline by a measured margin (§5.1's "baseline first, always",
+enforced in code rather than left to a human checklist step).
+
+**MLflow tracking + UC registry, validated live today.**
+[Databricks' model-lifecycle docs](https://docs.databricks.com/aws/en/machine-learning/manage-model-lifecycle/)
+confirm aliases (`MlflowClient().set_registered_model_alias(name, alias,
+version)`) are the current, non-deprecated mechanism against
+`mlflow.set_registry_uri("databricks-uc")` — stages are legacy. **v1
+registers one model version and aliases it `@champion` directly; no
+`@challenger` machinery yet** — a real champion/challenger comparison
+needs a second trained candidate, which belongs to a future retraining
+story, not a first model with nothing to challenge against.
+
+**Serving is Databricks Model Serving's own REST endpoint, invoked
+directly — no custom API service.** Confirmed live today against the
+[`databricks_model_serving` Terraform resource docs](https://registry.terraform.io/providers/databricks/databricks/latest/docs/resources/model_serving):
+`scale_to_zero_enabled` on the served-model block is current and matches
+§8.1's already-stated intent exactly, so no design change was forced
+here — only the confirmation that it still holds. The endpoint is stood
+up via Terraform (same pattern as Gold's infrastructure), and "serving"
+is demoed by invoking that URL directly from a script/test, measuring
+real cold start and p50/p95 — matching §8.1's explicit rejection of a
+custom web frontend. `GET /model/metadata` is answered by querying UC's
+registry APIs directly, same reasoning. **§6's `GET /features/{id}?as_of=`
+and `POST /similar-prs` are out of this plan's scope entirely** — the
+first is feature-retrieval, not model-serving, and the second needs
+Phase 5's vector index, which does not exist yet; both get a real home
+when there is a concrete reason to build a custom API service, not
+speculatively alongside this phase.
+
+**The cloud step runs now, not in a post-Sep-24 paid window.** §9's
+"bounded paid window after Sep 24" framing for live serving was reasoned
+from the *original* schedule — Phase 4 landing Oct 5–18, weeks after the
+$184 credit expires. Phase 3 finished today instead, and the credit does
+not expire for 21 more days. Running Phase 4's real cloud verification
+(training run, MLflow experiment, UC registration, and the serving
+endpoint itself) against the still-live workspace now spends down
+credit that would otherwise be wasted, and gets the cold-start/p50/p95
+measurements recorded well ahead of the deadline rather than racing it.
+This is a scope-timing decision, not a reversal of §9's underlying
+allocation logic (expensive compute funded by free credit still holds —
+training and serving remain cheap regardless of when they run).
+
+**Deferred out of this plan, on purpose:** the secondary bot-classifier
+upgrade (§5's "measure the heuristic, train, measure lift" arc — real
+and cheap, but its own label/feature set, kept independent so this plan
+stays about one pipeline end to end); the `@challenger` retraining
+workflow; `GET /features/{id}?as_of=` and `POST /similar-prs` as custom
+API endpoints; drift/training-serving-skew monitoring beyond what's
+measurable from the model's own logged predictions against a later
+feature re-pull.
+
 ---
 
 ## 6. Endpoints
