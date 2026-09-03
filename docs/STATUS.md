@@ -146,15 +146,19 @@ lifecycle guard or a separated storage state is needed before the standing
 destroy rule can apply again safely; tracked as an open item, not blocking
 Phase 3.
 
-**Phase 3 (feature platform) is design-settled, plan not yet written.**
-§4.4a records the concretized design: offline-only scope, a hand-rolled
-as-of join in a new `almanac.features` (not delegated to Databricks Feature
-Engineering or Feast), UC `TIMESERIES` primary-key registration for
-governance only, and a v1 feature set (`author_activity`, `repo_activity`,
-`pr_static`) scoped to §5's SLA-risk model. Next step is
-`docs/plans/2026-09-03-phase-3-feature-platform-plan.md`, written from §4.4a
-the way the Phase 1 and Phase 2 plans were written from their design
-sections.
+**Phase 3 (feature platform) plan is written, implementation not started.**
+`docs/plans/2026-09-03-phase-3-feature-platform-plan.md` (8 TDD tasks: the
+PR-opened spine; the as-of join engine, built through three TDD cycles —
+ordinary case, the strict-`<` boundary, cold start never dropping a spine
+row; the three v1 feature groups; assembly; UC registration SQL; the
+runner/CLI; the leakage suite; exit-gate wrap-up). Written from §4.4a, one
+real correctness subtlety found and resolved during planning rather than
+discovered later: `author_activity`'s `prior_merge_rate` cannot treat a
+prior PR that has not closed yet as "not merged" — its outcome is unknown,
+not zero — so it needs a self-join keyed on each prior PR's own close time,
+not a simple running average. "Average response latency" is cut from v1
+for a stated reason (would duplicate `int_pr_events.sql`'s multi-event-type
+classification for one signal), not silently dropped.
 
 **Tasks 1–7 are done.** Both Phase 1 defects are fixed, Silver carries the
 payload Gold needs (including `push_size`), dbt runs Delta through a
