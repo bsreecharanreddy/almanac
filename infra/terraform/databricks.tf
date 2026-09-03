@@ -171,3 +171,80 @@ output "photon_ab_job_url" {
   description = "Databricks Workflows URL for the Photon A/B job."
   value       = databricks_job.photon_ab.url
 }
+
+# Gold on the real lake. The backfill's process_day lands bronze+silver only,
+# so until this runs, dim_repo / fact_pull_request / agg_repo_daily have only
+# ever been built over 2,000-row fixtures.
+resource "databricks_job" "gold" {
+  name        = "${var.prefix}-gold"
+  description = "dbt build for Gold over the backfilled Silver. Attended runs only."
+
+  max_concurrent_runs = 1
+  tags                = var.tags
+
+  job_cluster {
+    job_cluster_key = "gold"
+    new_cluster {
+      spark_version      = data.databricks_spark_version.lts.id
+      node_type_id       = var.databricks_node_type
+      num_workers        = var.backfill_workers
+      runtime_engine     = var.enable_photon ? "PHOTON" : "STANDARD"
+      data_security_mode = "SINGLE_USER"
+      single_user_name   = data.databricks_current_user.me.user_name
+      custom_tags        = var.tags
+      # dbt writes its log dir relative to --project-dir, which here is a
+      # workspace path the cluster cannot write to.
+      spark_env_vars = {
+        DBT_LOG_PATH = "/local_disk0/dbt_logs"
+      }
+    }
+  }
+
+  task {
+    task_key        = "gold"
+    job_cluster_key = "gold"
+
+    spark_python_task {
+      python_file = var.gold_python_file
+      source      = "WORKSPACE"
+      parameters = [
+        # The base dir the backfill wrote, holding clean/ and quarantine/;
+        # register_silver_sources appends both. A str, not a Path, all the way
+        # down -- Path collapses the '//' and Spark answers "Missing cloud file
+        # system scheme" (measured 2026-09-02, the first A/B arm died on it).
+        "--silver-path", "${local.lake.silver}/events",
+        "--warehouse", "${local.lake.gold}/warehouse",
+        # Ephemeral, and correct for a *first* full build: there is nothing to
+        # be incremental from, so a fresh catalog loses nothing. It is NOT
+        # correct for a second run -- dim_repo is a dbt snapshot, and SCD2's
+        # multi-version path needs catalog state that outlives the cluster.
+        # Choosing that store (UC vs Derby-over-FUSE, still unverified for file
+        # locking) is its own decision, not a default to back into here.
+        "--metastore", "/local_disk0/metastore",
+        "--project-dir", var.gold_project_dir,
+        "--profiles-dir", var.gold_project_dir,
+        "--target-path", "/local_disk0/dbt_target",
+        # REMAINDER: every flag must precede the dbt command.
+        "build",
+      ]
+    }
+
+    library {
+      whl = var.almanac_wheel
+    }
+
+    dynamic "library" {
+      for_each = concat(var.backfill_pip_dependencies, var.photon_ab_dbt_dependencies)
+      content {
+        pypi {
+          package = library.value
+        }
+      }
+    }
+  }
+}
+
+output "gold_job_url" {
+  description = "Databricks Workflows URL for the Gold dbt build."
+  value       = databricks_job.gold.url
+}
