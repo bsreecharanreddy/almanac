@@ -8,7 +8,10 @@ almanac:
     session:
       type: spark
       method: session
-      schema: gold
+      # env_var for the same reason the databricks target below uses one: the
+      # A/B's two arms share a metastore and must not merge into one another's
+      # gold tables. Default keeps every local and CI run on `gold`.
+      schema: "{{ env_var('ALMANAC_GOLD_SCHEMA', 'gold') }}"
       host: NA # unused by the session method; the adapter still reads the field
       threads: 1
 

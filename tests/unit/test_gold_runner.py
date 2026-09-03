@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from almanac.gold.runner import DEFAULT_PROJECT_DIR, GoldTarget
+import pytest
+
+from almanac.gold.runner import (
+    DEFAULT_PROJECT_DIR,
+    SILVER_SCHEMA_ENV,
+    GoldTarget,
+    default_source_schema,
+)
 
 
 def _flag(flags: list[str], name: str) -> str:
@@ -39,3 +46,24 @@ def test_both_dirs_are_absolute_when_both_are_passed() -> None:
 def test_the_default_project_dir_is_relative() -> None:
     """Pins why the above matters -- correct locally, unresolvable on a cluster."""
     assert not DEFAULT_PROJECT_DIR.is_absolute()
+
+
+def test_the_source_schema_defaults_to_silver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every local and CI run must keep the plain name."""
+    monkeypatch.delenv(SILVER_SCHEMA_ENV, raising=False)
+    assert default_source_schema() == "silver"
+    assert GoldTarget(warehouse="/w", metastore=Path("/m")).source_schema == "silver"
+
+
+def test_the_source_schema_follows_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two concurrent A/B arms isolate by setting this one variable; dbt's
+    sources.yml reads the same one, so the name is stated once."""
+    monkeypatch.setenv(SILVER_SCHEMA_ENV, "ab_photon_silver")
+    assert GoldTarget(warehouse="/w", metastore=Path("/m")).source_schema == "ab_photon_silver"
+
+
+def test_an_explicit_source_schema_still_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The env var is a default, not an override."""
+    monkeypatch.setenv(SILVER_SCHEMA_ENV, "ab_photon_silver")
+    target = GoldTarget(warehouse="/w", metastore=Path("/m"), source_schema="explicit")
+    assert target.source_schema == "explicit"
