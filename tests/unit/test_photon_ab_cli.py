@@ -56,7 +56,7 @@ def test_compare_reads_two_arm_files_and_exits_zero(
 
 
 def test_compare_rejects_arms_in_the_wrong_order(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="Photon-off arm first"):
+    with pytest.raises(ValueError, match="Photon-off arms first"):
         main(
             [
                 "compare",
