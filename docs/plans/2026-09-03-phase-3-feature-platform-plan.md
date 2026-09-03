@@ -630,7 +630,7 @@ _SCHEMA = (
 )
 
 
-def _row(repo_id, pr_number, created_at, event_type, action=None, actor=None, merged=None, draft=None):
+def _row(repo_id, pr_number, created_at, event_type, *, action=None, actor=None, merged=None, draft=None):
     return (repo_id, pr_number, created_at, event_type, action, actor, merged, draft, None,
             created_at)
 
@@ -640,7 +640,7 @@ def test_repo_activity_is_cumulative_and_keyed_on_the_events_own_timestamp(spark
         [
             _row(1, None, datetime(2025, 8, 10, tzinfo=UTC), "WatchEvent", actor="alice"),
             _row(1, None, datetime(2025, 8, 11, tzinfo=UTC), "WatchEvent", actor="dependabot[bot]"),
-            _row(1, 5, datetime(2025, 8, 12, tzinfo=UTC), "PullRequestEvent", "opened", "bob"),
+            _row(1, 5, datetime(2025, 8, 12, tzinfo=UTC), "PullRequestEvent", action="opened", actor="bob"),
         ],
         _SCHEMA,
     )
@@ -665,7 +665,12 @@ def test_repo_activity_is_cumulative_and_keyed_on_the_events_own_timestamp(spark
 
 def test_pr_static_carries_open_time_attributes_with_no_temporal_join(spark: SparkSession) -> None:
     events = spark.createDataFrame(
-        [_row(1, 5, datetime(2025, 8, 12, tzinfo=UTC), "PullRequestEvent", "opened", "dependabot[bot]", draft=True)],
+        [
+            _row(
+                1, 5, datetime(2025, 8, 12, tzinfo=UTC), "PullRequestEvent",
+                action="opened", actor="dependabot[bot]", draft=True,
+            )
+        ],
         _SCHEMA,
     )
 
@@ -690,14 +695,22 @@ is already known at PR-open time and is joined directly (assemble.py),
 never through as_of_join.
 """
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 from almanac.features.bot import is_bot_column
 
-_OPENED = (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "opened")
-_CLOSED = (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "closed")
+
+def _opened() -> Column:
+    """A fresh Column each call, not a module-level constant: `F.col(...)`
+    asserts an active SparkContext, which does not exist yet at import time.
+    """
+    return (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "opened")
+
+
+def _closed() -> Column:
+    return (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "closed")
 
 
 def compute_repo_activity(events: DataFrame) -> DataFrame:
@@ -713,7 +726,7 @@ def compute_repo_activity(events: DataFrame) -> DataFrame:
     )
     scoped = events.where(F.col("repo_id").isNotNull()).withColumn(
         "_is_bot", F.coalesce(is_bot_column(F.col("actor_login")), F.lit(False)).cast("int")
-    ).withColumn("_is_pr_open", _OPENED.cast("int"))
+    ).withColumn("_is_pr_open", _opened().cast("int"))
 
     events_total = F.count(F.lit(1)).over(window)
     bot_events = F.sum("_is_bot").over(window)
@@ -734,7 +747,7 @@ def compute_pr_static(events: DataFrame) -> DataFrame:
     joins this on (repo_id, pr_number) directly, not through as_of_join,
     since there is nothing temporal to look up.
     """
-    return events.where(_OPENED).select(
+    return events.where(_opened()).select(
         "repo_id",
         "pr_number",
         F.col("pr_draft").alias("is_draft"),
@@ -749,6 +762,17 @@ def compute_pr_static(events: DataFrame) -> DataFrame:
 Run: `uv run pytest tests/unit/test_features_groups.py -v`
 Expected: PASS (2 passed)
 
+**Found while executing this task**: the first draft defined `_OPENED` /
+`_CLOSED` as module-level `Column` constants. `F.col(...)` asserts an
+active `SparkContext`, which does not exist yet at import time — test
+collection failed before any test ran. Fixed to `_opened()` / `_closed()`
+functions, called inside each compute function where a session is
+guaranteed to exist by then; the version above is what actually ran.
+`ruff` also flagged `_row`'s eight positional parameters (`PLR0917`);
+fixed with `*` after `event_type`, matching
+`test_gold_fact_pull_request.py`'s own `_event` helper, which every call
+site above already reflects.
+
 - [ ] **Step 8: Write the failing test for `compute_author_activity` — including the "unknown, not zero" case**
 
 ```python
@@ -757,12 +781,15 @@ def test_author_activity_prior_pr_count_and_merge_rate(spark: SparkSession) -> N
     events = spark.createDataFrame(
         [
             # PR1: alice opens day 1, merges day 3.
-            _row(1, 1, datetime(2025, 8, 1, tzinfo=UTC), "PullRequestEvent", "opened", "alice"),
-            _row(1, 1, datetime(2025, 8, 3, tzinfo=UTC), "PullRequestEvent", "closed", "alice", merged=True),
+            _row(1, 1, datetime(2025, 8, 1, tzinfo=UTC), "PullRequestEvent", action="opened", actor="alice"),
+            _row(
+                1, 1, datetime(2025, 8, 3, tzinfo=UTC), "PullRequestEvent",
+                action="closed", actor="alice", merged=True,
+            ),
             # PR2: alice opens day 5, still open.
-            _row(1, 2, datetime(2025, 8, 5, tzinfo=UTC), "PullRequestEvent", "opened", "alice"),
+            _row(1, 2, datetime(2025, 8, 5, tzinfo=UTC), "PullRequestEvent", action="opened", actor="alice"),
             # PR3: alice opens day 6 -- PR2 has not closed yet.
-            _row(1, 3, datetime(2025, 8, 6, tzinfo=UTC), "PullRequestEvent", "opened", "alice"),
+            _row(1, 3, datetime(2025, 8, 6, tzinfo=UTC), "PullRequestEvent", action="opened", actor="alice"),
         ],
         _SCHEMA,
     )
@@ -800,13 +827,13 @@ def compute_author_activity(events: DataFrame) -> DataFrame:
     folding it into the denominator would teach the model an outcome it
     could not have had. See this task's worked example.
     """
-    opened = events.where(_OPENED).select(
+    opened = events.where(_opened()).select(
         "repo_id",
         "pr_number",
         F.col("actor_login").alias("author_login"),
         F.col("created_at").alias("opened_at"),
     )
-    closed = events.where(_CLOSED).select(
+    closed = events.where(_closed()).select(
         "repo_id",
         "pr_number",
         F.col("created_at").alias("closed_at"),
