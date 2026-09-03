@@ -1,0 +1,21 @@
+# dbt is scoped to Gold and nothing else (design doc §8). Bronze and Silver
+# are PySpark, and rewriting them here would discard the Spark work that is
+# the point of the project.
+name: almanac
+version: "0.1.0"
+profile: almanac
+
+model-paths: ["models"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  almanac:
+    gold:
+      # Delta everywhere, and `merge` rather than `insert_overwrite`: Gold's
+      # fact is an accumulating snapshot, so a rerun has to update rows in
+      # place rather than replace a partition.
+      +materialized: incremental
+      +file_format: delta
+      +incremental_strategy: merge

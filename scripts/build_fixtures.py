@@ -1,10 +1,7 @@
 """Build committed test fixtures by sub-sampling real archive hours.
 
-Run manually via ``make fixtures``, never in CI. The output is committed;
-the raw downloads are not (see .gitignore).
-
-Sampling takes every Nth line rather than a random sample so the fixture
-is reproducible from the same source hour.
+``make fixtures``, never CI. Every Nth line, not a random sample, so a
+fixture is reproducible from its source hour.
 """
 
 import gzip

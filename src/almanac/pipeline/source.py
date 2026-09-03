@@ -2,18 +2,14 @@
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Severity(StrEnum):
-    """What a failed rule does to the record.
-
-    ``REJECT`` quarantines it. ``WARN`` annotates it but leaves it in the
-    clean set -- used where a field is genuinely optional in some era.
-    """
+    """What a failed rule does: REJECT quarantines, WARN annotates and keeps."""
 
     REJECT = "reject"
     WARN = "warn"
@@ -28,11 +24,7 @@ class QualityRule(BaseModel):
 
 
 class SourceConfig(BaseModel):
-    """A source, declared entirely in data.
-
-    Onboarding a second source must require a new YAML file and no new
-    Python -- see design doc §4.5a and the Phase 2 gate.
-    """
+    """A file source, declared entirely in data (design doc §4.5a)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -49,6 +41,45 @@ class SourceConfig(BaseModel):
         if len(names) != len(set(names)):
             raise ValueError("quality rule names must be unique")
         return rules
+
+    @classmethod
+    def load(cls, path: Path) -> Self:
+        return cls.model_validate(yaml.safe_load(path.read_text()))
+
+
+# The second source. §4.5a's "zero new Python" claim did not survive: a
+# gzip-file mirror reuses SourceConfig untouched, a paginated authenticated
+# rate-limited API does not (docs/findings/2026-09-02-second-source.md).
+
+
+class AuthConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    scheme: Literal["bearer"] = "bearer"
+    token_env: str = Field(min_length=1)
+
+
+class RateLimitConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requests_per_hour: int = Field(gt=0)
+    header_remaining: str = "X-RateLimit-Remaining"
+    header_reset: str = "X-RateLimit-Reset"
+
+
+class RestSourceConfig(BaseModel):
+    """A REST API source. Distinct from SourceConfig: the shapes do not overlap."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1)
+    kind: Literal["rest_api"]
+    url_template: str = Field(min_length=1)
+    list_url_template: str = Field(min_length=1)
+    enrichment_fields: list[str] = Field(min_length=1)
+    auth: AuthConfig
+    rate_limit: RateLimitConfig
+    max_attempts: int = Field(default=3, gt=0)
 
     @classmethod
     def load(cls, path: Path) -> Self:

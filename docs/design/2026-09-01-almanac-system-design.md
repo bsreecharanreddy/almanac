@@ -417,10 +417,21 @@ The decision needs Phase 0 to measure:
 
 ### 4.5a Second source — the GitHub REST API
 
-The config-driven framework's proof obligation is that a new source
+The config-driven framework's proof obligation was that a new source
 onboards via **YAML alone, zero new Python** (§9, Phase 2 gate). That
 second source is the **GitHub REST API**, and the choice is no longer
 arbitrary — it repairs exactly what the firehose lost.
+
+**Measured 2026-09-02, and the claim did not hold — cleanly.** A second
+gzip-file mirror would onboard by YAML alone (`quality_rules` is the only
+field the Spark path consumes and it is format-agnostic). A paginated,
+authenticated, rate-limited API needed **~123 lines of new Python** — a
+config-model extension, a REST client, rate-limit backoff, `Link`-header
+pagination. The honest register statement and the line-by-line accounting
+are in `docs/findings/2026-09-02-second-source.md`. "Zero new Python" held
+for the case it was easy for and broke on the case that matters, which is
+a more credible thing to be able to say than an unfalsifiable claim of
+full generality.
 
 **Verified 2026-09-01 against the live API:** `/repos/{owner}/{repo}/pulls/{n}`
 returns a **48-key** PR object including `merged`, `draft`, `title`,
@@ -506,6 +517,56 @@ Three consequences that are design constraints, not filters to add later:
 - **Temporal splits must fall on whole-week boundaries.** The probed hour
   was a Saturday; weekday/weekend review latency differs sharply, so an
   arbitrary split point encodes day-of-week as leakage.
+
+**The label is era-bound, and this doc now says so.** Measured while
+writing the Phase 2 plan, against the committed fixtures (2,000 events per
+era; see STATUS.md's verification log for the probe):
+
+| Label input | legacy (2014) | modern (2025) | reduced (post-Oct-2025) |
+|---|---|---|---|
+| `PullRequestReviewEvent` | **absent** — 0 of 106 legacy PRs | 68 | present |
+| `PullRequestReviewCommentEvent` | 42 | present | present |
+| `IssueCommentEvent` on a PR | 194 | present | present |
+| `payload.pull_request.draft` | **absent** — null on all 106 | 5 of 149 | absent |
+| `payload.pull_request.merged` | present (35/49 closed) | present | **absent** |
+
+`PullRequestReviewEvent` — the component the "one PR in four" finding is
+about — **did not exist before 2015**. A Tier 2 (2014) PR can be ingested
+and dimensioned, but its label rests on the *other two* components only.
+This is a second, independent argument for the broadened label: §5.1
+widened it for coverage, and the width turns out to be what lets the label
+survive the era boundary at all. Two rules follow, both already
+load-bearing in the Phase 2 Gold code:
+
+- **`draft` exclusion is null-safe, never `draft = false`.** "Not a draft"
+  and "the era had no drafts" are different facts; collapsing them makes
+  the 2014 slice look like 106 deliberate non-draft PRs.
+- **`merged` is read three-way by era.** It is in the legacy and modern
+  payloads and gone from the reduced era, so a fact needing it falls back
+  to the event stream (a `closed` `PullRequestEvent` plus the merge
+  signal) rather than trusting the field to be there.
+
+**Every unlabelled PR states why, and the reasons are a closed set.**
+`fact_pull_request.label_exclusion` carries one of five values, and is
+null **iff** `time_to_first_response_seconds` is non-null — an invariant
+enforced on every build by `assert_label_exclusion_accounts_for_every_row`,
+so no row can be silently dropped from the trainable population:
+
+| `label_exclusion` | Meaning | Why it is an exclusion, not a zero |
+|---|---|---|
+| `author_unobserved` | `author_login` is null — no observed `opened` event carried it | The "first response by someone **other than** the author" rule cannot be evaluated without the author; guessing would fabricate the label's defining condition |
+| `draft` | `coalesce(draft, false)` is true | Drafts do not accrue review-SLA time. Null-safe: a legacy null is *unknown*, not "not a draft" |
+| `open_unobserved` | `opened_at` is null — the opening was never observed | The duration has no start point. Distinct from `author_unobserved` only because the author is checked first |
+| `right_censored` | Open, no response **yet** | The response may still arrive; recording 0 or the window length would both be wrong |
+| `closed_no_response` | Closed having never received a non-author response | A real outcome, but not a *latency* — there is no duration to measure |
+
+The distinction that matters for training is between `right_censored` and
+`closed_no_response`: the first is a measurement still in progress, the
+second is a completed PR whose latency is undefined. Collapsing them would
+put "we do not know yet" and "there is no answer" in the same bucket.
+**Censoring rate is reported, never hidden** (§13); it was 63.3% on the
+committed mid-stream fixture slice, which is a property of a one-hour
+window, not of the dataset.
 
 **Volume is abundant, which reinforces §4.5.** At 6,352 PRs/hour, a 5%
 repo sample still yields on the order of 230K labelled PRs per month. The
@@ -1029,11 +1090,12 @@ Each of these is a real property of GH Archive, each goes in
 **Open — and load-bearing for the four items added 2026-09-01:**
 
 - [x] **Cluster throughput (GB gz per cluster-hour)** — **measured 2026-09-01: 13.84 GB gz per billed cluster-hour**, one day (2025-08-13, 24/24 hours, 3,794,323 rows, 2.012 GB gz) through Bronze on 4 × `D4ds_v6` workers plus a driver, DBR 17.3 LTS, no Photon. $0.3446 per day-of-data. Tier 3 derived from it as the **full Q3 2025 quarter** at 17.2% of the credit — the rule bound upward. Two caveats carried forward: the rate is Bronze-only, and the 2.3× headroom under the 40% cap is what absorbs a slower full-medallion run. `docs/findings/2026-09-01-cluster-throughput.md`.
-- [ ] **DBUs consumed per node-hour** — the one assumed input in the cost model. A sensitivity table covers the plausible range; the Premium decision holds across all of it, but the *absolute* cost per run does not
-- [ ] **Photon's per-layer effect** on wall-clock and DBUs consumed (§8.2). Hypothesised to be near zero on bronze
+- [x] **DBUs consumed per node-hour** — **measured 2026-09-03: 1.101 DBU/node-hour** on the Tier 3 backfill (27.788 DBU over 25.235 node-hours), against an assumed **0.75** — the assumption was **47% low**. Rates confirmed from `system.billing.list_prices`: `PREMIUM_JOBS_COMPUTE` and `PREMIUM_JOBS_COMPUTE_(PHOTON)` both **$0.30/DBU**, so Photon's penalty is consumption, never rate. **This §13 entry's own caveat proved exactly right**: the Premium-vs-Standard decision held across the whole sensitivity range and the *absolute* cost per run did not — the backfill was **$14.62, not $11.96 (+22%)**, and Gold **$0.85, not $0.78**. Tier 3 remains 7.9% of the credit against a 40% cap, so no tiering decision moves. DBU consumption is **workload-shaped, not node-shaped** (backfill 1.101 vs Gold 0.883/node-hour), so a single figure must not be quoted across shapes — the same error as quoting Bronze-only throughput for the full pipeline. Access was the whole difficulty and cost two wrong diagnoses: `system.billing` was never disabled (every schema reports `MANAGED`; the earlier "only `ai` and `information_schema`" was a **permissions filter on a non-admin identity**), and the `#EXT#` UPN is Entra's internal representation of a guest, not a sign-in name. The real blocker was `AADSTS500200` — this tenant's only Global Administrator was a personal Microsoft account, which the Databricks account console refuses; resolved with a cloud-only Entra admin user. **Still not measurable: per-layer DBUs** — one cluster, three sequential layers, so any per-layer figure is the run total apportioned by wall-clock share. `docs/findings/2026-09-03-measured-dbus.md`
+
+- [~] **Photon's per-layer effect** (§8.2) — **wall-clock measured 2026-09-03 across three replicate pairs; DBUs still open.** Silver **2.14x** and Gold **1.38x** (every replicate clear of the 1.10 threshold); **Bronze withheld as indeterminate** — 1.18 / 1.05 / 1.23, a range straddling the threshold, because re-running an *identical* arm varies by up to 30% here and the effect under test is ~15%. The hypothesis said bronze would be near zero; that is **neither confirmed nor refuted** — the measurement never had the power to do either, and a single run returned opposite verdicts on two occasions. The DBU half is blocked on the item above, so the cost verdict is inverted instead: break-even on Photon's DBU multiplier is **1.55 / 1.96 / 2.16** for bronze at no-help / mean / best case, straddling its ~2x multiplier. **Decision: do not enable Photon**; the lever is bronze's single-threaded gzip at 64% of execution. `docs/findings/2026-09-03-photon-ab.md`
 - [ ] **Model Serving cold-start distribution** (§8.1) — "10–20 seconds" is community-sourced and must not be quoted until measured
 - [ ] **Vector index cost and whether point-in-time filtering expresses cleanly** (§8.3) — decides managed Vector Search vs. FAISS
-- [ ] **Duplicate-`event_id` rate across *adjacent* hours** — Phase 0's duplicate measurement used non-adjacent hours and therefore did not test trap 4 at all. Carried forward honestly rather than counted as done
+- [x] **Duplicate-`event_id` rate across *adjacent* hours** — **measured 2026-09-02 by the Tier 3 backfill: 62 duplicates in 341,060,851 rows, 1 in 5.5M**, across 2,208 genuinely consecutive hourly files. Phase 0 could not test trap 4 (its sample used non-adjacent hours) and Phase 1 covered it only by unit test; this is the first measurement at scale. Day-boundary duplicates stay out of scope by design — Silver's grain is a day — so the residual across 91 boundaries is negligible but **unmeasured rather than zero**. `docs/findings/2026-09-02-zero-quarantined.md`
 
 ---
 

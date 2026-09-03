@@ -1,0 +1,9 @@
+# A canary, not a shipped model. It exists so `test_dbt_target.py` can
+# assert the incremental mechanism itself -- the metastore defect the
+# Phase 2 spike found is a property of the target, not of any one model,
+# and Gold's real models do not exist until Tasks 3-5.
+name: almanac_canary
+version: "0.1.0"
+profile: almanac
+model-paths: ["models"]
+clean-targets: ["target"]

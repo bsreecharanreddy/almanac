@@ -25,6 +25,18 @@ spark = [
     "delta-spark>=4.4.0",
 ]
 
+# Gold only (design doc §8): dbt never touches Bronze or Silver.
+#
+# `dbt-spark[session]` runs dbt in-process against the SparkSession this
+# repo already builds, rather than over a Thrift/ODBC connection to a
+# server that does not exist locally. Versions checked live on 2026-09-01;
+# dbt-spark declares `pyspark<5.0.0,>=3.0.0`, so it composes with the
+# ceiling above rather than fighting it.
+dbt = [
+    "dbt-core>=1.12.3,<1.13",
+    "dbt-spark[session]>=1.11.0,<1.12",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
@@ -58,7 +70,10 @@ max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # Comparing against expected literals is normal and readable in tests.
-"tests/**/*.py" = ["PLR2004"]
+# PLR0913: a test builder that spells out every field of the row it lands
+# is clearer than one taking a config object -- the explicit keywords are
+# what make the call site readable at a glance.
+"tests/**/*.py" = ["PLR2004", "PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"

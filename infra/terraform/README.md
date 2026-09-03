@@ -1,9 +1,10 @@
 # Almanac — Azure infrastructure
 
-Provisions the resource group, ADLS Gen2 lake, and Databricks workspace.
-**No compute.** Clusters are created by later phases, never here, so
-`apply` accrues effectively nothing and the credit is spent only during an
-actual backfill.
+Provisions the resource group, ADLS Gen2 lake, Databricks workspace, and
+the Phase 2 burn's **job definitions**. **No compute on `apply`.** A job
+cluster spins up only when a run is started — by hand, during an attended
+burn — and self-terminates when the run ends. The credit is spent only
+during an actual backfill.
 
 ## Prerequisite: subscription vCPU quota
 
@@ -39,6 +40,28 @@ terraform apply
 # ... work ...
 terraform destroy     # between sessions; this is a cost control
 ```
+
+`terraform validate` needs no credentials, so `databricks.tf` can be
+reviewed anywhere. `plan`/`apply` need `az login` and the workspace already
+applied — its data sources query the live API.
+
+## The Phase 2 burn — `databricks.tf`
+
+`databricks_job.backfill` runs the Tier 3 quarter through bronze + silver
+via `scripts/backfill.py`, checkpointed per day. Defined on `apply`,
+accrues nothing; started by hand, job cluster self-terminates.
+
+```bash
+databricks jobs run-now --job-id "$(terraform output -raw backfill_job_url | grep -oE '[0-9]+$')"
+terraform destroy
+databricks clusters list --output json | jq '[.clusters[]] | length'   # expect 0
+```
+
+`backfill_python_file`, `almanac_wheel` and `backfill_pip_dependencies` are
+deploy-time inputs: sync the repo (`databricks repos`) and `uv build` the
+wheel first. A Databricks Asset Bundle would derive the wheel and deps from
+`pyproject.toml`; Terraform still carries the job definition as this
+project's IaC of record.
 
 ## Why premium tier
 
