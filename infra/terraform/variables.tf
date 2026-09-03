@@ -196,3 +196,17 @@ variable "backfill_pip_dependencies" {
     "pyyaml>=6.0.3",
   ]
 }
+
+variable "gold_python_file" {
+  type        = string
+  description = "Workspace path of scripts/gold.py, the job entrypoint for almanac.gold.runner."
+  default     = "/Workspace/Shared/almanac/scripts/gold.py"
+}
+
+variable "gold_project_dir" {
+  type = string
+  # The synced dbt/ directory holds dbt_project.yml and profiles.yml together,
+  # so one path serves as both --project-dir and --profiles-dir.
+  description = "Workspace path of the synced dbt project."
+  default     = "/Workspace/Shared/almanac/dbt"
+}
