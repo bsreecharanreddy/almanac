@@ -16,6 +16,12 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/story-bank-reminder.sh\"",
             "timeout": 15,
             "statusMessage": "Checking whether this task earned a story-bank entry..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/code-style-reminder.sh\"",
+            "timeout": 15,
+            "statusMessage": "Checking whether this commit's code was reviewed against almanac-code-style..."
           }
         ]
       }

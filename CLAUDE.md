@@ -59,8 +59,13 @@ a year later.**
 
 ## Current status
 
-**Phase 0 and Phase 1 complete and merged to `main`; Phase 2 planned,
-not started.** `docs/STATUS.md` holds it at
+**Phase 0 and Phase 1 complete and merged to `main`; Phase 2 at 9 of 9
+tasks with the Azure burn done, on branch `phase-2-gold` (PR #9).** The full
+medallion has run on Q3 2025 — 341,060,851 rows for $11.96, then Gold over
+that quarter for $0.78 — and the Photon A/B is published with its Bronze leg
+withheld as indeterminate. What remains before the phase closes is the exit
+gate's `terraform destroy`, per-layer DBUs, and §13's open items.
+`docs/STATUS.md` holds it at
 task granularity — deliberately not duplicated here, because two places
 recording the same thing means one of them is wrong, and this section
 proved that the hard way: it read *"implementation not started"* through
@@ -283,6 +288,22 @@ Currently present:
   already-standing web-validation and where-it-gets-written rules rather
   than adding anything new.
 
+- **`skills/almanac-code-style`** + **`hooks/code-style-reminder.sh`** —
+  **the one deliberate exception to "nothing here is anticipatory."**
+  Written 2026-09-02 at the user's direct request, not from a named
+  Almanac review incident — unlike its sibling below (still deferred),
+  this one has no incident behind it and says so in its own frontmatter
+  rather than being dressed up as if it did. The skill is a
+  simplify/name/edge-case/dedup/composition/mapping-dispatch/generator/
+  context-manager/comment-discipline checklist applied while writing code;
+  the hook is a mechanical `git commit` reminder in the same register as
+  `story-bank-reminder.sh` — it cannot judge code quality, only remind
+  that the judgment should have happened. **Comment discipline** (item 10,
+  added 2026-09-02): one-line docstrings, why-not-what comments, no
+  narrative paragraphs or measured-number essays in code — that story
+  lives in `docs/`. The Phase 0–1 modules were swept against it once in a
+  dedicated pass (2026-09-02); it applies to new code from there on.
+
 Deliberately deferred until earned, with the trigger that would justify
 each:
 
@@ -294,10 +315,13 @@ each:
   above; mechanize it once it is proven that stating it was not enough.
 - **A recurring-CI-failure procedure** — there is no CI yet and no
   failure history to generalize from.
-- **A code-quality review skill** — write it once Almanac has accumulated
-  its own named review incidents. A sibling project's equivalent works
-  because it cites six specific ones; Almanac currently has zero, so
-  writing one now would be guessing at what its bugs look like.
+- **An incident-derived code-quality review skill**, distinct from
+  `almanac-code-style` above — write it once Almanac has accumulated its
+  own named review incidents (a real bug a generic style pass wouldn't
+  have caught, the way `canopica-code-review`'s six do for its sibling
+  project). `almanac-code-style` covers general simplification and
+  readability; this one would cover Almanac-specific pattern mistakes,
+  and Almanac currently has zero of those to ground it in.
 - **A test-coverage skill** — deliberately *not* planned. Coverage is
   already enforced mechanically by CI and the testing policy above. A
   skill would be a second place recording the same rule, and two places

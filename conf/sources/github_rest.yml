@@ -1,0 +1,30 @@
+# The GitHub REST API as a second source (design doc §4.5a).
+#
+# This file is as far as YAML goes. Everything below `quality_rules` in
+# gharchive.yml is consumed by a pure Spark path; nothing here is -- the
+# REST API is paginated, authenticated and rate-limited, and each of those
+# needs Python the framework did not have. See
+# docs/findings/2026-09-02-second-source.md for the accounting.
+name: github_rest
+kind: rest_api
+
+# One PR's full fidelity -- the fields the October 2025 firehose reduction
+# dropped (§12 trap 12). `{owner}`, `{repo}`, `{number}` are filled per call.
+url_template: "https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+
+# The paginated list endpoint, for discovering PR numbers in a repo.
+list_url_template: "https://api.github.com/repos/{owner}/{repo}/pulls?state=all&per_page=100"
+
+# Only where the firehose is lossy. Not a full mirror.
+enrichment_fields: [merged, draft, title, additions, deletions, changed_files]
+
+auth:
+  scheme: bearer
+  token_env: GITHUB_TOKEN
+
+rate_limit:
+  requests_per_hour: 5000
+  header_remaining: X-RateLimit-Remaining
+  header_reset: X-RateLimit-Reset
+
+max_attempts: 3

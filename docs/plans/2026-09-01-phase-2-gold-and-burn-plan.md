@@ -184,23 +184,31 @@ counts looked correct in the broken run.
 
 ---
 
-## Task 1: Silver reads Bronze, partitions its writes, and keeps the payload
+## Task 1: Silver reads Bronze, partitions its writes, and keeps the payload — **DONE**
 
 **Files:**
 - Modify: `src/almanac/pipeline/silver.py`, `src/almanac/pipeline/eras.py`
 - Create: `src/almanac/pipeline/payloads.py`
 - Test: `tests/unit/test_payloads.py`, `tests/unit/test_silver_writes.py`
 
-**Interfaces:**
-- `read_bronze(spark, path, *, event_date, event_hour) -> DataFrame`
-- `parse_payload(df, *, era) -> DataFrame` (pure)
-- `run_silver(...)` gains partitioned `replaceWhere` writes
+**Interfaces** (as built; the plan's first draft is corrected below):
+- `read_bronze(spark, path, *, event_date) -> DataFrame`
+- `parse_events(df, *, json_column="raw_json") -> DataFrame` (pure)
+- `run_silver(spark, bronze_path, output_path, *, event_date, config)` —
+  partitioned `replaceWhere` writes, and **no `ingested_at` parameter**: it
+  is stamped by Bronze and read back with the row.
+
+**The grain is a day, not an hour.** §12 trap 4 is that duplicate event ids
+occur across hour-file boundaries, so an hour-at-a-time Silver would dedup
+inside each file and never see the boundary — quietly undoing Task 5 of
+Phase 1 while every unit test stayed green. Duplicates spanning a *day*
+boundary stay out of scope, stated rather than accidental.
 
 **This task closes Defects A and B and is a hard precondition for every
 other task.** Gold cannot be built on a Silver that carries no payload,
 and the backfill cannot run on a Silver that overwrites itself.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Three, each pinning one defect:
 
@@ -221,13 +229,26 @@ def test_silver_parses_from_bronze_raw_json(spark, tmp_path):
     """Defect B. Silver's input is a Bronze table, not a .json.gz path."""
 ```
 
-- [ ] **Step 2: Add `event_date`/`event_hour` to `SILVER_COLUMNS`**
+- [x] **Step 2: Add `event_date`/`event_hour` to `SILVER_COLUMNS`**
 
-Derived from `created_at`, not from the filename — a late-arriving event
-belongs to the hour it happened in. Both go in `SILVER_COLUMNS`; the
-docstring already explains why that tuple is the enforced contract.
+**Corrected against reality, 2026-09-01.** This step originally read
+"derived from `created_at`, not from the filename — a late-arriving event
+belongs to the hour it happened in." That is wrong, and the committed
+legacy fixture disproves it: one archive file named hour 14 holds events
+from 14:05 to 15:01 at `-07:00`, which is **UTC 21:05 to 22:01 — 1,957
+events in hour 21 and 43 in hour 22**. Deriving the partition from
+`created_at` scatters a single source file across two partitions, and no
+`replaceWhere` scoped to an hour can then replace that file's contribution
+idempotently.
 
-- [ ] **Step 3: Parse from Bronze's `raw_json`**
+So `event_date`/`event_hour` are **carried through from Bronze** and
+describe the archive file a row was ingested from. `created_at` remains the
+event-time column, and every temporal question downstream — every fact,
+every feature, every point-in-time join — is asked of it. Partitioning by
+ingest and reasoning by event time is the standard split, and conflating
+them here would have made the write non-reproducible.
+
+- [x] **Step 3: Parse from Bronze's `raw_json`**
 
 `spark.read.format("delta").load(bronze).selectExpr("from_json(raw_json, schema)")`.
 The schema is **explicit, not inferred** — Task 7 already measured that
@@ -235,7 +256,7 @@ per-file inference disagrees between hours of the same day, which is what
 broke the calibration's first Delta write. Era dispatch reads the parsed
 struct exactly as `is_legacy` does today.
 
-- [ ] **Step 4: Per-type payload columns**
+- [x] **Step 4: Per-type payload columns**
 
 `payloads.py`, pure, three-way era dispatch. Minimum for §5.1's label:
 `action`, `pr_number`, `is_pr_comment`, `merged`, `draft`. `merged` and
@@ -243,18 +264,18 @@ struct exactly as `is_legacy` does today.
 because "not a draft" and "the era had no drafts" are different facts and
 collapsing them makes the legacy slice look like 106 non-draft PRs.
 
-- [ ] **Step 5: Partitioned writes**
+- [x] **Step 5: Partitioned writes**
 
 `.partitionBy("event_date", "event_hour")` with `replaceWhere` scoped to
 the hour, mirroring `bronze.py`.
 
-- [ ] **Step 6: Verify** — `make check` green; then **mutate**: revert
+- [x] **Step 6: Verify** — `make check` green; then **mutate**: revert
   `replaceWhere` to `mode("overwrite")` and confirm exactly the Defect A
   test reddens.
 
 ---
 
-## Task 2: dbt scaffold on Delta, with the silent-rebuild regression test
+## Task 2: dbt scaffold on Delta, with the silent-rebuild regression test — **DONE**
 
 **Files:**
 - Create: `dbt/dbt_project.yml`, `dbt/profiles.yml`, `dbt/models/sources.yml`
@@ -265,7 +286,16 @@ the hour, mirroring `bronze.py`.
 - `dbt_session(warehouse, metastore) -> SparkSession` — Hive support on
 - Two dbt targets: `session` (local, CI) and `databricks` (the burn)
 
-- [ ] **Step 1: Write the failing test — the one the spike earned**
+- [x] **Step 1: Write the failing test — the one the spike earned**
+
+**As built, correcting the sketch below:** the sketch asserts on
+`gold.fact_pull_request`, which Task 4 creates — so a Task 2 test cannot
+reference it. The defect is a property of the *target*, not of any model,
+so the test drives a canary model in `tests/fixtures/dbt_canary/` against
+the profile this repository actually ships, and runs dbt **twice in two
+separate processes**. It was watched failing for the real reason before
+the fix: `['CREATE OR REPLACE TABLE AS SELECT', 'CREATE OR REPLACE TABLE
+AS SELECT']`. See STATUS.md's verification-log row.
 
 ```python
 def test_gold_model_merges_on_second_run_rather_than_rebuilding(dbt_project):
@@ -281,54 +311,84 @@ def test_gold_model_merges_on_second_run_rather_than_rebuilding(dbt_project):
     assert "MERGE" in ops[1:]
 ```
 
-- [ ] **Step 2: Persistent metastore in `spark.py`**
+- [x] **Step 2: Persistent metastore in `spark.py`**
 
 `enableHiveSupport()` plus an on-disk Derby path. Document *why* in the
 docstring, in the same register as `configure_spark_with_delta_pip`'s
 existing note — this is a correctness requirement wearing a configuration
 costume.
 
-- [ ] **Step 3: dbt project + both targets.** `session` for local and CI;
+- [x] **Step 3: dbt project + both targets.** *(As built: the `databricks`
+  target uses dbt-spark's `http` method, so one adapter serves both
+  targets rather than adding a second.)* `session` for local and CI;
   `databricks` reading host/token/warehouse from env for the burn.
   Nothing about the models differs between targets.
 
-- [ ] **Step 4: Declare Silver as dbt sources** with freshness where it
-  is meaningful.
+- [x] **Step 4: Declare Silver as dbt sources** with freshness where it
+  is meaningful. *(Freshness on `ingested_at`, never `created_at`. As
+  built, source **resolution** is unexercised until Task 3's first model
+  selects from one — stated in STATUS.md rather than implied here.)*
 
-- [ ] **Step 5: Wire `make dbt` and CI.** dbt runs in CI on fixtures.
+- [x] **Step 5: Wire `make dbt` and CI.** dbt runs in CI on fixtures.
   **CI is the only place the metastore config is exercised on a clean
   machine** — Phase 1's Task 2 finding was that a UTC CI runner is
   structurally blind to timezone defects; here the asymmetry runs the
   other way, and a laptop with a warm metastore is blind to this one.
 
-- [ ] **Step 6: Verify** — `make check` + `make dbt` green.
+- [x] **Step 6: Verify** — `make check` + `make dbt` green.
 
 ---
 
-## Task 3: `dim_repo` — SCD2, case-sensitive, null-safe
+## Task 3: `dim_repo` — SCD2, case-sensitive, null-safe — **DONE**
 
 **Files:** `dbt/snapshots/dim_repo.sql`, `dbt/tests/assert_dim_repo_scd2.sql`
 
-- [ ] **Step 1: Failing tests** — three invariants, from the testing policy:
+**As built, beyond what the sketch below anticipated:** the snapshot
+selects from `source('silver', 'events')`, and nothing had ever made that
+resolve — Silver writes plain Delta files with no metastore entry at all,
+so `source()` cannot find a table that was never registered. Task 2 named
+this gap and left it for whichever model first selected from a source.
+Closed here with `almanac/gold/sources.py`'s `register_silver_sources`,
+called from the runner before dbt runs on the local target, plus
+`scripts/build_silver_fixture.py` (and matching CI/`make dbt` steps) to
+give Gold real Silver data to select from on a cold machine — see
+STATUS.md's verification log for the relative-path registration bug this
+found and fixed.
+
+- [x] **Step 1: Failing tests** — three invariants, from the testing policy:
   - a rename closes the old row and opens exactly one current row
   - **exactly one `dbt_valid_to IS NULL` per `repo_id`**, always
   - a **case-only** rename (`GLB` → `glb`) is detected — measured to exist
   - a repo renamed **twice** yields three versions, not two (§12 trap 8
     measured one in the window)
 
-- [ ] **Step 2: The snapshot.** `strategy='check'`, `check_cols=['repo_name']`,
+  *As built:* one lifecycle test (`tests/integration/test_gold_dim_repo.py`)
+  proves all four together, since they are one scenario rather than four —
+  three real dbt invocations, each a separate process, against one
+  persistent warehouse/metastore. `dbt/tests/assert_dim_repo_scd2.sql` is
+  the second invariant as a standing dbt test, run on every `build`.
+
+- [x] **Step 2: The snapshot.** `strategy='check'`, `check_cols=['repo_name']`,
   `file_format='delta'`. Verified working in the spike.
 
-- [ ] **Step 3: Case sensitivity.** Spark string comparison is
+- [x] **Step 3: Case sensitivity.** Spark string comparison is
   case-sensitive by default; the test exists so a later "helpful"
   `lower()` cannot pass silently.
 
-- [ ] **Step 4: Null-safety.** Any comparison added later uses `<=>`.
+- [x] **Step 4: Null-safety.** Any comparison added later uses `<=>`.
   A repo whose name goes null (deleted repos, §12 trap 11) is a
-  transition, not a non-event.
+  transition, not a non-event. *As built:* dbt's stock `check` strategy
+  already generates a null-safe comparison (an explicit OR over both
+  null-to-value and value-to-null transitions), so no custom strategy
+  macro was needed to satisfy this.
 
-- [ ] **Step 5: Verify**, then **mutate**: change `check_cols` comparison
-  to case-insensitive and confirm the case-only test reddens.
+- [x] **Step 5: Verify**, then **mutate**: change `check_cols` comparison
+  to case-insensitive and confirm the case-only test reddens. *As built:*
+  mutated by folding `repo_name` to `lower()` in the snapshot's own select
+  (equivalent effect, since `check_cols` itself has no case-sensitivity
+  knob to flip) — confirmed the lifecycle test's case-only-rename
+  assertion failed (`assert 1 == 2`, no version added at all) for exactly
+  the reason expected, then reverted.
 
 ---
 

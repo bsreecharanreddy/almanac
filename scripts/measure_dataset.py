@@ -1,16 +1,8 @@
 """Measure the dataset properties the design depends on.
 
-Samples three non-adjacent days across the candidate quarter. Three days
-rather than one because a rename is only visible as the same repo id
-carrying different names at different times -- a single day cannot show
-one at all.
-
-Hours are sub-sampled within each day. That is acceptable *here* and
-forbidden in the pipeline: design doc §4.5 bans hour sampling for
-training data because a skipped hour can drop a PR's review event and
-fabricate an SLA breach. This is a diagnostic probe measuring repo-name
-observations over time, not a label, so completeness per hour is not
-required.
+Three non-adjacent days (a rename needs one repo id under two names at two
+times). Hours are sub-sampled -- fine for a diagnostic probe, forbidden in
+the pipeline (§4.5: a skipped hour fabricates an SLA breach).
 """
 
 import collections
@@ -26,10 +18,8 @@ from almanac.explore.measure import BotMatch, classify_bot, duplicate_ratio, ren
 from almanac.extract.archive import fetch_hour
 from almanac.extract.outcome import FetchStatus
 
-# Q3 2025 -- the most recent quarter fully inside the rich schema era,
-# which ends 2025-10-08 at the latest (docs/findings/2026-09-01-third-
-# schema-era.md). All three are Wednesdays, so bot share stays comparable
-# across samples: it is strongly day-of-week dependent.
+# Q3 2025, the last quarter fully in the rich era. All Wednesdays: bot
+# share is strongly day-of-week dependent.
 SAMPLE_DAYS = [date(2025, 7, 9), date(2025, 8, 13), date(2025, 9, 17)]
 SAMPLE_HOURS = [0, 3, 6, 9, 12, 15, 18, 21]
 

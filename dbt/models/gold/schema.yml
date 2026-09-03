@@ -1,0 +1,173 @@
+version: 2
+
+models:
+  - name: int_pr_events
+    description: >
+      Every PR-relevant event flattened to one shape (opened / closed /
+      review / review_comment / issue_comment). The seam between
+      silver.events and the PR fact; a view, always current. Not
+      contract-enforced -- it is an internal view, and the two consumer
+      models below carry the enforced contracts.
+    columns:
+      - name: repo_id
+        data_tests: [not_null]
+      - name: pr_number
+        data_tests: [not_null]
+      - name: kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [opened, closed, review, review_comment, issue_comment]
+
+  - name: fact_pull_request
+    description: >
+      Accumulating-snapshot fact, one row per pull request, keyed on
+      (repo_id, pr_number). Every column is derived from an event-level
+      field, never an embedded payload object (design doc §4.3a). Carries
+      the §5.1 label. The grain is asserted by
+      assert_fact_pull_request_grain.sql on every build.
+    config:
+      contract:
+        enforced: true
+      on_schema_change: fail
+    columns:
+      - name: repo_id
+        data_type: bigint
+        description: Stable across all three schema eras (§12 trap 7).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_repo')
+                field: repo_id
+      - name: pr_number
+        data_type: bigint
+        description: >
+          One of the five payload fields that survived the October 2025
+          reduction, so the key holds in every era.
+        data_tests: [not_null]
+      - name: opened_at
+        data_type: timestamp
+        description: The `opened` event's own `created_at`. Null until observed.
+      - name: author_login
+        data_type: string
+        description: The `opened` event's `actor_login` (§4.3a). Null until observed.
+      - name: author_is_bot
+        data_type: boolean
+        description: >
+          Same heuristic as `almanac.explore.measure.classify_bot`, via the
+          `almanac_is_bot` macro. Bot PRs are flagged and segmented on,
+          never dropped (§5.1).
+        data_tests: [not_null]
+      - name: closed_at
+        data_type: timestamp
+        description: The `closed` event's `created_at`. Null while the PR is open.
+      - name: merged
+        data_type: boolean
+        description: >
+          From `payload.pull_request.merged` via Silver. Era-bound: null in
+          the reduced era, which carries no merge outcome.
+      - name: draft
+        data_type: boolean
+        description: >
+          From `payload.pull_request.draft` via Silver. Era-bound: null
+          before 2015 and in the reduced era. Never folded to false.
+      - name: first_review_at
+        data_type: timestamp
+        description: Earliest `PullRequestReviewEvent`. Absent in the legacy era.
+      - name: first_response_at
+        data_type: timestamp
+        description: >
+          Earliest review / review-comment / PR issue-comment by someone
+          other than the PR author, and never before `opened_at` (§2).
+      - name: time_to_first_response_seconds
+        data_type: bigint
+        description: >
+          The §5.1 label: `first_response_at - opened_at`. Null iff
+          `label_exclusion` is non-null.
+      - name: is_censored
+        data_type: boolean
+        description: No terminal event observed. The rate is reported, not hidden (§5.1).
+      - name: label_exclusion
+        data_type: string
+        description: >
+          Why a PR is out of the trainable population -- author_unobserved,
+          draft, open_unobserved, right_censored (open, no response yet),
+          closed_no_response (closed, none ever) -- or null iff the label is
+          non-null. Stated, never a silently missing row.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  [
+                    author_unobserved,
+                    draft,
+                    open_unobserved,
+                    right_censored,
+                    closed_no_response,
+                  ]
+      - name: last_ingested_at
+        data_type: timestamp
+        description: High-water mark of the events folded into this row; drives the incremental filter.
+
+  - name: agg_repo_daily
+    description: >
+      Daily activity per repo on event time. "Stars gained" never total
+      stars (§12 traps 1-2); commit volume from payload.size never
+      size(commits) (trap 3). The grain is asserted by
+      assert_agg_repo_daily_grain.sql on every build.
+    config:
+      contract:
+        enforced: true
+      on_schema_change: fail
+    columns:
+      - name: repo_id
+        data_type: bigint
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_repo')
+                field: repo_id
+      - name: activity_date
+        data_type: date
+        data_tests: [not_null]
+      - name: events_total
+        data_type: bigint
+        data_tests: [not_null]
+      - name: bot_events
+        data_type: bigint
+        description: Events whose actor matches the bot heuristic. An unclassified metric misleads (§12 trap 6).
+      - name: stars_gained
+        data_type: bigint
+        description: WatchEvent count. There are no un-star events, so this is a gain, not a total.
+      - name: forks
+        data_type: bigint
+      - name: prs_opened
+        data_type: bigint
+      - name: prs_closed
+        data_type: bigint
+      - name: issues_opened
+        data_type: bigint
+      - name: pushes
+        data_type: bigint
+      - name: commits_pushed
+        data_type: bigint
+        description: sum(payload.size) over PushEvents. Never size(commits), which is capped at 20.
+      - name: distinct_commits_pushed
+        data_type: bigint
+      - name: last_ingested_at
+        data_type: timestamp
+        description: High-water mark; drives the incremental filter.
+
+snapshots:
+  - name: dim_repo
+    description: >
+      SCD2 on repo identity, keyed on repo_id. "Exactly one current row per
+      repo_id" is asserted by assert_dim_repo_scd2.sql on every build.
+    columns:
+      - name: repo_id
+        data_tests: [not_null]
+      - name: repo_name
+        description: Nullable -- a deleted repo appears as a null name (§12 trap 11).
