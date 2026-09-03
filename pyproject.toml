@@ -37,6 +37,22 @@ dbt = [
     "dbt-spark[session]>=1.11.0,<1.12",
 ]
 
+# Phase 4 (design doc §5.2): the model, tracking, and registry stack.
+# Version floors checked live on 2026-09-03, not carried over from a plan.
+#
+# The `<3` ceiling on pandas is load-bearing, same as the pyspark ceiling
+# above: mlflow 3.15.2 (and every 3.x) declares `pandas<3`, while
+# pyspark[sql] 4.2 needs `pandas>=2.2.0` -- so the usable band is 2.x, and
+# the plan's original `pandas>=3.0.5` floor (latest release, but unchecked
+# against mlflow) is unsatisfiable. 2.3.3 is the current 2.x. Revisit when
+# mlflow raises its own ceiling.
+ml = [
+    "mlflow>=3.15.2",
+    "lightgbm>=4.7.0",
+    "scikit-learn>=1.9.0",
+    "pandas>=2.3.3,<3",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
