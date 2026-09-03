@@ -124,6 +124,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 from almanac.features.spine import build_pr_opened_spine
+from tests.helpers import epoch_of
 
 pytestmark = pytest.mark.spark
 
@@ -153,8 +154,18 @@ def test_only_opened_pull_request_events_become_spine_rows(spark: SparkSession) 
     result = spine.collect()
     assert len(result) == 1
     assert result[0]["author_login"] == "alice"
-    assert result[0]["as_of_timestamp"] == datetime(2025, 8, 13, 9, tzinfo=UTC)
+    # No test asserts on a collected datetime (tests/helpers.py's epoch_of
+    # docstring): PySpark returns it naive in the driver's local timezone,
+    # so a direct comparison passes or fails by machine.
+    expected = int(datetime(2025, 8, 13, 9, tzinfo=UTC).timestamp())
+    assert epoch_of(spine, "as_of_timestamp") == expected
 ```
+
+**Found while executing this task**: the first draft of this test asserted
+`result[0]["as_of_timestamp"] == datetime(2025, 8, 13, 9, tzinfo=UTC)`
+directly and failed on a non-UTC machine — exactly the pitfall
+`tests/helpers.py`'s `epoch_of` docstring already documents. Fixed before
+commit; the version above is what actually ran.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -605,8 +616,10 @@ from datetime import UTC, datetime
 
 import pytest
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 from almanac.features.groups import compute_pr_static, compute_repo_activity
+from tests.helpers import one
 
 pytestmark = pytest.mark.spark
 
@@ -632,12 +645,20 @@ def test_repo_activity_is_cumulative_and_keyed_on_the_events_own_timestamp(spark
         _SCHEMA,
     )
 
-    result = {r["event_time"]: r for r in compute_repo_activity(events).collect()}
+    result = compute_repo_activity(events)
 
-    day1 = result[datetime(2025, 8, 10, tzinfo=UTC)]
+    # Filtered server-side on a Python datetime literal, never compared
+    # against a *collected* one: PySpark returns a collected Timestamp
+    # naive in the driver's local timezone (tests/helpers.py's epoch_of
+    # docstring), so building a dict keyed on a collected event_time and
+    # indexing it with a UTC literal is exactly the pitfall Task 1's spine
+    # test hit and fixed. A `.where(...)` filter is evaluated inside
+    # Spark's UTC-configured session (spark.py's spark.sql.session.timeZone)
+    # and carries no such ambiguity.
+    day1 = one(result.where(F.col("event_time") == F.lit(datetime(2025, 8, 10, tzinfo=UTC))))
     assert (day1["events_total_to_date"], day1["bot_events_to_date"], day1["prs_opened_to_date"]) == (1, 0, 0)
 
-    day3 = result[datetime(2025, 8, 12, tzinfo=UTC)]
+    day3 = one(result.where(F.col("event_time") == F.lit(datetime(2025, 8, 12, tzinfo=UTC))))
     assert (day3["events_total_to_date"], day3["bot_events_to_date"], day3["prs_opened_to_date"]) == (3, 1, 1)
     assert day3["bot_share_to_date"] == pytest.approx(1 / 3)
 
@@ -746,14 +767,14 @@ def test_author_activity_prior_pr_count_and_merge_rate(spark: SparkSession) -> N
         _SCHEMA,
     )
 
-    result = {
-        r["event_time"]: r for r in compute_author_activity(events).collect()
-    }
+    result = compute_author_activity(events)
 
-    pr2 = result[datetime(2025, 8, 5, tzinfo=UTC)]
+    # Filtered server-side, not keyed by a collected timestamp -- same
+    # reasoning as compute_repo_activity's test above.
+    pr2 = one(result.where(F.col("event_time") == F.lit(datetime(2025, 8, 5, tzinfo=UTC))))
     assert (pr2["prior_pr_count"], pr2["prior_merge_rate"]) == (1, 1.0)
 
-    pr3 = result[datetime(2025, 8, 6, tzinfo=UTC)]
+    pr3 = one(result.where(F.col("event_time") == F.lit(datetime(2025, 8, 6, tzinfo=UTC))))
     # PR2 opened before PR3 but has not closed -- its outcome is unknown,
     # not a non-merge, so it must not appear in either the count or the rate.
     assert (pr3["prior_pr_count"], pr3["prior_merge_rate"]) == (1, 1.0)
