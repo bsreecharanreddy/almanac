@@ -201,17 +201,22 @@ feature platform's core primitive — 11.7 PiB of intermediate on the real
 quarter), plus Gold's fact being a Unity Catalog managed table rather
 than a Delta path on the workspace.
 
-**The live serving endpoint is now up and measured**, closing the item
+**The live serving endpoint is up and fully measured**, closing the item
 above: `terraform apply -target=databricks_model_serving.pr_review_sla_risk`
 (8m27s to `READY`), then 20 real invocations against the live URL,
 validated against the model's actual signature. Warm latency: **p50
 263.5 ms, p95 376.8 ms** (n=20, real `curl` timings, not CLI overhead).
-**Cold start from scale-to-zero is explicitly not claimed** — Databricks
-scales to zero after 30 minutes idle (confirmed live,
-[Databricks Answers](https://answers.databricks.com/does-serverless-scale-up-down),
-2026-09-04), which this session did not hold open for; it stays an open
-measurement for whenever this endpoint is next hit after a natural idle
-gap, rather than a guessed number. Full detail:
+**Cold start, measured for real: 51.96 s** (`HTTP 200`, correct
+prediction) after a genuine ~43-minute idle gap — confirmed live that
+Databricks scales to zero after 30 minutes idle
+([Databricks Answers](https://answers.databricks.com/does-serverless-scale-up-down),
+2026-09-04) before trusting the number. Three immediate follow-ups
+confirmed the endpoint was warm again right after (0.485s/0.505s/0.308s),
+matching the n=20 distribution and ruling out a fluke. Full detail,
+including the two false starts the real measurement took to land (a user
+query mid-wait resetting the idle clock, then a local `sleep` stalling
+across a machine suspend — neither affecting the endpoint's own
+server-side clock, which is what the measurement actually depends on):
 `docs/findings/2026-09-04-serving-endpoint-measured.md`.
 
 The online store and vector index (§9: Phase 4/5) stay deferred until
