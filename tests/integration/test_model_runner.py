@@ -13,6 +13,7 @@ from pyspark.sql import SparkSession
 
 from almanac.features.runner import run_features
 from almanac.model.runner import main, run_training
+from almanac.model.train import TrainResult
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -78,6 +79,7 @@ def test_run_training_logs_a_real_mlflow_run(spark: SparkSession, tmp_path: Path
         register=False,
     )
 
+    assert isinstance(result, TrainResult)  # objective="regression" (the default)
     assert result.model_mae >= 0
     mlflow.set_tracking_uri(tracking_uri)
     runs = mlflow.search_runs(experiment_names=["pr-review-sla-risk-test"])
