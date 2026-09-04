@@ -201,20 +201,23 @@ feature platform's core primitive — 11.7 PiB of intermediate on the real
 quarter), plus Gold's fact being a Unity Catalog managed table rather
 than a Delta path on the workspace.
 
-**One item from Phase 4's own stated deliverable (design doc §9's phase
-table, §10's goals checklist) is still open, not silently marked done:
-the live serving endpoint and its measured cold-start/p50/p95.**
-`databricks_model_serving.pr_review_sla_risk` now has a real model
-version to point at (`entity_version = "1"` exists) but has not been
-`terraform apply`'d — standing up a persistent (if scale-to-zero) live
-resource is being treated as its own decision, not something implied by
-a training run succeeding.
+**The live serving endpoint is now up and measured**, closing the item
+above: `terraform apply -target=databricks_model_serving.pr_review_sla_risk`
+(8m27s to `READY`), then 20 real invocations against the live URL,
+validated against the model's actual signature. Warm latency: **p50
+263.5 ms, p95 376.8 ms** (n=20, real `curl` timings, not CLI overhead).
+**Cold start from scale-to-zero is explicitly not claimed** — Databricks
+scales to zero after 30 minutes idle (confirmed live,
+[Databricks Answers](https://answers.databricks.com/does-serverless-scale-up-down),
+2026-09-04), which this session did not hold open for; it stays an open
+measurement for whenever this endpoint is next hit after a natural idle
+gap, rather than a guessed number. Full detail:
+`docs/findings/2026-09-04-serving-endpoint-measured.md`.
 
-The online store and vector index (§9: Phase 4/5) stay deferred until a
-serving endpoint exists to feed them, per §4.4a's scope decision. The `R`
-node on the README architecture diagram is now `done` (real UC
-registration); `E` (Model Serving) stays `todo` until the endpoint above
-is applied for real.
+The online store and vector index (§9: Phase 4/5) stay deferred until
+retrieval work starts (Phase 5), per §4.4a's scope decision — the
+serving endpoint they'd sit behind now exists. The `R` and `E` nodes on
+the README architecture diagram are both `done`.
 
 **Every real cloud job run across all four Databricks jobs — backfill,
 build-features, Photon A/B, train-model — is now compiled in one place**:
