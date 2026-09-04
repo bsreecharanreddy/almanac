@@ -51,6 +51,11 @@ ml = [
     "lightgbm>=4.7.0",
     "scikit-learn>=1.9.0",
     "pandas>=2.3.3,<3",
+    # Phase 5 (design doc §8.3a): the embedding pipeline. 6.0.1 is current
+    # on PyPI as of 2026-09-04, checked directly against pypi.org's JSON
+    # API rather than a search summary -- a prior live-search result for
+    # this same package claimed 5.6.1 and was stale.
+    "sentence-transformers>=6.0.1",
 ]
 
 [build-system]
@@ -99,6 +104,9 @@ max-complexity = 10
 # source (three paths, three versions, the session), and the explicit
 # keywords are what make a version-pinned call readable (Phase 4, §5.2).
 "src/almanac/model/*.py" = ["PLR0913"]
+# Same reasoning again: run_embedding_pipeline's I/O boundary takes one
+# keyword-only argument per independently-named path/knob (Phase 5, §8.3a).
+"src/almanac/embed/*.py" = ["PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"
