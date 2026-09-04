@@ -13,7 +13,8 @@ review queue. The domain is incidental, and that is the point.
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
 > Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.
-> Phase 3 (offline feature platform) — 8 of 8 tasks.**
+> Phase 3 (offline feature platform) — 8 of 8 tasks. Phase 4 (model +
+> MLflow) — 9 of 9 tasks, trained and measured on the real quarter.**
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -71,6 +72,22 @@ review queue. The domain is incidental, and that is the point.
 > registration against a real Databricks target is still unverified** —
 > the SQL is unit-tested, execution is deferred to Phase 3's cloud
 > verification step.
+> **Phase 4 trained a model and measured it against a baseline for real,
+> on the real quarter — and the honest result is a null one.** LightGBM
+> on the ten v1 features scored `model_mae` **108,890 s** against a naive
+> median-per-segment `baseline_mae` **71,917 s**: worse, not better, and
+> §5.1's own gate — no model registers, no endpoint deploys, unless it
+> measurably beats the baseline — held and did exactly what it exists to
+> do. The trainable population's response time is severely right-skewed
+> (median 72 s, mean 20 h, max 92 days), which is the measured, stated
+> reason a default squared-error objective loses to a segment median
+> here — recorded as the diagnosis, not quietly patched into a different
+> number. Real-scale running of the feature platform also surfaced and
+> fixed the same O(N²) bot-author join blow-up in two places
+> (`compute_author_activity`'s self-join, and `as_of_join` itself, the
+> feature platform's own core primitive — 11.7 PiB of intermediate on
+> one join at real scale) and a local-vs-cloud divergence in where dbt
+> materialises Gold. `docs/findings/2026-09-04-model-serving-measured.md`.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of
