@@ -16,7 +16,8 @@ review queue. The domain is incidental, and that is the point.
 > Phase 3 (offline feature platform) — 8 of 8 tasks. Phase 4 (model +
 > MLflow) — 13 of 13 tasks: a measured regression null result, reframed to
 > classification (§5.3), a real non-null result registered live in Unity
-> Catalog, and a live serving endpoint with measured warm latency.**
+> Catalog, and a live serving endpoint with measured warm latency and a
+> measured cold start (51.96 s).**
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -101,14 +102,14 @@ review queue. The domain is incidental, and that is the point.
 > closed with a local regression test asserting every logged model
 > carries one, so a future run can't hit it blind
 > (`docs/findings/2026-09-04-classification-model-serving-measured.md`).
-> **The serving endpoint is live and measured.**
-> `databricks_model_serving.pr_review_sla_risk` reached `READY` in 8m27s;
-> 20 real invocations against the model's actual signature measured
-> **warm latency p50 263.5 ms, p95 376.8 ms**. Cold start from
-> scale-to-zero is explicitly not claimed — Databricks scales to zero
-> after 30 minutes idle (confirmed live against Databricks' own docs,
-> not assumed), which this session didn't hold open for; it stays an
-> open measurement rather than a guessed one
+> **The serving endpoint is live and fully measured, cold start
+> included.** `databricks_model_serving.pr_review_sla_risk` reached
+> `READY` in 8m27s; 20 real invocations against the model's actual
+> signature measured **warm latency p50 263.5 ms, p95 376.8 ms**. After
+> a genuine ~43-minute idle gap — confirmed live that Databricks scales
+> to zero at 30 minutes, not assumed — one real request measured
+> **cold start at 51.96 s**, with three immediate follow-ups back to
+> sub-second confirming it wasn't a fluke
 > (`docs/findings/2026-09-04-serving-endpoint-measured.md`). Real-scale
 > running of the feature platform also surfaced and fixed the same
 > O(N²) bot-author join blow-up in two places (`compute_author_activity`'s
