@@ -74,21 +74,40 @@ resource "databricks_grants" "lake" {
   }
 }
 
-# The model registry (Phase 4, design doc §5.2): a UC catalog/schema
-# distinct from the external locations above -- this holds a managed table
-# (the registered model), not a pointer at Delta files a job writes by
-# path. mlflow.set_registry_uri("databricks-uc") targets this.
-resource "databricks_catalog" "models" {
-  name    = var.model_registry_catalog
-  comment = "Trained models (Phase 4). mlflow.set_registry_uri(\"databricks-uc\") registers here."
+# Cluster log delivery for the attended-burn jobs. Task 9, 2026-09-04: the
+# feature-build job hung twice in the same Delta write stage with tasks
+# pinned at 0 CPU / 0 I/O -- a signature no live Spark UI counter explains.
+# The job clusters had no log delivery configured, so every diagnosis so
+# far was inference from stage counters. This volume gives the driver and
+# executor log4j output (ABFS retry warnings, Delta commit contention) a
+# home that outlives a self-terminating job cluster. Same `almanac_dbx.burn`
+# managed-storage schema as the staging/checkpoints/photon_ab volumes the
+# backfill already uses.
+resource "databricks_volume" "cluster_logs" {
+  catalog_name = "almanac_dbx"
+  schema_name  = "burn"
+  name         = "cluster_logs"
+  volume_type  = "MANAGED"
+  comment      = "Cluster log delivery for attended burn jobs (Task 9 diagnostics)."
+}
+
+# The model registry (Phase 4, design doc §5.2): a schema for the
+# registered model, holding a managed table -- not a pointer at Delta
+# files a job writes by path. mlflow.set_registry_uri("databricks-uc")
+# targets `<model_registry_catalog>.<model_registry_schema>.*`.
+#
+# The catalog is `almanac_dbx`, the metastore's own default-storage
+# managed catalog (Task 9, measured 2026-09-04): this account has
+# account-level Default Storage and no metastore storage_root, so
+# `databricks_catalog` create is refused ("provide a storage location, or
+# use the UI") -- the catalog is not Terraform's to make here. The schema
+# under it is, and it is where the model lives, aliased @champion.
+resource "databricks_schema" "models" {
+  catalog_name = var.model_registry_catalog
+  name         = var.model_registry_schema
+  comment      = "pr_review_sla_risk lives here (Phase 4), aliased @champion."
 
   # A registered model is state the credit-teardown cycle must not drop;
   # unlike the lake, there is no paid re-burn to recover it.
   force_destroy = false
-}
-
-resource "databricks_schema" "models" {
-  catalog_name = databricks_catalog.models.name
-  name         = var.model_registry_schema
-  comment      = "pr_review_sla_risk lives here, aliased @champion."
 }
