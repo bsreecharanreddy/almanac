@@ -398,6 +398,12 @@ resource "databricks_job" "train_model" {
         # not a file:// store (which MLflow 3.x refuses anyway -- Task 5).
         "--tracking-uri", "databricks",
         "--experiment-name", "/Shared/almanac/pr-review-sla-risk",
+        # Classification (§5.3) supersedes the regression objective this job
+        # ran under for Task 9 -- same job, not a parallel pipeline. 1487s is
+        # the §5.3-measured SLA threshold, passed explicitly and never
+        # recomputed by the job itself.
+        "--objective", "classification",
+        "--threshold-seconds", "1487",
         "--catalog", var.model_registry_catalog,
         "--schema", var.model_registry_schema,
         "--register",
