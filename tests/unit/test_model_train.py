@@ -7,6 +7,7 @@ fires correctly in both directions.
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
+from mlflow.models import infer_signature
 
 from almanac.model.train import (
     ClassifierCandidateResult,
@@ -169,12 +170,13 @@ def test_classifier_same_seed_produces_the_same_result_twice() -> None:
 def test_best_candidate_picks_the_higher_average_precision() -> None:
     weaker = LGBMClassifier()
     stronger = LGBMClassifier()
+    signature = infer_signature(pd.DataFrame({"x": [1.0]}), np.array([0]))
     candidates = {
         "default": ClassifierCandidateResult(
-            model=weaker, roc_auc=0.5, average_precision=0.3, log_loss=1.0
+            model=weaker, roc_auc=0.5, average_precision=0.3, log_loss=1.0, signature=signature
         ),
         "is_unbalance": ClassifierCandidateResult(
-            model=stronger, roc_auc=0.6, average_precision=0.7, log_loss=0.9
+            model=stronger, roc_auc=0.6, average_precision=0.7, log_loss=0.9, signature=signature
         ),
     }
 
