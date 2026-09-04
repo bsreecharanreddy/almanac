@@ -27,7 +27,7 @@ def test_failure_still_exits_with_the_code(code: int) -> None:
 
 # The scripts a Databricks `spark_python_task` names as its `python_file`.
 # Local-only scripts are deliberately absent: `sys.exit` is correct there.
-JOB_ENTRYPOINTS = ("backfill", "photon_ab", "gold")
+JOB_ENTRYPOINTS = ("backfill", "photon_ab", "gold", "model")
 
 
 @pytest.mark.parametrize("name", JOB_ENTRYPOINTS)
