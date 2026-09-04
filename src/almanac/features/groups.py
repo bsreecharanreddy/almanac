@@ -75,10 +75,18 @@ def compute_author_activity(events: DataFrame) -> DataFrame:
     rate, as known strictly before this PR's own open time.
 
     A prior PR counts as "known" only if it had already closed before this
-    PR opened (`prior.closed_at < this.opened_at`) -- an open or
-    not-yet-observed prior PR is not "not merged", it is unknown, and
-    folding it into the denominator would teach the model an outcome it
-    could not have had (this task's worked example).
+    PR opened -- an open or not-yet-observed prior PR is not "not merged",
+    it is unknown, and folding it into the denominator would teach the
+    model an outcome it could not have had (`test_features_groups.py`'s
+    worked example).
+
+    A running aggregate over each author's own open- and close-events, not
+    a `this join prior` self-join: a handful of bot logins open a large
+    enough share of every PR that the self-join is a multi-terabyte
+    cartesian blow-up on those keys, and `spark.sql.adaptive.skewJoin`
+    cannot split a self-join (2026-09-04,
+    docs/findings/2026-09-04-author-activity-self-join.md).
+    `compute_repo_activity` already uses this same running-window shape.
     """
     opened = events.where(_opened()).select(
         "repo_id",
@@ -92,29 +100,46 @@ def compute_author_activity(events: DataFrame) -> DataFrame:
         F.col("created_at").alias("closed_at"),
         F.col("pr_merged").alias("merged"),
     )
-    prs = opened.join(closed, on=["repo_id", "pr_number"], how="left")
 
-    this, prior = prs.alias("this"), prs.alias("prior")
-    known_priors = this.join(
-        prior,
-        on=(
-            (F.col("this.author_login") == F.col("prior.author_login"))
-            & (F.col("prior.opened_at") < F.col("this.opened_at"))
-            & F.col("prior.closed_at").isNotNull()
-            & (F.col("prior.closed_at") < F.col("this.opened_at"))
-        ),
-        how="left",
+    resolutions = opened.join(closed, on=["repo_id", "pr_number"], how="inner").select(
+        "author_login",
+        F.col("closed_at").alias("event_ts"),
+        # A resolution sorts *after* a query at the same instant, so a prior
+        # closing at exactly this PR's open time is not yet visible to it.
+        F.lit(1).alias("tie_rank"),
+        F.lit(True).alias("is_resolution"),
+        F.when(F.col("merged"), F.lit(1.0)).otherwise(F.lit(0.0)).alias("merged_value"),
+    )
+    queries = opened.select(
+        "author_login",
+        F.col("opened_at").alias("event_ts"),
+        F.lit(0).alias("tie_rank"),
+        F.lit(False).alias("is_resolution"),
+        F.lit(None).cast("double").alias("merged_value"),
     )
 
-    return known_priors.groupBy(
-        F.col("this.author_login").alias("author_login"),
-        F.col("this.opened_at").alias("event_time"),
-    ).agg(
-        F.count(F.col("prior.pr_number")).alias("prior_pr_count"),
-        F.avg(
+    to_date = (
+        Window.partitionBy("author_login")
+        .orderBy("event_ts", "tie_rank")
+        .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+    )
+    running = resolutions.unionByName(queries).select(
+        "author_login",
+        "event_ts",
+        "is_resolution",
+        F.sum(F.col("is_resolution").cast("int")).over(to_date).alias("prior_pr_count"),
+        F.sum("merged_value").over(to_date).alias("prior_merged"),
+    )
+
+    return (
+        running.where(~F.col("is_resolution"))
+        .select(
+            "author_login",
+            F.col("event_ts").alias("event_time"),
+            "prior_pr_count",
             F.when(
-                F.col("prior.pr_number").isNotNull(),
-                F.when(F.col("prior.merged"), 1.0).otherwise(0.0),
-            )
-        ).alias("prior_merge_rate"),
+                F.col("prior_pr_count") > 0, F.col("prior_merged") / F.col("prior_pr_count")
+            ).alias("prior_merge_rate"),
+        )
+        .dropDuplicates(["author_login", "event_time"])
     )

@@ -269,6 +269,82 @@ output "gold_job_url" {
   value       = databricks_job.gold.url
 }
 
+# The offline feature platform on the real lake (design doc §4.4a). Phase 3
+# built and tested it against local fixtures only; Task 9 (Phase 4) found
+# that the model cannot train until author_activity / repo_activity /
+# pr_static exist over the real Silver quarter. Same 5-VM shape as the
+# medallion jobs -- repo_activity is an unbounded running window over ~all
+# 341M Silver rows, and author_activity a self-join over the PR subset.
+# --register is off: UC TIMESERIES registration stays a separate deferred
+# item; this run only materialises the Delta tables the training job reads.
+resource "databricks_job" "build_features" {
+  name        = "${var.prefix}-build-features"
+  description = "Materialise the v1 feature tables over the real Silver quarter. Attended runs only."
+
+  max_concurrent_runs = 1
+  tags                = var.tags
+
+  job_cluster {
+    job_cluster_key = "features"
+    new_cluster {
+      spark_version      = data.databricks_spark_version.lts.id
+      node_type_id       = var.databricks_node_type
+      num_workers        = var.backfill_workers
+      runtime_engine     = "STANDARD"
+      data_security_mode = "SINGLE_USER"
+      single_user_name   = data.databricks_current_user.me.user_name
+      custom_tags        = var.tags
+      # Behaviour-neutral: log delivery only. Task 9's first three runs all
+      # hung writing author_activity; the driver/executor log4j output and a
+      # live thread dump are what named the cause -- an O(N^2) self-join in
+      # compute_author_activity, since fixed (2026-09-04, docs/findings/).
+      # Kept because a self-terminating job cluster otherwise takes its logs
+      # to the grave, and the diagnostics-before-a-fix rule still applies to
+      # the next surprise.
+      cluster_log_conf {
+        volumes {
+          destination = "/Volumes/${databricks_volume.cluster_logs.catalog_name}/${databricks_volume.cluster_logs.schema_name}/${databricks_volume.cluster_logs.name}"
+        }
+      }
+    }
+  }
+
+  task {
+    task_key        = "build_features"
+    job_cluster_key = "features"
+
+    spark_python_task {
+      python_file = var.features_python_file
+      source      = "WORKSPACE"
+      parameters = [
+        # run_features reads <silver-path>/clean, the same base dir the
+        # backfill wrote and the Gold job reads. A str, not a Path (defect
+        # from 2026-09-02: Path collapses the '//' scheme separator).
+        "--silver-path", "${local.lake.silver}/events",
+        "--features-path", "${local.lake.features}/events",
+      ]
+    }
+
+    library {
+      whl = var.almanac_wheel
+    }
+
+    dynamic "library" {
+      for_each = var.backfill_pip_dependencies
+      content {
+        pypi {
+          package = library.value
+        }
+      }
+    }
+  }
+}
+
+output "build_features_job_url" {
+  description = "Databricks Workflows URL for the feature-platform build."
+  value       = databricks_job.build_features.url
+}
+
 # Phase 4's training run (design doc §5.2): a single-node LightGBM +
 # scikit-learn fit, so -- unlike every medallion job above -- this is not a
 # Spark compute-bound workload. dataset.py's Spark reads are small and the
@@ -285,14 +361,23 @@ resource "databricks_job" "train_model" {
     new_cluster {
       spark_version = data.databricks_spark_version.lts.id
       node_type_id  = var.databricks_node_type
-      # is_single_node sets num_workers/spark_conf/tags for a driver-only
-      # cluster on its own; the old num_workers=0 + spark.databricks.cluster.profile
-      # pattern is rejected under newer access modes (plan §Task 8, confirmed 2026-09-03).
+      # Single-node: dataset.py's Spark reads are small and training never
+      # distributes. `is_single_node` needs `kind = "CLASSIC_PREVIEW"` on
+      # the same block -- the API refuses `is_single_node` with an
+      # unspecified kind (Task 9, measured 2026-09-04).
       is_single_node     = true
+      kind               = "CLASSIC_PREVIEW"
       runtime_engine     = "STANDARD"
       data_security_mode = "SINGLE_USER"
       single_user_name   = data.databricks_current_user.me.user_name
       custom_tags        = var.tags
+      # Diagnostics parity with the feature-build cluster: a job cluster
+      # self-terminates and takes its logs with it. Behaviour-neutral.
+      cluster_log_conf {
+        volumes {
+          destination = "/Volumes/${databricks_volume.cluster_logs.catalog_name}/${databricks_volume.cluster_logs.schema_name}/${databricks_volume.cluster_logs.name}"
+        }
+      }
     }
   }
 
@@ -350,7 +435,7 @@ resource "databricks_model_serving" "pr_review_sla_risk" {
       # baseline registers version 1. If that run does NOT beat the
       # baseline, no version is registered and this resource cannot apply
       # -- a real, documented null result (§5.1), not a wiring bug to force.
-      entity_name           = "${databricks_catalog.models.name}.${databricks_schema.models.name}.pr_review_sla_risk"
+      entity_name           = "${var.model_registry_catalog}.${databricks_schema.models.name}.pr_review_sla_risk"
       entity_version        = "1"
       workload_size         = var.model_serving_workload_size
       scale_to_zero_enabled = true

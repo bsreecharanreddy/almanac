@@ -215,9 +215,12 @@ variable "gold_project_dir" {
 # the serving endpoint. Nothing here provisions compute on apply.
 
 variable "model_registry_catalog" {
-  type        = string
-  description = "Unity Catalog catalog holding the trained model (Phase 4, design doc §5.2)."
-  default     = "almanac"
+  type = string
+  # almanac_dbx, the metastore's own default-storage managed catalog: this
+  # account has account-level Default Storage and no metastore storage_root,
+  # so a fresh `databricks_catalog` cannot be created here (Task 9, 2026-09-04).
+  description = "UC catalog holding the trained model (Phase 4, §5.2). The metastore's managed catalog."
+  default     = "almanac_dbx"
 }
 
 variable "model_registry_schema" {
@@ -230,6 +233,12 @@ variable "model_python_file" {
   type        = string
   description = "Workspace path of scripts/model.py, the job entrypoint for almanac.model.runner."
   default     = "/Workspace/Shared/almanac/scripts/model.py"
+}
+
+variable "features_python_file" {
+  type        = string
+  description = "Workspace path of scripts/features.py, the job entrypoint for almanac.features.runner."
+  default     = "/Workspace/Shared/almanac/scripts/features.py"
 }
 
 variable "model_pip_dependencies" {
