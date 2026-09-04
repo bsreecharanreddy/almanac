@@ -175,3 +175,125 @@ def test_author_activity_prior_pr_count_and_merge_rate(spark: SparkSession) -> N
     # PR2 opened before PR3 but has not closed -- its outcome is unknown,
     # not a non-merge, so it must not appear in either the count or the rate.
     assert (pr3["prior_pr_count"], pr3["prior_merge_rate"]) == (1, 1.0)
+
+
+def test_author_activity_excludes_a_prior_closing_at_the_exact_open_instant(
+    spark: SparkSession,
+) -> None:
+    events = spark.createDataFrame(
+        [
+            _row(
+                1,
+                1,
+                datetime(2025, 8, 1, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="alice",
+            ),
+            # PR1 closes at the same instant PR2 opens. "Known strictly
+            # before" means PR1's outcome is not yet visible to PR2.
+            _row(
+                1,
+                1,
+                datetime(2025, 8, 5, tzinfo=UTC),
+                "PullRequestEvent",
+                action="closed",
+                actor="alice",
+                merged=True,
+            ),
+            _row(
+                1,
+                2,
+                datetime(2025, 8, 5, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="alice",
+            ),
+        ],
+        _SCHEMA,
+    )
+
+    pr2 = one(
+        compute_author_activity(events).where(
+            F.col("event_time") == F.lit(datetime(2025, 8, 5, tzinfo=UTC))
+        )
+    )
+    assert (pr2["prior_pr_count"], pr2["prior_merge_rate"]) == (0, None)
+
+
+def test_author_activity_is_scoped_per_author(spark: SparkSession) -> None:
+    events = spark.createDataFrame(
+        [
+            _row(
+                1,
+                1,
+                datetime(2025, 8, 1, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="alice",
+            ),
+            _row(
+                1,
+                1,
+                datetime(2025, 8, 2, tzinfo=UTC),
+                "PullRequestEvent",
+                action="closed",
+                actor="alice",
+                merged=False,
+            ),
+            _row(
+                1,
+                9,
+                datetime(2025, 8, 6, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="bob",
+            ),
+        ],
+        _SCHEMA,
+    )
+
+    bob = one(
+        compute_author_activity(events).where(
+            F.col("event_time") == F.lit(datetime(2025, 8, 6, tzinfo=UTC))
+        )
+    )
+    assert (bob["prior_pr_count"], bob["prior_merge_rate"]) == (0, None)
+
+
+def test_author_activity_counts_each_prior_once_for_a_same_instant_burst(
+    spark: SparkSession,
+) -> None:
+    # A bot opening many PRs in one second is the shape that made the old
+    # self-join a multi-terabyte cartesian blow-up on the real quarter
+    # (docs/findings/2026-09-04-author-activity-self-join.md); the old GROUP
+    # BY also counted each prior once per burst PR. Each prior counts once.
+    burst = datetime(2025, 8, 10, tzinfo=UTC)
+    events = spark.createDataFrame(
+        [
+            _row(
+                1,
+                1,
+                datetime(2025, 8, 1, tzinfo=UTC),
+                "PullRequestEvent",
+                action="opened",
+                actor="botty[bot]",
+            ),
+            _row(
+                1,
+                1,
+                datetime(2025, 8, 2, tzinfo=UTC),
+                "PullRequestEvent",
+                action="closed",
+                actor="botty[bot]",
+                merged=True,
+            ),
+            _row(1, 5, burst, "PullRequestEvent", action="opened", actor="botty[bot]"),
+            _row(1, 6, burst, "PullRequestEvent", action="opened", actor="botty[bot]"),
+            _row(1, 7, burst, "PullRequestEvent", action="opened", actor="botty[bot]"),
+        ],
+        _SCHEMA,
+    )
+
+    row = one(compute_author_activity(events).where(F.col("event_time") == F.lit(burst)))
+    assert (row["prior_pr_count"], row["prior_merge_rate"]) == (1, 1.0)

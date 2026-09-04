@@ -45,6 +45,9 @@ tfplan
 # Story bank gist id — the gist is secret; its id stays out of the repo
 .claude/story-bank-gist-id
 
+# Local-only Claude Code settings (per-machine permission grants, etc.)
+.claude/settings.local.json
+
 # dbt build artifacts
 dbt/target/
 dbt/logs/
