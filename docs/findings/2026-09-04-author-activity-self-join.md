@@ -115,10 +115,49 @@ now have their own tests; the plan's original worked example
 (`test_author_activity_prior_pr_count_and_merge_rate`) is untouched and
 still green.
 
+## The same shape, again: `as_of_join`
+
+Fixing `compute_author_activity` unblocked the **feature-build** job
+(437 s). The **training** job then hung the same way, this time in
+`build_training_frame` → `assemble_training_set` → `as_of_join(spine,
+author_activity, on=["author_login"])`. The running SQL plan:
+
+```
+SortMergeJoin(skew=true) LeftOuter          -- spine ⋈ author_activity on author_login
+  Sort <- ShuffleQueryStage  author_activity  rowCount=1.32E7
+  Sort <- ShuffleQueryStage  spine            rowCount=1.32E7  (actually 1.18E7)
++- WindowGroupLimit  [_as_of_row_id], row_number(), 1
++- Exchange  Statistics(sizeInBytes=11.7 PiB, isRuntime=true)
+```
+
+**11.7 PiB.** `as_of_join` was implemented as `spine.join(feature_table,
+on)` then `row_number().over(partitionBy(row_id))` to keep the latest
+qualifying row — the join materialises every (spine row × feature row)
+pair for a key before the ranking throws all but one away, and for
+`dependabot[bot]` both sides carry ~10⁵ rows. `SortMergeJoin(skew=true)`
+shows AQE tried to split it and, as above, a self-keyed join does not
+split.
+
+`as_of_join` is the feature platform's core primitive (design doc §4.4a),
+so this is the more consequential of the two. Same fix: union spine rows
+(as query events at `as_of_timestamp`) and feature rows (as value events
+at `event_time`), one timeline per `on` key, ordered so a query sorts
+ahead of a value at an equal instant (the strict `<`), and carry the most
+recent value row forward with `last(struct(...), ignorenulls=True)` over
+`rowsBetween(unboundedPreceding, currentRow)`. The struct is taken whole,
+so a legitimately null feature value (an author with no prior merge rate)
+is kept rather than skipped for an older non-null one. O(N log N), one
+shuffle-and-sort per key. All three of `as_of_join`'s existing cases
+(latest-prior-wins, strict boundary, cold start) and the leakage suite
+stay green; a new `test_one_key_with_many_spine_rows_and_many_feature_rows`
+pins the skewed-key shape.
+
 ## Cost of finding it
 
-Three cancelled feature-build runs across two sessions, ≈$13 of the trial
-credit. The third run carried `cluster_log_conf` (added first, as
-diagnostics, not a fix) and the live thread-dump + AQE-plan capture from
-it is what named the component — consistent with the project's rule that
-an unattributable failure gets a diagnostics commit before a fix commit.
+Three cancelled feature-build runs (≈$13) plus one cancelled training run
+(102 min single-node, ≈$0.30). The feature-build runs carried
+`cluster_log_conf` (added first, as diagnostics, not a fix) and the live
+thread-dump + AQE-plan capture from the third is what named the first
+component — consistent with the project's rule that an unattributable
+failure gets a diagnostics commit before a fix commit. The `as_of_join`
+instance was named the same way, from the training job's live SQL plan.

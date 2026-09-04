@@ -77,3 +77,28 @@ def test_no_qualifying_row_leaves_features_null_rather_than_dropping_the_spine_r
     }
 
     assert result == {1: None, 2: None}
+
+
+def test_one_key_with_many_spine_rows_and_many_feature_rows(spark: SparkSession) -> None:
+    """The bot-author shape: a single `on` key carrying a large share of
+    both sides. The old `spine join feature_table` form made this key an
+    O(n^2) blow-up (docs/findings/2026-09-04-author-activity-self-join.md);
+    each spine row must still get the latest feature value strictly before
+    its own as-of time.
+    """
+    key = "dependabot[bot]"
+    spine = spark.createDataFrame(
+        [(key, datetime(2025, 8, day, tzinfo=UTC)) for day in (2, 4, 6, 8)],
+        "author_login string, as_of_timestamp timestamp",
+    )
+    feature_table = spark.createDataFrame(
+        [(key, datetime(2025, 8, day, tzinfo=UTC), day * 10) for day in (1, 3, 5, 7)],
+        "author_login string, event_time timestamp, value long",
+    )
+
+    rows = (
+        as_of_join(spine, feature_table, on=["author_login"]).orderBy("as_of_timestamp").collect()
+    )
+
+    # as-of day 2 -> day-1 value; day 4 -> day-3; day 6 -> day-5; day 8 -> day-7
+    assert [r["value"] for r in rows] == [10, 30, 50, 70]
