@@ -13,7 +13,7 @@ from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 
 from almanac.features.runner import run_features
-from almanac.model.dataset import build_training_frame
+from almanac.model.dataset import build_classification_frame, build_training_frame
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -24,6 +24,10 @@ _SILVER_SCHEMA = (
 )
 _GOLD_SCHEMA = (
     "repo_id long, pr_number long, time_to_first_response_seconds long, label_exclusion string"
+)
+_GOLD_SCHEMA_WITH_TIMES = (
+    "repo_id long, pr_number long, time_to_first_response_seconds long, "
+    "label_exclusion string, opened_at timestamp, closed_at timestamp"
 )
 
 
@@ -106,3 +110,58 @@ def test_pinning_every_version_reproduces_the_frame_after_a_later_label_update(
     live = build(features_v1, gold_v2)
     assert len(live) == 1  # PR 6 has no feature-side spine row; still one training row
     pd.testing.assert_frame_equal(live, original)  # this PR's label untouched by the other's append
+
+
+def test_classification_frame_shares_the_same_version_pinning(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    """build_classification_frame wires the same shared feature frame and
+    version-pinned Gold read as build_training_frame (§5.3) -- only the
+    label join differs.
+    """
+    silver_path = tmp_path / "silver"
+    features_path = tmp_path / "features"
+    gold_dir = tmp_path / "gold_fact"
+    gold_table = f"gold_fact_cls_{tmp_path.name}".replace("-", "_")
+
+    spark.createDataFrame(
+        [
+            (
+                1,
+                5,
+                datetime(2025, 8, 13, 9, tzinfo=UTC),
+                "PullRequestEvent",
+                "opened",
+                "alice",
+                None,
+                False,
+                None,
+                datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+            )
+        ],
+        _SILVER_SCHEMA,
+    ).write.format("delta").save(str(silver_path / "clean"))
+
+    run_features(
+        spark, silver_path=str(silver_path), features_path=str(features_path), register=False
+    )
+    features_v1 = _latest_version(spark, features_path / "author_activity")
+
+    spark.createDataFrame([(1, 5, 3600, None, None, None)], _GOLD_SCHEMA_WITH_TIMES).write.format(
+        "delta"
+    ).save(str(gold_dir))
+    _register(spark, gold_table, gold_dir)
+    gold_v1 = _latest_version(spark, gold_dir)
+
+    frame = build_classification_frame(
+        spark,
+        silver_path=str(silver_path),
+        features_path=str(features_path),
+        gold_table=gold_table,
+        threshold_seconds=100,
+        features_version=features_v1,
+        gold_version=gold_v1,
+    )
+
+    assert len(frame) == 1
+    assert bool(frame.iloc[0]["breach"]) is True  # 3600s > 100s threshold
