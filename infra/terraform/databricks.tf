@@ -345,10 +345,14 @@ output "build_features_job_url" {
   value       = databricks_job.build_features.url
 }
 
-# Phase 4's training run (design doc §5.2): a single-node LightGBM +
-# scikit-learn fit, so -- unlike every medallion job above -- this is not a
-# Spark compute-bound workload. dataset.py's Spark reads are small and the
-# training itself never distributes. Attended runs only, like the rest.
+# Phase 4's training run (design doc §5.2). The LightGBM + scikit-learn fit
+# is single-threaded on the driver and never distributes -- that part of
+# §5.2 holds. But `build_training_frame` scans the whole 341M-row Silver
+# quarter to rebuild the PR-opened spine before the as-of joins, so the
+# §5.2 "dataset.py's Spark reads are small" premise was wrong: single-node
+# ran that step for ~40 min before the (since-fixed) as_of_join blow-up
+# even showed (Task 9, 2026-09-04). Same 5-VM shape as the feature build,
+# which ran the comparable work in 14 min. Attended runs only.
 resource "databricks_job" "train_model" {
   name        = "${var.prefix}-train-model"
   description = "Phase 4: build the training frame, train, log to MLflow, register @champion if it beats the baseline. Attended runs only."
@@ -359,14 +363,9 @@ resource "databricks_job" "train_model" {
   job_cluster {
     job_cluster_key = "train"
     new_cluster {
-      spark_version = data.databricks_spark_version.lts.id
-      node_type_id  = var.databricks_node_type
-      # Single-node: dataset.py's Spark reads are small and training never
-      # distributes. `is_single_node` needs `kind = "CLASSIC_PREVIEW"` on
-      # the same block -- the API refuses `is_single_node` with an
-      # unspecified kind (Task 9, measured 2026-09-04).
-      is_single_node     = true
-      kind               = "CLASSIC_PREVIEW"
+      spark_version      = data.databricks_spark_version.lts.id
+      node_type_id       = var.databricks_node_type
+      num_workers        = var.backfill_workers
       runtime_engine     = "STANDARD"
       data_security_mode = "SINGLE_USER"
       single_user_name   = data.databricks_current_user.me.user_name
