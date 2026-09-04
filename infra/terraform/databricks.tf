@@ -391,7 +391,10 @@ resource "databricks_job" "train_model" {
       parameters = [
         "--silver-path", "${local.lake.silver}/events",
         "--features-path", "${local.lake.features}/events",
-        "--gold-warehouse", "${local.lake.gold}/warehouse",
+        # Gold's fact is a dbt model -- a metastore table -- not a path.
+        # On a Unity Catalog workspace `CREATE TABLE gold.x` lands in the
+        # default catalog's managed storage, not under --warehouse (Task 9).
+        "--gold-table", var.model_gold_table,
         # "databricks" -> the workspace's own MLflow tracking + UC registry,
         # not a file:// store (which MLflow 3.x refuses anyway -- Task 5).
         "--tracking-uri", "databricks",

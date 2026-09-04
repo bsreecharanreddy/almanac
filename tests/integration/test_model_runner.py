@@ -26,10 +26,11 @@ _GOLD_SCHEMA = (
 )
 
 
-def _write_silver_and_gold(spark: SparkSession, tmp_path: Path) -> tuple[Path, Path, Path]:
+def _write_silver_and_gold(spark: SparkSession, tmp_path: Path) -> tuple[Path, Path, str]:
     silver_path = tmp_path / "silver"
     features_path = tmp_path / "features"
-    gold_warehouse = tmp_path / "warehouse"
+    gold_dir = tmp_path / "gold_fact"
+    gold_table = f"gold_fact_{tmp_path.name}".replace("-", "_")
 
     rows = [
         (
@@ -55,21 +56,23 @@ def _write_silver_and_gold(spark: SparkSession, tmp_path: Path) -> tuple[Path, P
     )
 
     gold_rows = [(1, n, 1000 + n * 10, None) for n in range(1, 40)]
-    spark.createDataFrame(gold_rows, _GOLD_SCHEMA).write.format("delta").save(
-        str(gold_warehouse / "gold.db" / "fact_pull_request")
-    )
-    return silver_path, features_path, gold_warehouse
+    spark.createDataFrame(gold_rows, _GOLD_SCHEMA).write.format("delta").save(str(gold_dir))
+    # Gold's fact is a metastore table on the real platform, not a path
+    # (Task 9); an external table over the tmp Delta dir mirrors that here.
+    spark.sql(f"DROP TABLE IF EXISTS {gold_table}")
+    spark.sql(f"CREATE TABLE {gold_table} USING DELTA LOCATION '{gold_dir}'")
+    return silver_path, features_path, gold_table
 
 
 def test_run_training_logs_a_real_mlflow_run(spark: SparkSession, tmp_path: Path) -> None:
-    silver_path, features_path, gold_warehouse = _write_silver_and_gold(spark, tmp_path)
+    silver_path, features_path, gold_table = _write_silver_and_gold(spark, tmp_path)
     tracking_uri = f"file://{tmp_path}/mlruns"
 
     result = run_training(
         spark,
         silver_path=str(silver_path),
         features_path=str(features_path),
-        gold_warehouse=str(gold_warehouse),
+        gold_table=gold_table,
         tracking_uri=tracking_uri,
         experiment_name="pr-review-sla-risk-test",
         register=False,
@@ -84,7 +87,7 @@ def test_run_training_logs_a_real_mlflow_run(spark: SparkSession, tmp_path: Path
 def test_main_wires_the_parsed_arguments_through_to_a_real_run(
     spark: SparkSession, tmp_path: Path
 ) -> None:
-    silver_path, features_path, gold_warehouse = _write_silver_and_gold(spark, tmp_path)
+    silver_path, features_path, gold_table = _write_silver_and_gold(spark, tmp_path)
     tracking_uri = f"file://{tmp_path}/mlruns"
 
     code = main(
@@ -93,8 +96,8 @@ def test_main_wires_the_parsed_arguments_through_to_a_real_run(
             str(silver_path),
             "--features-path",
             str(features_path),
-            "--gold-warehouse",
-            str(gold_warehouse),
+            "--gold-table",
+            gold_table,
             "--tracking-uri",
             tracking_uri,
             "--experiment-name",

@@ -32,12 +32,21 @@ def _latest_version(spark: SparkSession, path: Path) -> int:
     return int(row["version"])
 
 
+def _register(spark: SparkSession, name: str, location: Path) -> None:
+    """Gold's fact is a metastore table on the real platform, not a path
+    (Task 9); an external table over the tmp Delta dir mirrors that here.
+    """
+    spark.sql(f"DROP TABLE IF EXISTS {name}")
+    spark.sql(f"CREATE TABLE {name} USING DELTA LOCATION '{location}'")
+
+
 def test_pinning_every_version_reproduces_the_frame_after_a_later_label_update(
     spark: SparkSession, tmp_path: Path
 ) -> None:
     silver_path = tmp_path / "silver"
     features_path = tmp_path / "features"
-    gold_warehouse = tmp_path / "warehouse"
+    gold_dir = tmp_path / "gold_fact"
+    gold_table = f"gold_fact_{tmp_path.name}".replace("-", "_")
 
     spark.createDataFrame(
         [
@@ -62,18 +71,18 @@ def test_pinning_every_version_reproduces_the_frame_after_a_later_label_update(
     )
     features_v1 = _latest_version(spark, features_path / "author_activity")
 
-    gold_path = gold_warehouse / "gold.db" / "fact_pull_request"
     spark.createDataFrame([(1, 5, 3600, None)], _GOLD_SCHEMA).write.format("delta").save(
-        str(gold_path)
+        str(gold_dir)
     )
-    gold_v1 = _latest_version(spark, gold_path)
+    _register(spark, gold_table, gold_dir)
+    gold_v1 = _latest_version(spark, gold_dir)
 
     def build(features_version: int, gold_version: int) -> pd.DataFrame:
         return build_training_frame(
             spark,
             silver_path=str(silver_path),
             features_path=str(features_path),
-            gold_warehouse=str(gold_warehouse),
+            gold_table=gold_table,
             features_version=features_version,
             gold_version=gold_version,
         )
@@ -85,8 +94,8 @@ def test_pinning_every_version_reproduces_the_frame_after_a_later_label_update(
     # Delta version, well after the original build -- not backdated in place.
     spark.createDataFrame([(1, 6, 7200, None)], _GOLD_SCHEMA).write.format("delta").mode(
         "append"
-    ).save(str(gold_path))
-    gold_v2 = _latest_version(spark, gold_path)
+    ).save(str(gold_dir))
+    gold_v2 = _latest_version(spark, gold_dir)
 
     # assert_frame_equal, not `==`: the frame carries NaN feature columns
     # (this PR's own open event is its as-of cutoff, so every temporal

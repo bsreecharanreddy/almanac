@@ -235,6 +235,17 @@ variable "model_python_file" {
   default     = "/Workspace/Shared/almanac/scripts/model.py"
 }
 
+variable "model_gold_table" {
+  type = string
+  # The Gold job's dbt `session` run creates `gold.fact_pull_request`, and
+  # on this Unity Catalog workspace that resolves to the default catalog's
+  # managed table `almanac_dbx.gold.fact_pull_request` -- not a Delta dir
+  # under the job's --warehouse abfss path, which is where a local dbt run
+  # would put it (Task 9, 2026-09-04). build_training_frame reads it by name.
+  description = "Fully-qualified name of Gold's fact_pull_request, the training job's label source."
+  default     = "almanac_dbx.gold.fact_pull_request"
+}
+
 variable "features_python_file" {
   type        = string
   description = "Workspace path of scripts/features.py, the job entrypoint for almanac.features.runner."
