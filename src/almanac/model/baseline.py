@@ -1,24 +1,26 @@
 """The measured comparison every model has to beat (design doc §5.1,
-'baseline first, always'): the segment's own median response time, with
-a global fallback for a segment value never seen during training.
+'baseline first, always'): the segment's own statistic (median response
+time for regression, breach rate for classification -- §5.3), with a
+global fallback for a segment value never seen during training.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import pandas as pd
 
 
 @dataclass(frozen=True)
 class NaiveBaseline:
-    medians: dict[bool, float]
-    overall_median: float
+    values: dict[bool, float]
+    overall_value: float
 
     def predict(self, frame: pd.DataFrame) -> pd.Series[float]:
-        """Map each row's segment to its trained median; unseen -> the overall one."""
+        """Map each row's segment to its trained statistic; unseen -> the overall one."""
         segment_col = next(iter(frame.columns))
-        return frame[segment_col].map(self.medians).fillna(self.overall_median)
+        return frame[segment_col].map(self.values).fillna(self.overall_value)
 
 
 def fit_naive_baseline(
@@ -26,8 +28,14 @@ def fit_naive_baseline(
     *,
     label_col: str = "time_to_first_response_seconds",
     segment_col: str = "is_bot_author",
+    agg: Literal["median", "mean"] = "median",
 ) -> NaiveBaseline:
-    """Median label per segment, plus the overall median as a fallback."""
-    per_segment = frame.groupby(segment_col)[label_col].median()
-    medians = {bool(segment): float(median) for segment, median in per_segment.items()}
-    return NaiveBaseline(medians=medians, overall_median=float(frame[label_col].median()))
+    """`agg` per segment, plus the overall `agg` as a fallback.
+
+    `"median"` (default) is §5.1's regression baseline; `"mean"` on a
+    boolean label is §5.3's classification baseline -- the segment's
+    breach rate, used as a predicted probability.
+    """
+    per_segment = frame.groupby(segment_col)[label_col].agg(agg)
+    values = {bool(segment): float(value) for segment, value in per_segment.items()}
+    return NaiveBaseline(values=values, overall_value=float(frame[label_col].agg(agg)))
