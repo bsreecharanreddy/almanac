@@ -26,7 +26,7 @@ def run_training(
     *,
     silver_path: str,
     features_path: str,
-    gold_warehouse: str,
+    gold_table: str,
     tracking_uri: str,
     experiment_name: str,
     register: bool,
@@ -45,7 +45,7 @@ def run_training(
         spark,
         silver_path=silver_path,
         features_path=features_path,
-        gold_warehouse=gold_warehouse,
+        gold_table=gold_table,
         silver_version=silver_version,
         features_version=features_version,
         gold_version=gold_version,
@@ -62,7 +62,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train the PR review-SLA risk model.")
     parser.add_argument("--silver-path", required=True)
     parser.add_argument("--features-path", required=True)
-    parser.add_argument("--gold-warehouse", required=True)
+    parser.add_argument(
+        "--gold-table",
+        required=True,
+        help="Fully-qualified name of Gold's fact_pull_request (a dbt model, a metastore table).",
+    )
     parser.add_argument("--tracking-uri", required=True)
     parser.add_argument("--experiment-name", required=True)
     parser.add_argument("--catalog", default="almanac")
@@ -87,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         _active_or_local_session(),
         silver_path=args.silver_path,
         features_path=args.features_path,
-        gold_warehouse=args.gold_warehouse,
+        gold_table=args.gold_table,
         tracking_uri=args.tracking_uri,
         experiment_name=args.experiment_name,
         register=args.register,
