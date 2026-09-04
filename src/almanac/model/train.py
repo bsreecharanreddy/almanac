@@ -11,6 +11,7 @@ import mlflow.lightgbm
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRegressor
+from mlflow.models import ModelSignature, infer_signature
 from sklearn.metrics import average_precision_score, log_loss, mean_absolute_error, roc_auc_score
 from sklearn.model_selection import train_test_split
 
@@ -53,6 +54,7 @@ class TrainResult:
     model_mae: float
     baseline_mae: float
     beats_baseline: bool
+    signature: ModelSignature
 
 
 def train_model(
@@ -70,7 +72,8 @@ def train_model(
     baseline_mae = float(mean_absolute_error(test[LABEL_COLUMN], baseline_predictions))
 
     model = LGBMRegressor(random_state=random_state, verbosity=-1, **lgbm_params)
-    model.fit(train[FEATURE_COLUMNS].astype("float64"), train[LABEL_COLUMN])
+    train_features = train[FEATURE_COLUMNS].astype("float64")
+    model.fit(train_features, train[LABEL_COLUMN])
     model_predictions = model.predict(test[FEATURE_COLUMNS].astype("float64"))
     model_mae = float(mean_absolute_error(test[LABEL_COLUMN], model_predictions))
 
@@ -80,6 +83,11 @@ def train_model(
         model_mae=model_mae,
         baseline_mae=baseline_mae,
         beats_baseline=model_mae < baseline_mae,
+        # Unity Catalog refuses to register a model with no signature --
+        # measured for real against the live workspace (Task 13's cloud
+        # run); §5.1's regression path never registered a model before
+        # now, so this never fired until the classification path did.
+        signature=infer_signature(train_features, np.asarray(model.predict(train_features))),
     )
 
 
@@ -89,6 +97,7 @@ class ClassifierCandidateResult:
     roc_auc: float
     average_precision: float
     log_loss: float
+    signature: ModelSignature
 
 
 @dataclass(frozen=True)
@@ -130,7 +139,8 @@ def train_classifier(
     candidates: dict[str, ClassifierCandidateResult] = {}
     for name, params in CLASSIFIER_CANDIDATES.items():
         model = LGBMClassifier(random_state=random_state, verbosity=-1, **params)
-        model.fit(train[FEATURE_COLUMNS].astype("float64"), train[BREACH_LABEL_COLUMN])
+        train_features = train[FEATURE_COLUMNS].astype("float64")
+        model.fit(train_features, train[BREACH_LABEL_COLUMN])
         probabilities = np.asarray(model.predict_proba(test[FEATURE_COLUMNS].astype("float64")))
         predicted = probabilities[:, 1]
         candidates[name] = ClassifierCandidateResult(
@@ -138,6 +148,7 @@ def train_classifier(
             roc_auc=float(roc_auc_score(test[BREACH_LABEL_COLUMN], predicted)),
             average_precision=float(average_precision_score(test[BREACH_LABEL_COLUMN], predicted)),
             log_loss=float(log_loss(test[BREACH_LABEL_COLUMN], predicted)),
+            signature=infer_signature(train_features, np.asarray(model.predict(train_features))),
         )
 
     best_candidate = _best_candidate(candidates)
@@ -180,7 +191,7 @@ def log_classification_run(
                 float(candidate.average_precision > result.baseline_average_precision),
             )
             mlflow.log_metric("is_best_candidate", float(name == result.best_candidate))
-            mlflow.lightgbm.log_model(candidate.model, name="model")
+            mlflow.lightgbm.log_model(candidate.model, name="model", signature=candidate.signature)
             model_uris[name] = f"runs:/{run.info.run_id}/model"
 
     return model_uris
@@ -196,5 +207,5 @@ def log_training_run(result: TrainResult, *, experiment_name: str, tracking_uri:
         mlflow.log_metric("model_mae", result.model_mae)
         mlflow.log_metric("baseline_mae", result.baseline_mae)
         mlflow.log_metric("beats_baseline", float(result.beats_baseline))
-        mlflow.lightgbm.log_model(result.model, name="model")
+        mlflow.lightgbm.log_model(result.model, name="model", signature=result.signature)
         return f"runs:/{run.info.run_id}/model"
