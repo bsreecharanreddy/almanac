@@ -14,7 +14,7 @@ data "databricks_spark_version" "lts" {
 
 locals {
   lake = {
-    for tier in ["bronze", "silver", "gold"] :
+    for tier in ["bronze", "silver", "gold", "features"] :
     tier => "abfss://${tier}@${azurerm_storage_account.lake.name}.dfs.core.windows.net"
   }
 }
@@ -267,4 +267,103 @@ resource "databricks_job" "gold" {
 output "gold_job_url" {
   description = "Databricks Workflows URL for the Gold dbt build."
   value       = databricks_job.gold.url
+}
+
+# Phase 4's training run (design doc §5.2): a single-node LightGBM +
+# scikit-learn fit, so -- unlike every medallion job above -- this is not a
+# Spark compute-bound workload. dataset.py's Spark reads are small and the
+# training itself never distributes. Attended runs only, like the rest.
+resource "databricks_job" "train_model" {
+  name        = "${var.prefix}-train-model"
+  description = "Phase 4: build the training frame, train, log to MLflow, register @champion if it beats the baseline. Attended runs only."
+
+  max_concurrent_runs = 1
+  tags                = var.tags
+
+  job_cluster {
+    job_cluster_key = "train"
+    new_cluster {
+      spark_version = data.databricks_spark_version.lts.id
+      node_type_id  = var.databricks_node_type
+      # is_single_node sets num_workers/spark_conf/tags for a driver-only
+      # cluster on its own; the old num_workers=0 + spark.databricks.cluster.profile
+      # pattern is rejected under newer access modes (plan §Task 8, confirmed 2026-09-03).
+      is_single_node     = true
+      runtime_engine     = "STANDARD"
+      data_security_mode = "SINGLE_USER"
+      single_user_name   = data.databricks_current_user.me.user_name
+      custom_tags        = var.tags
+    }
+  }
+
+  task {
+    task_key        = "train"
+    job_cluster_key = "train"
+
+    spark_python_task {
+      python_file = var.model_python_file
+      source      = "WORKSPACE"
+      parameters = [
+        "--silver-path", "${local.lake.silver}/events",
+        "--features-path", "${local.lake.features}/events",
+        "--gold-warehouse", "${local.lake.gold}/warehouse",
+        # "databricks" -> the workspace's own MLflow tracking + UC registry,
+        # not a file:// store (which MLflow 3.x refuses anyway -- Task 5).
+        "--tracking-uri", "databricks",
+        "--experiment-name", "/Shared/almanac/pr-review-sla-risk",
+        "--catalog", var.model_registry_catalog,
+        "--schema", var.model_registry_schema,
+        "--register",
+      ]
+    }
+
+    library {
+      whl = var.almanac_wheel
+    }
+
+    dynamic "library" {
+      for_each = var.model_pip_dependencies
+      content {
+        pypi {
+          package = library.value
+        }
+      }
+    }
+  }
+}
+
+output "train_model_job_url" {
+  description = "Databricks Workflows URL for Phase 4's training job."
+  value       = databricks_job.train_model.url
+}
+
+# The live endpoint (design doc §8.1, §5.2): Databricks Model Serving's own
+# REST API is the interface -- no custom service in front of it.
+# scale_to_zero_enabled keeps idle cost near zero, which is why the plan
+# leaves the endpoint up rather than destroying it per phase.
+resource "databricks_model_serving" "pr_review_sla_risk" {
+  name = "${var.prefix}-pr-review-sla-risk"
+
+  config {
+    served_entities {
+      # entity_version "1": the first Task 9 training run that beats the
+      # baseline registers version 1. If that run does NOT beat the
+      # baseline, no version is registered and this resource cannot apply
+      # -- a real, documented null result (§5.1), not a wiring bug to force.
+      entity_name           = "${databricks_catalog.models.name}.${databricks_schema.models.name}.pr_review_sla_risk"
+      entity_version        = "1"
+      workload_size         = var.model_serving_workload_size
+      scale_to_zero_enabled = true
+    }
+  }
+
+  tags {
+    key   = "project"
+    value = var.prefix
+  }
+}
+
+output "model_serving_endpoint_url" {
+  description = "Invocations URL for the pr_review_sla_risk serving endpoint (Task 9 measures cold start / p50 / p95 against this)."
+  value       = "https://${azurerm_databricks_workspace.this.workspace_url}/serving-endpoints/${databricks_model_serving.pr_review_sla_risk.name}/invocations"
 }
