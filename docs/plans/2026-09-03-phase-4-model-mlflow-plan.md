@@ -1613,7 +1613,11 @@ git commit -m "docs: Phase 4 exit gate -- README diagram, STATUS.md verification
 | The CLI has no mocking anywhere | `test_model_runner_cli.py` (pure `argparse.Namespace`), `test_model_runner.py` (real Spark + real local MLflow) |
 | Serving is Databricks Model Serving's own endpoint, no custom API | `databricks_model_serving.pr_review_sla_risk` (Task 8); no FastAPI/HTTP service added anywhere in this plan |
 | The real cloud step ran before the credit deadline | Task 9, dated in STATUS.md against the Sep 24 expiry |
-| README / STATUS.md updated same-commit | Task 10 |
+| No classifier ships without beating a measured, per-segment breach-rate baseline (§5.3) | `train_classifier`'s `beats_baseline` gate + its directional tests (Task 12); `run_training`'s conditional registration, same shape as the regression path (Task 13) |
+| The classification comparison is a real sweep, not one config | `ClassificationResult.candidates` has ≥2 independently-scored, independently-logged entries (Task 12) |
+| Every logged model carries a signature, so UC registration cannot fail blind | `test_model_train_logging.py`'s `mlflow.models.get_model_info(...).signature is not None` assertions (added after the real cloud run surfaced the gap) |
+| The real classification cloud re-run ran before the credit deadline | `docs/findings/2026-09-04-classification-model-serving-measured.md`, dated against the Sep 24 expiry |
+| README / STATUS.md updated same-commit | Task 10, Task 14 |
 
 ## Deferred out of Phase 4, on purpose
 
