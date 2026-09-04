@@ -210,3 +210,64 @@ variable "gold_project_dir" {
   description = "Workspace path of the synced dbt project."
   default     = "/Workspace/Shared/almanac/dbt"
 }
+
+# Phase 4 (design doc §5.2): the training job, the UC model registry, and
+# the serving endpoint. Nothing here provisions compute on apply.
+
+variable "model_registry_catalog" {
+  type = string
+  # almanac_dbx, the metastore's own default-storage managed catalog: this
+  # account has account-level Default Storage and no metastore storage_root,
+  # so a fresh `databricks_catalog` cannot be created here (Task 9, 2026-09-04).
+  description = "UC catalog holding the trained model (Phase 4, §5.2). The metastore's managed catalog."
+  default     = "almanac_dbx"
+}
+
+variable "model_registry_schema" {
+  type        = string
+  description = "Unity Catalog schema, under model_registry_catalog, holding the trained model."
+  default     = "models"
+}
+
+variable "model_python_file" {
+  type        = string
+  description = "Workspace path of scripts/model.py, the job entrypoint for almanac.model.runner."
+  default     = "/Workspace/Shared/almanac/scripts/model.py"
+}
+
+variable "model_gold_table" {
+  type = string
+  # The Gold job's dbt `session` run creates `gold.fact_pull_request`, and
+  # on this Unity Catalog workspace that resolves to the default catalog's
+  # managed table `almanac_dbx.gold.fact_pull_request` -- not a Delta dir
+  # under the job's --warehouse abfss path, which is where a local dbt run
+  # would put it (Task 9, 2026-09-04). build_training_frame reads it by name.
+  description = "Fully-qualified name of Gold's fact_pull_request, the training job's label source."
+  default     = "almanac_dbx.gold.fact_pull_request"
+}
+
+variable "features_python_file" {
+  type        = string
+  description = "Workspace path of scripts/features.py, the job entrypoint for almanac.features.runner."
+  default     = "/Workspace/Shared/almanac/scripts/features.py"
+}
+
+variable "model_pip_dependencies" {
+  type = list(string)
+  # Keep in sync with pyproject.toml's [project.optional-dependencies] ml
+  # group -- a raw databricks_job cannot derive them; a bundle would. The
+  # pandas ceiling is load-bearing: mlflow pins pandas<3 (Task 1's finding).
+  description = "The ml extra's runtime deps, installed on the training job's cluster."
+  default = [
+    "mlflow>=3.15.2",
+    "lightgbm>=4.7.0",
+    "scikit-learn>=1.9.0",
+    "pandas>=2.3.3,<3",
+  ]
+}
+
+variable "model_serving_workload_size" {
+  type        = string
+  description = "Served-model workload size (Small|Medium|Large). scale_to_zero governs idle cost, not this."
+  default     = "Small"
+}
