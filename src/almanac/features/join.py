@@ -24,38 +24,55 @@ def as_of_join(
     Every spine row survives. "No qualifying row" -- no match at all, or
     every match lies at or after the as-of time -- nulls every feature
     column rather than dropping the row (the boundary and cold-start
-    cases below) or leaking a future value.
+    cases in tests/unit/test_features_join.py) or leaking a future value.
+
+    One ordered timeline per `on` key, not a `spine join feature_table`:
+    a handful of bot logins open a large enough share of every PR that
+    that join on `author_login` is an O(n^2) blow-up on those keys --
+    11.7 PiB of intermediate on the real quarter (2026-09-04,
+    docs/findings/2026-09-04-author-activity-self-join.md). Unioning the
+    two sides and carrying each feature row's values forward to the query
+    rows after it is one shuffle-and-sort per key instead.
     """
-    row_id = "_as_of_row_id"
-    feature_cols = [c for c in feature_table.columns if c not in on]
-    ft = feature_table.select(*on, *[F.col(c).alias(f"__ft_{c}") for c in feature_cols])
-    ft_time = f"__ft_{event_time_col}"
+    feature_cols = [c for c in feature_table.columns if c not in on and c != event_time_col]
+    boxed = [f"_asof_{c}" for c in feature_cols]
+    ts, tag, carried = "_asof_ts", "_asof_is_query", "_asof_carried"
 
-    candidates = (
-        spine.withColumn(row_id, F.monotonically_increasing_id())
-        .join(ft, on=on, how="left")
-        .withColumn(
-            "_qualifies",
-            F.coalesce(F.col(ft_time) < F.col(spine_time_col), F.lit(False)),
-        )
+    # A query event per spine row (its own columns kept, feature columns
+    # null); a value event per feature row (the reverse). `tag` ascending
+    # sorts a query ahead of a value at an equal instant -- that is the
+    # strict `<` the governing invariant depends on (CLAUDE.md).
+    query = spine.withColumn(ts, F.col(spine_time_col)).withColumn(tag, F.lit(0))
+    for c, b in zip(feature_cols, boxed, strict=True):
+        query = query.withColumn(b, F.lit(None).cast(feature_table.schema[c].dataType))
+
+    value = feature_table.select(
+        *on,
+        F.col(event_time_col).alias(ts),
+        F.lit(1).alias(tag),
+        *[F.col(c).alias(b) for c, b in zip(feature_cols, boxed, strict=True)],
     )
-    window = Window.partitionBy(row_id).orderBy(
-        F.col("_qualifies").desc(), F.col(ft_time).desc_nulls_last()
+    for c in spine.columns:
+        if c not in on:
+            value = value.withColumn(c, F.lit(None).cast(spine.schema[c].dataType))
+
+    to_date = (
+        Window.partitionBy(*on)
+        .orderBy(ts, tag)
+        .rowsBetween(Window.unboundedPreceding, Window.currentRow)
     )
-    ranked = (
-        candidates.withColumn("_rn", F.row_number().over(window))
-        .where(F.col("_rn") == 1)
-        .drop(row_id, "_rn")
+    # The struct is null on a query row, so `last(..., ignorenulls=True)`
+    # carries the most recent *value* row -- and takes its columns whole,
+    # so a legitimately null feature value is kept, not skipped for an
+    # older non-null one.
+    latest_value = F.when(
+        F.col(tag) == 1,
+        F.struct(*[F.col(b).alias(c) for c, b in zip(feature_cols, boxed, strict=True)]),
     )
 
-    result = ranked
-    for c in feature_cols:
-        prefixed = f"__ft_{c}"
-        result = result.withColumn(
-            prefixed, F.when(F.col("_qualifies"), F.col(prefixed)).otherwise(F.lit(None))
-        )
-        if c == event_time_col:
-            result = result.drop(prefixed)
-        else:
-            result = result.withColumnRenamed(prefixed, c)
-    return result.drop("_qualifies")
+    return (
+        query.unionByName(value.select(*query.columns))
+        .withColumn(carried, F.last(latest_value, ignorenulls=True).over(to_date))
+        .where(F.col(tag) == 0)
+        .select(*spine.columns, *[F.col(carried)[c].alias(c) for c in feature_cols])
+    )
