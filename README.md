@@ -14,7 +14,9 @@ review queue. The domain is incidental, and that is the point.
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
 > Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.
 > Phase 3 (offline feature platform) — 8 of 8 tasks. Phase 4 (model +
-> MLflow) — 9 of 9 tasks, trained and measured on the real quarter.**
+> MLflow) — 13 of 13 tasks: a measured regression null result, reframed to
+> classification (§5.3), and a real, non-null result registered live in
+> Unity Catalog.**
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -73,21 +75,40 @@ review queue. The domain is incidental, and that is the point.
 > the SQL is unit-tested, execution is deferred to Phase 3's cloud
 > verification step.
 > **Phase 4 trained a model and measured it against a baseline for real,
-> on the real quarter — and the honest result is a null one.** LightGBM
-> on the ten v1 features scored `model_mae` **108,890 s** against a naive
-> median-per-segment `baseline_mae` **71,917 s**: worse, not better, and
-> §5.1's own gate — no model registers, no endpoint deploys, unless it
-> measurably beats the baseline — held and did exactly what it exists to
-> do. The trainable population's response time is severely right-skewed
-> (median 72 s, mean 20 h, max 92 days), which is the measured, stated
-> reason a default squared-error objective loses to a segment median
-> here — recorded as the diagnosis, not quietly patched into a different
-> number. Real-scale running of the feature platform also surfaced and
-> fixed the same O(N²) bot-author join blow-up in two places
-> (`compute_author_activity`'s self-join, and `as_of_join` itself, the
-> feature platform's own core primitive — 11.7 PiB of intermediate on
-> one join at real scale) and a local-vs-cloud divergence in where dbt
-> materialises Gold. `docs/findings/2026-09-04-model-serving-measured.md`.
+> on the real quarter.** The first attempt — LightGBM regression on the
+> ten v1 features, predicting time-to-first-response directly — scored
+> `model_mae` **108,890 s** against a naive median-per-segment
+> `baseline_mae` **71,917 s**: worse, not better, a genuine null result
+> driven by the trainable population's severely right-skewed response
+> time (median 72 s, mean 20 h, max 92 days), which a default
+> squared-error objective handles poorly. §5.1's own gate — no model
+> registers, no endpoint deploys, unless it measurably beats the
+> baseline — held and did exactly what it exists to do; the result is
+> recorded, not quietly patched into a different number
+> (`docs/findings/2026-09-04-model-serving-measured.md`).
+> **Reframed to classification (§5.3)** — predict SLA breach/no-breach
+> against the measured p75 threshold (1,487 s) instead of the raw
+> duration — and re-measured for real on the same quarter:
+> `LGBMClassifier` beat a per-segment breach-rate baseline by more than
+> 2x on PR-AUC (**0.612 vs. 0.285**, `roc_auc` 0.828), across a real
+> comparison sweep of two hyperparameter configs rather than one shot.
+> The gate fired for real this time and registered the winner in Unity
+> Catalog (`almanac_dbx.models.pr_review_sla_risk` v1, `@champion`
+> alias) — the **first live UC registration in this project** — which
+> surfaced a real defect no local test had caught: `mlflow.lightgbm.
+> log_model` was never called with a `signature`, invisible against a
+> `file://` MLflow store but fatal against UC's registry; fixed and
+> closed with a local regression test asserting every logged model
+> carries one, so a future run can't hit it blind
+> (`docs/findings/2026-09-04-classification-model-serving-measured.md`).
+> The serving endpoint is deliberately not yet stood up — a live UC
+> registration is a different decision from a live endpoint, and the
+> diagram below reflects only what is actually deployed. Real-scale
+> running of the feature platform also surfaced and fixed the same
+> O(N²) bot-author join blow-up in two places (`compute_author_activity`'s
+> self-join, and `as_of_join` itself, the feature platform's own core
+> primitive — 11.7 PiB of intermediate on one join at real scale) and a
+> local-vs-cloud divergence in where dbt materialises Gold.
 > Planning Phase 2 found **two defects in that committed, CI-green Phase
 > 1 code** — Silver overwrote its whole table on every file, and read the
 > raw archive rather than Bronze. Both were invisible at a sample size of
@@ -150,8 +171,8 @@ flowchart LR
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
-  class GHA,B,S,G,F done
-  class API,R,E,V,BI todo
+  class GHA,B,S,G,F,R done
+  class API,E,V,BI todo
 ```
 
 Solid = built and green. Dashed = designed, not built.

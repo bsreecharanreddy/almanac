@@ -166,33 +166,61 @@ done:**
   A/B and the backfill already used, and belongs in this file when it
   runs — not claimed here.
 
-**Phase 4 (model + MLflow) — Tasks 1–8 done (see the verification log),
-Task 9 (real cloud verification) in progress.**
-`docs/plans/2026-09-03-phase-4-model-mlflow-plan.md` is the active plan.
-Tasks 1–8 built the `ml` dependency group, the label join, the
-version-pinned training frame, the naive baseline, `train_model`, MLflow
-run logging, UC registration, the runner/CLI, and the Terraform for the
-training job + serving endpoint — all green, all unit/integration-tested
-locally. Task 9 runs it for real against the still-live `westus3`
-workspace before the Sep 24 credit expiry: `terraform apply`, a live
-training run, MLflow experiment + UC registration, the serving endpoint,
-and measured cold-start / p50 / p95.
+**Phase 4 (model + MLflow) — Tasks 1–14 done.**
+`docs/plans/2026-09-03-phase-4-model-mlflow-plan.md` (Tasks 1–9) plus
+`docs/plans/2026-09-04-phase-4-classification-plan.md` (Tasks 10–14) are
+both fully executed. Tasks 1–8 built the `ml` dependency group, the label
+join, the version-pinned training frame, the naive baseline, `train_model`,
+MLflow run logging, UC registration, the runner/CLI, and the Terraform for
+the training job + serving endpoint — all green, all unit/integration-
+tested locally. Task 9 ran the regression path for real against the live
+`westus3` workspace before the Sep 24 credit expiry and measured a genuine
+null result (`model_mae` 108,890 s vs. `baseline_mae` 71,917 s), driven by
+the label's severe right-skew — `docs/findings/2026-09-04-model-serving-measured.md`.
+That result, plus the `closed_no_response` question §5.2 had left open,
+motivated reframing to classification (§5.3, 2026-09-04): predict SLA
+breach/no-breach against the measured p75 threshold (1,487 s) instead of
+the raw duration. Tasks 10–13 built and tested the classification path
+(`join_breach_label`, the breach-rate baseline, `train_classifier`'s
+comparison sweep + PR-AUC gate, CLI/Terraform wiring); the real cloud
+re-run measured a genuine **non-null** result — `LGBMClassifier` beat the
+baseline by more than 2x on PR-AUC (0.612 vs. 0.285, `roc_auc` 0.828) —
+and registered the winner live in Unity Catalog
+(`almanac_dbx.models.pr_review_sla_risk` v1, `@champion` alias), the
+**first real UC registration in this project**. That run also surfaced
+and closed a real defect no local test had caught (UC refuses a model
+logged with no signature), fixed and covered by a new local regression
+test. Full detail in
+`docs/findings/2026-09-04-classification-model-serving-measured.md`.
 
-Task 9 has surfaced and fixed three real-scale defects the offline
-fixtures could not (all in the verification log, 2026-09-04): the same
-O(N²) bot-author skew in `compute_author_activity`'s self-join **and** in
-`as_of_join` (the feature platform's core primitive — 11.7 PiB of
-intermediate on the real quarter), plus Gold's fact being a Unity Catalog
-managed table rather than a Delta path on the workspace. The feature
-build now runs clean (437 s); `train_model` has moved to a 5-VM cluster.
-Next concrete step: re-run `databricks_job.train_model`, read the MLflow
-run, and — if the model beats the baseline — apply the serving endpoint
-and measure it.
+Real-scale running of the feature platform also surfaced and fixed three
+defects the offline fixtures could not (all in the verification log,
+2026-09-04): the same O(N²) bot-author skew in
+`compute_author_activity`'s self-join **and** in `as_of_join` (the
+feature platform's core primitive — 11.7 PiB of intermediate on the real
+quarter), plus Gold's fact being a Unity Catalog managed table rather
+than a Delta path on the workspace.
+
+**One item from Phase 4's own stated deliverable (design doc §9's phase
+table, §10's goals checklist) is still open, not silently marked done:
+the live serving endpoint and its measured cold-start/p50/p95.**
+`databricks_model_serving.pr_review_sla_risk` now has a real model
+version to point at (`entity_version = "1"` exists) but has not been
+`terraform apply`'d — standing up a persistent (if scale-to-zero) live
+resource is being treated as its own decision, not something implied by
+a training run succeeding.
 
 The online store and vector index (§9: Phase 4/5) stay deferred until a
-serving endpoint exists to feed them, per §4.4a's scope decision. The
-`R`/`E` nodes on the README architecture diagram stay `todo` until Task 9
-lands them for real.
+serving endpoint exists to feed them, per §4.4a's scope decision. The `R`
+node on the README architecture diagram is now `done` (real UC
+registration); `E` (Model Serving) stays `todo` until the endpoint above
+is applied for real.
+
+**Every real cloud job run across all four Databricks jobs — backfill,
+build-features, Photon A/B, train-model — is now compiled in one place**:
+`docs/findings/2026-09-04-cloud-job-run-history.md`. n = 23 real runs,
+16 real defects found and fixed (none visible to `ruff`/`mypy`/the local
+suite), ≈$33.50 of the $184 credit total across all four jobs.
 
 Carried forward from Phase 1, none of it blocking:
 
@@ -315,3 +343,4 @@ actual result was, including failures.
 | 2026-09-04 | Phase 4 Task 12 — `train_classifier`: the comparison sweep and the PR-AUC gate | `pytest tests/unit/test_model_train.py tests/unit/test_model_train_logging.py tests/unit/test_model_baseline.py tests/unit/test_model_dataset.py tests/integration/test_model_dataset_versions.py -q` (17 tests, 5 new; every pre-existing regression-path test untouched and green) | **Green, and a real methodological finding surfaced while writing the no-signal test.** `train_classifier` fits the breach-rate baseline and both `CLASSIFIER_CANDIDATES` (`"default"`, `"is_unbalance"`) on one split, scores each by `roc_auc`/`average_precision`/`log_loss`, and gates on the highest-`average_precision` candidate beating the baseline (`_best_candidate`, its own directly-tested pure function). `log_classification_run` logs every candidate plus the baseline as its own MLflow run in the same experiment. **Measured, not assumed**: a first no-signal test (`is_bot_author` held constant, matching the regression suite's existing fixture shape) asserted `beats_baseline is False` and failed — checked directly at n=400/1,000/2,000/5,000/10,000, and it stayed `True` even at 10,000 rows. Average precision rewards a model's *ranking variation*; a baseline predicting one tied value for the whole population (a single segment) has zero ranking power and is close to unbeatable-proof under PR-AUC regardless of true signal — a real property of the metric, not a bug. Giving `is_bot_author` genuine variety and asserting `roc_auc` near 0.5 instead (the metric that actually answers "was a real relationship learned") is the honest, robust test; forcing a specific seed/`n` to make `beats_baseline is False` pass would have been closer to p-hacking the test than testing the gate. `mypy` needed one narrowing (`np.asarray(...)` on `predict_proba`'s output before `[:, 1]`) for the same lightgbm-return-type reason Task 7's `assert isinstance(runs, pd.DataFrame)` existed. |
 | 2026-09-04 | Phase 4 Task 13 — `run_training`'s `objective` dispatch, CLI wiring, classification integration coverage, and Terraform | `pytest tests/unit/test_model_runner_cli.py tests/integration/test_model_runner.py -q` (9 tests, 7 new; both pre-existing regression-path integration tests untouched and green); `terraform fmt -check`/`terraform validate` clean; whole-repo `pytest -q` (292 passed, 0:24:09), `ruff check`, `ruff format --check`, `mypy src tests` all clean | **Green, Task 13 complete.** `run_training` gains `objective: Literal["regression","classification"] = "regression"` and `threshold_seconds: int \| None`, returning `TrainResult \| ClassificationResult`; a guard clause raises before any Spark work if `objective="classification"` and `threshold_seconds` is `None`. **One deviation from the plan's sketch**: the plan called for `_build_parser` itself to enforce the cross-field rule, but argparse has no declarative way to express "required only if a sibling flag has value X" — added a small `_parse_args` wrapper (`_build_parser().parse_args()` + the one manual check + `parser.error(...)`) instead of subclassing `ArgumentParser`, matching this repo's composition-over-inheritance convention. Widening `run_training`'s return type surfaced a real `mypy` gap in the *existing* regression-path integration test (`.model_mae` accessed without narrowing the union) — fixed with `assert isinstance(result, TrainResult)`, the same narrowing precedent as Task 7's `assert isinstance(runs, pd.DataFrame)`. **Two new real integration tests** prove the classification path end to end through both `run_training` and `main()` against real Delta I/O and a real local MLflow file-store, no mock — a fixture note worth keeping: `join_breach_label`'s `closed_no_response` branch references `opened_at`/`closed_at` even on rows where `label_exclusion IS NULL`, because Spark compiles both `when` branches against the schema, so the classification fixture needs a wider Gold schema (`_GOLD_SCHEMA_WITH_TIMES`) than the regression one even though those columns go unused when every row's `label_exclusion` is `None`. **Terraform**: `databricks_job.train_model`'s `parameters` gain `--objective classification --threshold-seconds 1487` (the §5.3-measured constant, passed explicitly, never recomputed by the job) — same job, superseding what runs there rather than adding a parallel pipeline; `--catalog`/`--schema`/`--register` unchanged. Not yet `terraform apply`'d against the live workspace — that lands with the real cloud re-run, next. |
 | 2026-09-04 | Phase 4 — classification cloud re-run, attempt 1: a real defect UC registration surfaced that no local test had (`register=True` had never fired for real before) | `terraform apply -target=databricks_job.train_model` (0 to add, 1 to change); `uv build` + `databricks workspace import --overwrite` for the wheel and `scripts/model.py`, verified by stored-size match (57,683 / 215 bytes, both exact); `databricks jobs run-now` (run `704688669520130`) — FAILED; `databricks jobs get-run-output` on the `train` task | **A real, paid failure, and a genuine first**: this is the first time `run_training(..., register=True)` has ever reached `register_champion` for real — Task 9's regression run measured `beats_baseline=False`, so `mlflow.register_model` was never actually called against a live Unity Catalog before this run (a candidate here *did* beat the breach-rate baseline, which is itself worth noting even though the run then failed on the registration step, not training). **Root cause, read directly off the real traceback**: `MlflowException: Model passed for registration did not contain any signature metadata. All models in the Unity Catalog must be logged with a model signature...`, raised by `UcModelRegistryStore._validate_model_signature`. Neither `log_training_run` nor `log_classification_run` ever passed `signature=` to `mlflow.lightgbm.log_model` — a latent bug in both paths since Task 6, invisible locally because a `file://` MLflow store does not validate signatures the way UC's registry does. **Fixed and closed at the level that would have caught it before spending anything**: `train_model`/`train_classifier` now compute `infer_signature(train_features, model.predict(train_features))` right where each model is fit and carry it on `TrainResult.signature` / `ClassifierCandidateResult.signature`; `log_training_run`/`log_classification_run` pass it through to `log_model`. Two new local regression tests (`tests/unit/test_model_train_logging.py`) assert `mlflow.models.get_model_info(model_uri).signature is not None` on every logged model — reproduced the exact real failure locally first (RED), confirmed the fix turns it green, so a future `register=True` run cannot hit this again undetected. `np.asarray(...)` needed once more around `model.predict(...)` for the same lightgbm-return-type `mypy` reason as Task 12. Whole-repo `pytest -q` (292 passed, 0:23:08), `ruff check`, `ruff format --check`, `mypy src tests` all clean. Wheel rebuilt and being redeployed; re-triggering now (attempt 2). |
+| 2026-09-04 | Phase 4 — classification cloud re-run, attempt 2: **a real, measured, non-null result** | Wheel rebuilt (`uv build`) and redeployed (`databricks workspace import --overwrite`, verified by stored-size match, 57,895 bytes both sides); `databricks jobs run-now` (run `1102177434831425`) — SUCCESS; MLflow runs read via `databricks api get /api/2.0/mlflow/runs/get`; `databricks registered-models get` / `model-versions get` / the UC aliases API against the live workspace | **`beats_baseline = True` — the first non-null result this project's model layer has produced.** `default` (plain `LGBMClassifier`) beat the breach-rate baseline by more than 2x on PR-AUC: baseline `average_precision` 0.2845 vs. `default` 0.6120 (`roc_auc` 0.8279, `log_loss` 0.4219); `is_unbalance` close behind at 0.6074/0.8279/0.5081, not better. `_best_candidate` correctly picked `default`; `run_training`'s `register AND beats_baseline` gate fired for real for the first time and registered it. **Verified directly, not inferred**: `almanac_dbx.models.pr_review_sla_risk` version 1 is `READY`, sourced from the `default` candidate's run; the `@champion` alias resolves to that version with its metrics attached to the alias record. Full writeup, including the population this ran against (n=7,320,121, §5.3) and cost (≈$2 across both attempts, ≈14 min + ≈14.5 min on 5 VMs), in `docs/findings/2026-09-04-classification-model-serving-measured.md`. `databricks_model_serving.pr_review_sla_risk`'s Terraform resource now has a real version to point at (`entity_version = "1"`) but is **not yet applied** — standing up a live serving endpoint is being treated as its own decision, not implied by this run. Task 14 (wrap-up: exit gate, README, closing STATUS row) next. |
