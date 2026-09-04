@@ -210,3 +210,44 @@ variable "gold_project_dir" {
   description = "Workspace path of the synced dbt project."
   default     = "/Workspace/Shared/almanac/dbt"
 }
+
+# Phase 4 (design doc §5.2): the training job, the UC model registry, and
+# the serving endpoint. Nothing here provisions compute on apply.
+
+variable "model_registry_catalog" {
+  type        = string
+  description = "Unity Catalog catalog holding the trained model (Phase 4, design doc §5.2)."
+  default     = "almanac"
+}
+
+variable "model_registry_schema" {
+  type        = string
+  description = "Unity Catalog schema, under model_registry_catalog, holding the trained model."
+  default     = "models"
+}
+
+variable "model_python_file" {
+  type        = string
+  description = "Workspace path of scripts/model.py, the job entrypoint for almanac.model.runner."
+  default     = "/Workspace/Shared/almanac/scripts/model.py"
+}
+
+variable "model_pip_dependencies" {
+  type = list(string)
+  # Keep in sync with pyproject.toml's [project.optional-dependencies] ml
+  # group -- a raw databricks_job cannot derive them; a bundle would. The
+  # pandas ceiling is load-bearing: mlflow pins pandas<3 (Task 1's finding).
+  description = "The ml extra's runtime deps, installed on the training job's cluster."
+  default = [
+    "mlflow>=3.15.2",
+    "lightgbm>=4.7.0",
+    "scikit-learn>=1.9.0",
+    "pandas>=2.3.3,<3",
+  ]
+}
+
+variable "model_serving_workload_size" {
+  type        = string
+  description = "Served-model workload size (Small|Medium|Large). scale_to_zero governs idle cost, not this."
+  default     = "Small"
+}

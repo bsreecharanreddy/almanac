@@ -73,3 +73,22 @@ resource "databricks_grants" "lake" {
     privileges = ["READ_FILES", "WRITE_FILES", "CREATE_EXTERNAL_TABLE"]
   }
 }
+
+# The model registry (Phase 4, design doc §5.2): a UC catalog/schema
+# distinct from the external locations above -- this holds a managed table
+# (the registered model), not a pointer at Delta files a job writes by
+# path. mlflow.set_registry_uri("databricks-uc") targets this.
+resource "databricks_catalog" "models" {
+  name    = var.model_registry_catalog
+  comment = "Trained models (Phase 4). mlflow.set_registry_uri(\"databricks-uc\") registers here."
+
+  # A registered model is state the credit-teardown cycle must not drop;
+  # unlike the lake, there is no paid re-burn to recover it.
+  force_destroy = false
+}
+
+resource "databricks_schema" "models" {
+  catalog_name = databricks_catalog.models.name
+  name         = var.model_registry_schema
+  comment      = "pr_review_sla_risk lives here, aliased @champion."
+}
