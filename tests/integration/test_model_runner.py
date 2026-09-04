@@ -13,7 +13,7 @@ from pyspark.sql import SparkSession
 
 from almanac.features.runner import run_features
 from almanac.model.runner import main, run_training
-from almanac.model.train import TrainResult
+from almanac.model.train import ClassificationResult, TrainResult
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -24,6 +24,14 @@ _SILVER_SCHEMA = (
 )
 _GOLD_SCHEMA = (
     "repo_id long, pr_number long, time_to_first_response_seconds long, label_exclusion string"
+)
+# join_breach_label's `closed_no_response` branch references opened_at/
+# closed_at even when every row's label_exclusion is NULL (Spark compiles
+# both `when` branches against the schema) -- so the classification path's
+# fixture needs these columns present, unlike the regression path's.
+_GOLD_SCHEMA_WITH_TIMES = (
+    "repo_id long, pr_number long, time_to_first_response_seconds long, "
+    "label_exclusion string, opened_at timestamp, closed_at timestamp"
 )
 
 
@@ -111,3 +119,106 @@ def test_main_wires_the_parsed_arguments_through_to_a_real_run(
     mlflow.set_tracking_uri(tracking_uri)
     runs = mlflow.search_runs(experiment_names=["pr-review-sla-risk-cli-test"])
     assert len(runs) == 1
+
+
+def _write_silver_and_gold_for_classification(
+    spark: SparkSession, tmp_path: Path
+) -> tuple[Path, Path, str]:
+    silver_path = tmp_path / "silver"
+    features_path = tmp_path / "features"
+    gold_dir = tmp_path / "gold_fact"
+    gold_table = f"gold_fact_cls_{tmp_path.name}".replace("-", "_")
+
+    rows = [
+        (
+            1,
+            n,
+            datetime(2025, 8, 13, 9, tzinfo=UTC),
+            "PullRequestEvent",
+            "opened",
+            "alice",
+            None,
+            False,
+            None,
+            datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+        )
+        for n in range(1, 40)
+    ]
+    spark.createDataFrame(rows, _SILVER_SCHEMA).write.format("delta").save(
+        str(silver_path / "clean")
+    )
+
+    run_features(
+        spark, silver_path=str(silver_path), features_path=str(features_path), register=False
+    )
+
+    # n=1..20 land under the 1200s threshold, n=21..39 over it -- both
+    # classes present in both the train and test split (§5.3's population,
+    # every row label_exclusion=None).
+    gold_rows = [(1, n, 1000 + n * 10, None, None, None) for n in range(1, 40)]
+    spark.createDataFrame(gold_rows, _GOLD_SCHEMA_WITH_TIMES).write.format("delta").save(
+        str(gold_dir)
+    )
+    spark.sql(f"DROP TABLE IF EXISTS {gold_table}")
+    spark.sql(f"CREATE TABLE {gold_table} USING DELTA LOCATION '{gold_dir}'")
+    return silver_path, features_path, gold_table
+
+
+def test_run_training_classification_objective_logs_a_real_mlflow_comparison(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    silver_path, features_path, gold_table = _write_silver_and_gold_for_classification(
+        spark, tmp_path
+    )
+    tracking_uri = f"file://{tmp_path}/mlruns"
+
+    result = run_training(
+        spark,
+        silver_path=str(silver_path),
+        features_path=str(features_path),
+        gold_table=gold_table,
+        tracking_uri=tracking_uri,
+        experiment_name="pr-review-sla-breach-test",
+        register=False,
+        objective="classification",
+        threshold_seconds=1200,
+    )
+
+    assert isinstance(result, ClassificationResult)
+    assert len(result.candidates) >= 2
+    mlflow.set_tracking_uri(tracking_uri)
+    runs = mlflow.search_runs(experiment_names=["pr-review-sla-breach-test"])
+    assert len(runs) == len(result.candidates) + 1  # one per candidate, plus the baseline
+
+
+def test_main_wires_the_classification_objective_through_to_a_real_run(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    silver_path, features_path, gold_table = _write_silver_and_gold_for_classification(
+        spark, tmp_path
+    )
+    tracking_uri = f"file://{tmp_path}/mlruns"
+
+    code = main(
+        [
+            "--silver-path",
+            str(silver_path),
+            "--features-path",
+            str(features_path),
+            "--gold-table",
+            gold_table,
+            "--tracking-uri",
+            tracking_uri,
+            "--experiment-name",
+            "pr-review-sla-breach-cli-test",
+            "--objective",
+            "classification",
+            "--threshold-seconds",
+            "1200",
+        ]
+    )
+
+    assert code == 0
+    mlflow.set_tracking_uri(tracking_uri)
+    runs = mlflow.search_runs(experiment_names=["pr-review-sla-breach-cli-test"])
+    assert len(runs) >= 2  # at least one candidate plus the baseline
