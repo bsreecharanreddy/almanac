@@ -104,6 +104,65 @@ warm again right after: **0.485s, 0.505s, 0.308s** — consistent with
 the n=20 warm-latency distribution above, confirming the 52s figure is
 real wake-from-zero latency, not a fluke or a timeout.
 
+## Exploring the decision boundary, live — both a `false` and a `true`
+
+After the endpoint was up, tested interactively rather than left as one
+canned example — the user queried it directly through the Serving UI's
+own query tool, and asked to find a payload that flips the prediction.
+Both directions verified two ways: against the model's real
+`predict_proba` (loaded locally via `mlflow.pyfunc.load_model`,
+`runs:/e4f29f7f8b264c16b29f081e377c445e/model`) and against the live
+endpoint itself, so the endpoint's hard-label output is checked against
+the actual probability behind it, not assumed to track it.
+
+**`false` — two real payloads, both non-breach:**
+
+| Payload | `predict_proba` | Endpoint |
+|---|---|---|
+| `prior_pr_count=3, prior_merge_rate=0.6, bot_share_to_date=0.1, is_bot_author=0` (typical human PR) | 31.66% | `false` |
+| Same, but `prior_merge_rate=0, bot_share_to_date=1.0, is_bot_author=1` (bot-heavy) | 35.21% | `false` |
+
+The probability moved in the expected direction (+3.6 points toward
+breach) when pushed toward bot-like inputs, but stayed under the
+endpoint's 0.5 hard-label cutoff. This is not a defect — it is why §5.3
+picked PR-AUC (a ranking metric) over accuracy in the first place:
+breach is only 25.55% of the population, so a well-calibrated model
+rarely crosses 50% confidence even on a genuinely higher-risk PR, and a
+served hard label alone hides that ranking movement. The endpoint
+currently serves only the class label, not the probability.
+
+**`true` — found by measuring, not guessing.** Read `native.feature_importances_`
+off the real model first rather than keep hand-picking inputs:
+`prior_pr_count` (highest), `bot_share_to_date`, `prs_opened_to_date`,
+`prior_merge_rate`, `events_total_to_date`, `bot_events_to_date`,
+`is_bot_author`, `opened_day_of_week`, `opened_hour`, and
+**`is_draft` — importance 0, never once split on by the trained trees.**
+A 4,000-row random search over the full plausible feature range then
+found the boundary: **656 of 4,000 draws (16.4%) crossed 0.5**, max
+**74.96%**. The winning combination is a real, worth-recording surprise —
+not "more bot signals," but very high prior activity
+(`prior_pr_count=131`, `prs_opened_to_date=173`) paired with very low
+recent engagement (`events_total_to_date=8`):
+
+| Payload | `predict_proba` | Endpoint |
+|---|---|---|
+| `prior_pr_count=131, prior_merge_rate=0.2, events_total_to_date=8, bot_events_to_date=15, prs_opened_to_date=173, bot_share_to_date=0.29, is_draft=1, is_bot_author=1, opened_day_of_week=4, opened_hour=2` | **74.96%** | **`true`** |
+
+Confirmed live: `curl` against the real invocation URL with this exact
+payload returned `{"predictions": [true]}`, matching the local
+`predict_proba` call exactly.
+
+**One genuinely non-monotonic effect surfaced along the way**: holding
+the above payload's other values fixed and dropping `prior_merge_rate`
+from 0.1 to exactly 0.0 *lowered* the predicted probability (47.60% →
+35.01%), the opposite of the "lower merge rate should mean higher risk"
+intuition. A real interaction a gradient-boosted tree can learn — a
+`prior_merge_rate` of exactly 0 combined with these other feature values
+apparently reads more like "brand new, unproven" than "reliably fails to
+merge" — and a reminder that eyeballing a tree ensemble's behavior one
+feature at a time is unreliable; the random search across the full
+feature vector is what actually found the boundary.
+
 ## Cost
 
 Near-zero by design (§8.1: $0.07/DBU + a $0.07 per-launch charge,

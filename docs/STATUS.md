@@ -219,6 +219,24 @@ across a machine suspend — neither affecting the endpoint's own
 server-side clock, which is what the measurement actually depends on):
 `docs/findings/2026-09-04-serving-endpoint-measured.md`.
 
+**The decision boundary was probed live, both directions, and both
+verified against the model's real `predict_proba`, not assumed from the
+served label alone.** Two `false` payloads (a typical human PR at
+31.66%, a bot-heavy variant at 35.21%) showed the probability moving the
+expected direction without crossing the endpoint's 0.5 cutoff — the same
+reason §5.3 picked PR-AUC over accuracy, made visible in a live example.
+A `true` was then found by reading the model's real
+`feature_importances_` (`prior_pr_count` highest; `is_draft` **zero,
+never split on**) and a 4,000-row random search (656/4,000 crossed 0.5,
+max 74.96%) rather than by guessing — the winning combination is a real
+surprise: very high prior activity paired with very low recent
+engagement, not "more bot signals." Confirmed on the live endpoint
+(`{"predictions": [true]}`, matching the local probability exactly). One
+non-monotonic effect surfaced along the way: dropping `prior_merge_rate`
+from 0.1 to exactly 0.0 *lowered* predicted risk (47.6%→35.0%), the
+opposite of the naive intuition — a real interaction effect, not a bug.
+Same findings doc.
+
 The online store and vector index (§9: Phase 4/5) stay deferred until
 retrieval work starts (Phase 5), per §4.4a's scope decision — the
 serving endpoint they'd sit behind now exists. The `R` and `E` nodes on
