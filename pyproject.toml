@@ -106,6 +106,14 @@ strict = true
 warn_unreachable = true
 mypy_path = "src"
 
+# scikit-learn ships no py.typed (still true at 1.9) and has no maintained
+# stub package. Used only for train_test_split and mean_absolute_error in
+# almanac.model.train -- both take/return arrays and DataFrames mypy still
+# checks at the call site.
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
