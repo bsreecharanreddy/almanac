@@ -47,6 +47,12 @@ def test_logs_a_run_with_the_expected_metrics_and_returns_a_model_uri(tmp_path: 
     )
 
     assert model_uri.startswith("runs:/") and model_uri.endswith("/model")
+    # Unity Catalog registration refuses a model logged with no signature
+    # (measured for real against the live workspace, Task 13's cloud run) --
+    # a file-store run like this one doesn't validate that itself, so this
+    # is the one local check standing between a future register=True run
+    # and that same failure.
+    assert mlflow.models.get_model_info(model_uri).signature is not None
 
     mlflow.set_tracking_uri(tracking_uri)
     runs = mlflow.search_runs(experiment_names=["test-pr-review-sla-risk"])
@@ -88,6 +94,8 @@ def test_logs_a_classification_run_per_candidate_plus_the_baseline(tmp_path: Pat
     assert set(model_uris) == set(result.candidates)
     for uri in model_uris.values():
         assert uri.startswith("runs:/") and uri.endswith("/model")
+        # Same UC-registration requirement as the regression path's model.
+        assert mlflow.models.get_model_info(uri).signature is not None
 
     mlflow.set_tracking_uri(tracking_uri)
     runs = mlflow.search_runs(experiment_names=["test-pr-review-sla-breach"])
