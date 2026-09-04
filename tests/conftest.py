@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -6,6 +7,13 @@ from pyspark.sql import SparkSession
 
 from almanac.config import Settings
 from almanac.spark import local_session
+
+# MLflow 3.x refuses the local file store unless this is set. Phase 4's
+# tests exercise the logging *contract* against a hermetic file:// store
+# (per-test tmp_path); the real backend is Databricks, reached via the
+# runner's `--tracking-uri databricks` and exercised only in Task 9's
+# cloud step. sqlite would buy nothing here but an artifact-root to manage.
+os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
 
 
 @pytest.fixture(scope="session")

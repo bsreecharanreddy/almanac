@@ -1,11 +1,13 @@
-"""Trains the SLA-risk regressor and measures it against the naive
-baseline -- 'no model ships without a measured comparison' (design doc
-§5.1), enforced here in code rather than left to a checklist step.
+"""Trains the SLA-risk regressor, measures it against the naive baseline
+-- 'no model ships without a measured comparison' (design doc §5.1),
+enforced here in code -- and logs the run to MLflow.
 """
 
 from dataclasses import dataclass
 from typing import Any
 
+import mlflow
+import mlflow.lightgbm
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error
@@ -69,3 +71,17 @@ def train_model(
         baseline_mae=baseline_mae,
         beats_baseline=model_mae < baseline_mae,
     )
+
+
+def log_training_run(result: TrainResult, *, experiment_name: str, tracking_uri: str) -> str:
+    """Log params, metrics, and the model artifact; return the run's model URI."""
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+    with mlflow.start_run() as run:
+        mlflow.log_param("feature_columns", FEATURE_COLUMNS)
+        mlflow.log_param("random_state", result.model.get_params()["random_state"])
+        mlflow.log_metric("model_mae", result.model_mae)
+        mlflow.log_metric("baseline_mae", result.baseline_mae)
+        mlflow.log_metric("beats_baseline", float(result.beats_baseline))
+        mlflow.lightgbm.log_model(result.model, name="model")
+        return f"runs:/{run.info.run_id}/model"
