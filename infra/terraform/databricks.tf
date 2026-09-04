@@ -14,7 +14,7 @@ data "databricks_spark_version" "lts" {
 
 locals {
   lake = {
-    for tier in ["bronze", "silver", "gold"] :
+    for tier in ["bronze", "silver", "gold", "features"] :
     tier => "abfss://${tier}@${azurerm_storage_account.lake.name}.dfs.core.windows.net"
   }
 }
@@ -267,4 +267,196 @@ resource "databricks_job" "gold" {
 output "gold_job_url" {
   description = "Databricks Workflows URL for the Gold dbt build."
   value       = databricks_job.gold.url
+}
+
+# The offline feature platform on the real lake (design doc §4.4a). Phase 3
+# built and tested it against local fixtures only; Task 9 (Phase 4) found
+# that the model cannot train until author_activity / repo_activity /
+# pr_static exist over the real Silver quarter. Same 5-VM shape as the
+# medallion jobs -- repo_activity is an unbounded running window over ~all
+# 341M Silver rows, and author_activity a self-join over the PR subset.
+# --register is off: UC TIMESERIES registration stays a separate deferred
+# item; this run only materialises the Delta tables the training job reads.
+resource "databricks_job" "build_features" {
+  name        = "${var.prefix}-build-features"
+  description = "Materialise the v1 feature tables over the real Silver quarter. Attended runs only."
+
+  max_concurrent_runs = 1
+  tags                = var.tags
+
+  job_cluster {
+    job_cluster_key = "features"
+    new_cluster {
+      spark_version      = data.databricks_spark_version.lts.id
+      node_type_id       = var.databricks_node_type
+      num_workers        = var.backfill_workers
+      runtime_engine     = "STANDARD"
+      data_security_mode = "SINGLE_USER"
+      single_user_name   = data.databricks_current_user.me.user_name
+      custom_tags        = var.tags
+      # Behaviour-neutral: log delivery only. Task 9's first three runs all
+      # hung writing author_activity; the driver/executor log4j output and a
+      # live thread dump are what named the cause -- an O(N^2) self-join in
+      # compute_author_activity, since fixed (2026-09-04, docs/findings/).
+      # Kept because a self-terminating job cluster otherwise takes its logs
+      # to the grave, and the diagnostics-before-a-fix rule still applies to
+      # the next surprise.
+      cluster_log_conf {
+        volumes {
+          destination = "/Volumes/${databricks_volume.cluster_logs.catalog_name}/${databricks_volume.cluster_logs.schema_name}/${databricks_volume.cluster_logs.name}"
+        }
+      }
+    }
+  }
+
+  task {
+    task_key        = "build_features"
+    job_cluster_key = "features"
+
+    spark_python_task {
+      python_file = var.features_python_file
+      source      = "WORKSPACE"
+      parameters = [
+        # run_features reads <silver-path>/clean, the same base dir the
+        # backfill wrote and the Gold job reads. A str, not a Path (defect
+        # from 2026-09-02: Path collapses the '//' scheme separator).
+        "--silver-path", "${local.lake.silver}/events",
+        "--features-path", "${local.lake.features}/events",
+      ]
+    }
+
+    library {
+      whl = var.almanac_wheel
+    }
+
+    dynamic "library" {
+      for_each = var.backfill_pip_dependencies
+      content {
+        pypi {
+          package = library.value
+        }
+      }
+    }
+  }
+}
+
+output "build_features_job_url" {
+  description = "Databricks Workflows URL for the feature-platform build."
+  value       = databricks_job.build_features.url
+}
+
+# Phase 4's training run (design doc §5.2). The LightGBM + scikit-learn fit
+# is single-threaded on the driver and never distributes -- that part of
+# §5.2 holds. But `build_training_frame` scans the whole 341M-row Silver
+# quarter to rebuild the PR-opened spine before the as-of joins, so the
+# §5.2 "dataset.py's Spark reads are small" premise was wrong: single-node
+# ran that step for ~40 min before the (since-fixed) as_of_join blow-up
+# even showed (Task 9, 2026-09-04). Same 5-VM shape as the feature build,
+# which ran the comparable work in 14 min. Attended runs only.
+resource "databricks_job" "train_model" {
+  name        = "${var.prefix}-train-model"
+  description = "Phase 4: build the training frame, train, log to MLflow, register @champion if it beats the baseline. Attended runs only."
+
+  max_concurrent_runs = 1
+  tags                = var.tags
+
+  job_cluster {
+    job_cluster_key = "train"
+    new_cluster {
+      spark_version      = data.databricks_spark_version.lts.id
+      node_type_id       = var.databricks_node_type
+      num_workers        = var.backfill_workers
+      runtime_engine     = "STANDARD"
+      data_security_mode = "SINGLE_USER"
+      single_user_name   = data.databricks_current_user.me.user_name
+      custom_tags        = var.tags
+      # Diagnostics parity with the feature-build cluster: a job cluster
+      # self-terminates and takes its logs with it. Behaviour-neutral.
+      cluster_log_conf {
+        volumes {
+          destination = "/Volumes/${databricks_volume.cluster_logs.catalog_name}/${databricks_volume.cluster_logs.schema_name}/${databricks_volume.cluster_logs.name}"
+        }
+      }
+    }
+  }
+
+  task {
+    task_key        = "train"
+    job_cluster_key = "train"
+
+    spark_python_task {
+      python_file = var.model_python_file
+      source      = "WORKSPACE"
+      parameters = [
+        "--silver-path", "${local.lake.silver}/events",
+        "--features-path", "${local.lake.features}/events",
+        # Gold's fact is a dbt model -- a metastore table -- not a path.
+        # On a Unity Catalog workspace `CREATE TABLE gold.x` lands in the
+        # default catalog's managed storage, not under --warehouse (Task 9).
+        "--gold-table", var.model_gold_table,
+        # "databricks" -> the workspace's own MLflow tracking + UC registry,
+        # not a file:// store (which MLflow 3.x refuses anyway -- Task 5).
+        "--tracking-uri", "databricks",
+        "--experiment-name", "/Shared/almanac/pr-review-sla-risk",
+        # Classification (§5.3) supersedes the regression objective this job
+        # ran under for Task 9 -- same job, not a parallel pipeline. 1487s is
+        # the §5.3-measured SLA threshold, passed explicitly and never
+        # recomputed by the job itself.
+        "--objective", "classification",
+        "--threshold-seconds", "1487",
+        "--catalog", var.model_registry_catalog,
+        "--schema", var.model_registry_schema,
+        "--register",
+      ]
+    }
+
+    library {
+      whl = var.almanac_wheel
+    }
+
+    dynamic "library" {
+      for_each = var.model_pip_dependencies
+      content {
+        pypi {
+          package = library.value
+        }
+      }
+    }
+  }
+}
+
+output "train_model_job_url" {
+  description = "Databricks Workflows URL for Phase 4's training job."
+  value       = databricks_job.train_model.url
+}
+
+# The live endpoint (design doc §8.1, §5.2): Databricks Model Serving's own
+# REST API is the interface -- no custom service in front of it.
+# scale_to_zero_enabled keeps idle cost near zero, which is why the plan
+# leaves the endpoint up rather than destroying it per phase.
+resource "databricks_model_serving" "pr_review_sla_risk" {
+  name = "${var.prefix}-pr-review-sla-risk"
+
+  config {
+    served_entities {
+      # entity_version "1": the first Task 9 training run that beats the
+      # baseline registers version 1. If that run does NOT beat the
+      # baseline, no version is registered and this resource cannot apply
+      # -- a real, documented null result (§5.1), not a wiring bug to force.
+      entity_name           = "${var.model_registry_catalog}.${databricks_schema.models.name}.pr_review_sla_risk"
+      entity_version        = "1"
+      workload_size         = var.model_serving_workload_size
+      scale_to_zero_enabled = true
+    }
+  }
+
+  tags {
+    key   = "project"
+    value = var.prefix
+  }
+}
+
+output "model_serving_endpoint_url" {
+  description = "Invocations URL for the pr_review_sla_risk serving endpoint (Task 9 measures cold start / p50 / p95 against this)."
+  value       = "https://${azurerm_databricks_workspace.this.workspace_url}/serving-endpoints/${databricks_model_serving.pr_review_sla_risk.name}/invocations"
 }
