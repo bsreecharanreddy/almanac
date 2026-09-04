@@ -8,15 +8,25 @@ from typing import Any
 
 import mlflow
 import mlflow.lightgbm
+import numpy as np
 import pandas as pd
-from lightgbm import LGBMRegressor
-from sklearn.metrics import mean_absolute_error
+from lightgbm import LGBMClassifier, LGBMRegressor
+from sklearn.metrics import average_precision_score, log_loss, mean_absolute_error, roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from almanac.model.baseline import NaiveBaseline, fit_naive_baseline
 
 LABEL_COLUMN = "time_to_first_response_seconds"
 SEGMENT_COLUMN = "is_bot_author"
+BREACH_LABEL_COLUMN = "breach"
+
+# Named LGBMClassifier configs tried in one run (design doc §5.3): plain
+# defaults, and LightGBM's own answer to the measured 25.55%/74.45% class
+# split. A comparison table, not one shot.
+CLASSIFIER_CANDIDATES: dict[str, dict[str, Any]] = {
+    "default": {},
+    "is_unbalance": {"is_unbalance": True},
+}
 
 # The columns assemble_training_set() + join_label() produce, minus
 # identifiers (repo_id, pr_number, author_login, as_of_timestamp) and the
@@ -71,6 +81,109 @@ def train_model(
         baseline_mae=baseline_mae,
         beats_baseline=model_mae < baseline_mae,
     )
+
+
+@dataclass(frozen=True)
+class ClassifierCandidateResult:
+    model: LGBMClassifier
+    roc_auc: float
+    average_precision: float
+    log_loss: float
+
+
+@dataclass(frozen=True)
+class ClassificationResult:
+    candidates: dict[str, ClassifierCandidateResult]
+    baseline: NaiveBaseline
+    baseline_average_precision: float
+    best_candidate: str
+    beats_baseline: bool
+
+
+def _best_candidate(candidates: dict[str, ClassifierCandidateResult]) -> str:
+    """Highest average precision (PR-AUC) wins -- higher is better, the
+    inverse direction of train_model's lower-is-better MAE gate.
+    """
+    return max(candidates, key=lambda name: candidates[name].average_precision)
+
+
+def train_classifier(
+    frame: pd.DataFrame,
+    *,
+    random_state: int = 42,
+    test_size: float = 0.3,
+) -> ClassificationResult:
+    """Fit the breach-rate baseline and every `CLASSIFIER_CANDIDATES`
+    config on the same split; compare by average precision (design doc
+    §5.3 -- PR-AUC over ROC-AUC on the measured 25.55%-positive target).
+    """
+    train, test = train_test_split(frame, test_size=test_size, random_state=random_state)
+
+    baseline = fit_naive_baseline(
+        train, label_col=BREACH_LABEL_COLUMN, segment_col=SEGMENT_COLUMN, agg="mean"
+    )
+    baseline_predictions = baseline.predict(test[[SEGMENT_COLUMN]])
+    baseline_average_precision = float(
+        average_precision_score(test[BREACH_LABEL_COLUMN], baseline_predictions)
+    )
+
+    candidates: dict[str, ClassifierCandidateResult] = {}
+    for name, params in CLASSIFIER_CANDIDATES.items():
+        model = LGBMClassifier(random_state=random_state, verbosity=-1, **params)
+        model.fit(train[FEATURE_COLUMNS].astype("float64"), train[BREACH_LABEL_COLUMN])
+        probabilities = np.asarray(model.predict_proba(test[FEATURE_COLUMNS].astype("float64")))
+        predicted = probabilities[:, 1]
+        candidates[name] = ClassifierCandidateResult(
+            model=model,
+            roc_auc=float(roc_auc_score(test[BREACH_LABEL_COLUMN], predicted)),
+            average_precision=float(average_precision_score(test[BREACH_LABEL_COLUMN], predicted)),
+            log_loss=float(log_loss(test[BREACH_LABEL_COLUMN], predicted)),
+        )
+
+    best_candidate = _best_candidate(candidates)
+    return ClassificationResult(
+        candidates=candidates,
+        baseline=baseline,
+        baseline_average_precision=baseline_average_precision,
+        best_candidate=best_candidate,
+        beats_baseline=candidates[best_candidate].average_precision > baseline_average_precision,
+    )
+
+
+def log_classification_run(
+    result: ClassificationResult, *, experiment_name: str, tracking_uri: str
+) -> dict[str, str]:
+    """Log every candidate, plus the baseline, as its own MLflow run in the
+    same experiment -- a real comparison table, not one number standing in
+    for "the model". Returns {candidate_name: model_uri} so the runner can
+    register whichever won.
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+
+    with mlflow.start_run(run_name="baseline"):
+        mlflow.log_param("feature_columns", FEATURE_COLUMNS)
+        mlflow.log_metric("average_precision", result.baseline_average_precision)
+
+    model_uris: dict[str, str] = {}
+    for name, candidate in result.candidates.items():
+        with mlflow.start_run(run_name=name) as run:
+            mlflow.log_param("feature_columns", FEATURE_COLUMNS)
+            mlflow.log_param("candidate", name)
+            mlflow.log_param("random_state", candidate.model.get_params()["random_state"])
+            mlflow.log_metric("roc_auc", candidate.roc_auc)
+            mlflow.log_metric("average_precision", candidate.average_precision)
+            mlflow.log_metric("log_loss", candidate.log_loss)
+            mlflow.log_metric("baseline_average_precision", result.baseline_average_precision)
+            mlflow.log_metric(
+                "beats_baseline",
+                float(candidate.average_precision > result.baseline_average_precision),
+            )
+            mlflow.log_metric("is_best_candidate", float(name == result.best_candidate))
+            mlflow.lightgbm.log_model(candidate.model, name="model")
+            model_uris[name] = f"runs:/{run.info.run_id}/model"
+
+    return model_uris
 
 
 def log_training_run(result: TrainResult, *, experiment_name: str, tracking_uri: str) -> str:
