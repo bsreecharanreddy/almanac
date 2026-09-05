@@ -5,6 +5,7 @@ than through Silver's typed schema, docs/findings/2026-09-04-phase-5-corpus-and-
 """
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -221,6 +222,36 @@ def test_embed_partition_batches_by_name_not_position(monkeypatch: pytest.Monkey
     assert result["embedding"].tolist() == [[1.0, 0.0], [2.0, 0.0]]
 
 
+def test_embed_partition_sets_fork_safe_env_and_reports_progress(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The mapInPandas worker is forked from pyspark.daemon; tokenizers'
+    Rayon pool and torch's OpenMP pool both deadlock across that fork
+    unless told not to parallelise (2026-09-05 findings -- run
+    630533628470951 froze here, workers alive, no output for 10-50 min).
+    The closure sets both env vars defensively and prints per-batch
+    progress to stderr, the one channel that reaches the delivered logs.
+    """
+    monkeypatch.delenv("TOKENIZERS_PARALLELISM", raising=False)
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    monkeypatch.setattr(pipeline, "load_encoder", lambda model_name: _FakeEncoder())
+    embed = pipeline._embed_partition("fake-model", batch_size=2)
+
+    pdf = pd.DataFrame(
+        {
+            "entity_key": ["pr:1:10", "pr:1:11"],
+            "event_time": [datetime(2025, 8, 1, tzinfo=UTC)] * 2,
+            "text_hash": ["h1", "h2"],
+            "text": ["a", "bb"],
+        }
+    )
+    list(embed(iter([pdf])))
+
+    assert os.environ["TOKENIZERS_PARALLELISM"] == "false"
+    assert os.environ["OMP_NUM_THREADS"] == "1"
+    assert "[embed] 2 texts" in capsys.readouterr().err
+
+
 def test_run_embedding_pipeline_distributed_skips_without_loading_a_model(
     spark: SparkSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -287,3 +318,32 @@ def test_run_embedding_pipeline_distributed_bounds_model_loads_to_num_partitions
 
     assert written == 8
     assert len(calls) <= 2
+
+
+def test_run_embedding_pipeline_distributed_limit_caps_the_pending_set(
+    spark: SparkSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--limit` is the bounded proof run (2026-09-05 fork-deadlock
+    findings): the count and the encode both see the capped set, and only
+    that many rows land in the table.
+    """
+    monkeypatch.setattr(pipeline, "load_encoder", lambda model_name: _FakeEncoder())
+    bronze_path = str(tmp_path / "bronze")
+    embeddings_path = str(tmp_path / "embeddings")
+    bronze = _bronze(
+        spark,
+        *[_pr_opened(1, n, title=f"PR {n}", body=f"body {n}") for n in range(10, 18)],
+    )
+    bronze.write.format("delta").save(bronze_path)
+
+    written = run_embedding_pipeline_distributed(
+        spark,
+        bronze_path=bronze_path,
+        embeddings_path=embeddings_path,
+        event_type="pr",
+        num_partitions=2,
+        limit=3,
+    )
+
+    assert written == 3
+    assert spark.read.format("delta").load(embeddings_path).count() == 3
