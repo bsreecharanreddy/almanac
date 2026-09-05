@@ -127,6 +127,16 @@ mypy_path = "src"
 module = ["sklearn.*"]
 ignore_missing_imports = true
 
+# databricks-ai-search 0.78 ships no py.typed either (Phase 5 Task 5, design
+# doc §8.3a). Used only for AISearchClient construction and one
+# similarity_search call in embed/query.py -- the untyped boundary is
+# exactly VectorSearchIndex.query, which is deliberately not unit-tested
+# beyond import (the real query path is verified only against the real
+# endpoint, Task 7).
+[[tool.mypy.overrides]]
+module = ["databricks.ai_search.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
