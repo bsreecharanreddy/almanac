@@ -347,3 +347,36 @@ def test_run_embedding_pipeline_distributed_limit_caps_the_pending_set(
 
     assert written == 3
     assert spark.read.format("delta").load(embeddings_path).count() == 3
+
+
+def test_run_embedding_pipeline_distributed_since_date_prunes_older_events(
+    spark: SparkSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--since-date filters Bronze's own event_date partition column, so
+    only events on/after the cutoff are embedded -- the index is built over
+    recent events (2026-09-05 findings: the full corpus is a ~25h encode).
+    """
+    monkeypatch.setattr(pipeline, "load_encoder", lambda model_name: _FakeEncoder())
+    bronze_path = str(tmp_path / "bronze")
+    embeddings_path = str(tmp_path / "embeddings")
+    ingested = datetime(2026, 9, 4, tzinfo=UTC)
+    spark.createDataFrame(
+        [
+            (_pr_opened(1, 10, title="old", body="old body"), ingested, "fix", "2025-09-01", 0),
+            (_pr_opened(1, 11, title="new", body="new body"), ingested, "fix", "2025-09-25", 0),
+        ],
+        _BRONZE_SCHEMA,
+    ).write.format("delta").save(bronze_path)
+
+    written = run_embedding_pipeline_distributed(
+        spark,
+        bronze_path=bronze_path,
+        embeddings_path=embeddings_path,
+        event_type="pr",
+        num_partitions=2,
+        since_date="2025-09-20",
+    )
+
+    assert written == 1
+    rows = spark.read.format("delta").load(embeddings_path).collect()
+    assert [r["entity_key"] for r in rows] == ["pr:1:11"]

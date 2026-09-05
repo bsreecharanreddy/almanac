@@ -117,12 +117,21 @@ def _pending_texts(
     bronze_path: str,
     embeddings_path: str,
     event_type: Literal["pr", "issue"],
+    since_date: str | None = None,
 ) -> DataFrame:
     """extract_texts, minus whatever text_hash the embeddings table already
     carries -- shared by both run_embedding_pipeline variants below, since
     "which text is new" does not depend on how the encode step scales.
+
+    `since_date` filters Bronze's own `event_date` partition column (a clean
+    partition prune, not a post-scan filter) -- the index is built at
+    demonstration scale over recent events, not the full 12-year created_at
+    range the firehose carries (docs/findings/2026-09-05-embedding-worker-
+    fork-deadlock.md: the full corpus is a ~25h CPU-bound encode).
     """
     bronze = spark.read.format("delta").load(bronze_path)
+    if since_date is not None:
+        bronze = bronze.where(F.col("event_date") >= since_date)
     texts = extract_texts(bronze, event_type=event_type)
     if DeltaTable.isDeltaTable(spark, embeddings_path):
         already_embedded = spark.read.format("delta").load(embeddings_path).select("text_hash")
@@ -253,6 +262,7 @@ def run_embedding_pipeline_distributed(
     batch_size: int = 64,
     num_partitions: int = 16,
     limit: int | None = None,
+    since_date: str | None = None,
     register: bool = False,
     schema: str = "embeddings",
 ) -> int:
@@ -260,10 +270,13 @@ def run_embedding_pipeline_distributed(
     step runs through `mapInPandas` -- one model load per partition,
     parallel across every executor, not collected to the driver.
 
-    `limit` caps the pending set for a bounded proof run before committing
-    a paid cluster to the full corpus (docs/findings/2026-09-05-embedding-
-    worker-fork-deadlock.md) -- `DataFrame.limit` reads partitions in order
-    with no shuffle, so the count and the encode see the same rows.
+    `since_date` (a Bronze `event_date` lower bound) is how the real run is
+    scoped: measured ~168 texts/s on this cluster shape
+    (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md), the full
+    14.9M-text corpus is a ~25h CPU-bound encode, so the index is built
+    over recent events. `limit` is the bounded-proof-run cap on top of
+    that -- `DataFrame.limit` reads partitions in order with no shuffle, so
+    the count and the encode see the same rows.
 
     `num_partitions` bounds how many times `load_encoder` runs: measured
     for real 2026-09-05 (docs/findings/), Spark's own default partition
@@ -281,7 +294,11 @@ def run_embedding_pipeline_distributed(
     `load_encoder` itself.
     """
     texts = _pending_texts(
-        spark, bronze_path=bronze_path, embeddings_path=embeddings_path, event_type=event_type
+        spark,
+        bronze_path=bronze_path,
+        embeddings_path=embeddings_path,
+        event_type=event_type,
+        since_date=since_date,
     )
     if limit is not None:
         texts = texts.limit(limit)
@@ -320,12 +337,21 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--since-date",
+        default=None,
+        help=(
+            "Bronze event_date lower bound (YYYY-MM-DD). Scopes the index to "
+            "recent events -- the full corpus is a ~25h CPU-bound encode "
+            "(docs/findings/2026-09-05-embedding-worker-fork-deadlock.md)."
+        ),
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
         help=(
             "Cap texts embedded this run -- a bounded proof run before a paid "
-            "cluster embeds the full corpus (docs/findings/2026-09-05-"
+            "cluster embeds the scoped corpus (docs/findings/2026-09-05-"
             "embedding-worker-fork-deadlock.md)."
         ),
     )
@@ -360,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
             batch_size=args.batch_size,
             num_partitions=args.num_partitions,
             limit=args.limit,
+            since_date=args.since_date,
             register=args.register,
             schema=args.schema,
         )

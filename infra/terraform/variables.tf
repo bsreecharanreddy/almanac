@@ -303,8 +303,19 @@ variable "embeddings_limit" {
   # A string, not a number: databricks_job task parameters are strings, and
   # "" is the natural "no limit" sentinel. Set for a bounded proof run
   # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md), clear it
-  # for the real full-corpus run.
-  description = "If set, --limit passed to the embeddings job -- a bounded proof run, not the full corpus."
+  # for the real run.
+  description = "If set, --limit passed to the embeddings job -- a bounded proof run, not the scoped corpus."
+  default     = ""
+}
+
+variable "embeddings_since" {
+  type = string
+  # The real run's scope knob. Full 14.9M-text corpus is ~25h of CPU-bound
+  # encode at the measured ~168 texts/s and GPU is quota-blocked, so the
+  # index is built over recent events. "2025-09-20" was measured at ~1.73M
+  # qualifying texts (docs/findings/2026-09-05-embedding-worker-fork-
+  # deadlock.md). "" embeds the whole corpus.
+  description = "If set, --since-date (Bronze event_date lower bound) passed to the embeddings job."
   default     = ""
 }
 

@@ -112,28 +112,83 @@ call (fork deadlock) or somewhere else.
    effect) and prints `[embed] <n> texts, <s>s, <rate> texts/s` to stderr
    per yielded batch.
 3. **`--limit`** on `run_embedding_pipeline_distributed` and the CLI: a
-   bounded proof run (≈200 K texts, ~10 min, well under $1) confirms the
-   fork fix on a paid cluster before the full ~2 h corpus run.
+   bounded proof run confirms the fork fix on a paid cluster before the
+   scoped run.
+4. **`--since-date`** (Bronze `event_date` lower bound): how the real run
+   is *scoped* — see "Throughput and scope" below.
 
 **`predict_batch_udf` is deferred, not rejected.** The blocker is
 orthogonal to the UDF API (both need the env var), and a second rewrite of
 `run_embedding_pipeline_distributed` mid-phase, under a finite expiring
-credit, carries its own risk. Revisit if the `--limit` proof run still
-stalls with the env vars in place — at that point with real per-batch
-evidence of where.
+credit, carries its own risk. Revisit if a scoped run still stalls with
+the env vars in place.
 
-## Re-run
+## Proof run — the fork fix held
+
+Run `572931281110752`, `--limit 200000`, 2026-09-05. **TERMINATED /
+SUCCESS**, 83.9 min total (6.9 min setup + 77 min exec), **≈$3.31** at
+$2.370/hr. `ResultStage 10` (the `mapInPandas` encode) submitted with
+**exactly 16 tasks**, all 16 completed — `ResultStage 10 ... finished in
+1,192,187 ms`. `[embed]` progress lines flowed the whole time; no
+`HangingTaskDetector`, no idle timeout, no freeze. 400,000 rows written
+(200 K PR + 200 K issue) to `almanac_dbx.embeddings.pr_issue_embeddings`,
+registered. The tokenizers/OpenMP fork fix works.
+
+## Throughput and scope — why the full corpus is not built
+
+The proof run's encode measured **~10.5 texts/s per partition, ~168
+texts/s aggregate** across the 16-vCPU cluster (16 tasks × 12,500 texts,
+~1,000–1,190 s each). The full 14,924,573-text corpus at that rate is a
+**~25-hour** CPU-bound encode.
+
+The design doc's / this doc's earlier "~1.7 h" figure was wrong: it took
+Task 1's **151.1 texts/s** (Phase 0, `docs/STATUS.md`) as a *per-core*
+rate and multiplied by 16. Task 1's number was a multi-threaded local
+measurement; the real per-core rate on `Standard_D4ds_v6` under
+`OMP_NUM_THREADS=1` is ~10.5/s — **~14× lower**. This is a Gate-1 error in
+Task 1's finding that propagated into the partition-count doc's sizing;
+noting it here rather than silently.
+
+GPU would make this trivial (a single T4 ≈ 30–60 min) but **every GPU VM
+family is 0/0 quota in `westus3`** — `az vm list-usage --location westus3`
+shows `Standard NCASv3_T4 Family vCPUs 0/0`, `NCADS_A100 0/0`,
+`NCadsH100v5 0/0`, etc. — an Azure quota-increase request, not a
+same-session option. CPU headroom is `Standard Ddsv6` 20→48 vCPUs, ≈2.7×,
+→ ~9 h / ≈$35 of the ~$150 remaining trial credit.
+
+**Decision (2026-09-05):** the index is built over **recent events**, not
+the full corpus. `--since-date 2025-09-20` was measured at **~1.73 M**
+qualifying opened-PR+issue texts (query in the doc below) — ~2.9 h encode,
+≈$7. Every Phase 5 capability (distributed pipeline, the two real defects
+found via cluster-log diagnostics, Vector Search integration,
+point-in-time-correct retrieval, the champion-gated lift comparison) is
+demonstrated identically at this size. The full-corpus build is a
+one-parameter change (`embeddings_since=""`) plus a bigger or GPU cluster
+— a compute-scale step, not missing work, the same shape as the roadmap's
+other deliberately-not-built extension points.
+
+Measurement command:
+
+```sql
+SELECT count(*) FROM delta.`abfss://bronze@.../events`
+WHERE event_date >= '2025-09-20'
+  AND get_json_object(raw_json,'$.payload.action') = 'opened'
+  AND ( (get_json_object(raw_json,'$.type') = 'PullRequestEvent'
+         AND get_json_object(raw_json,'$.payload.pull_request.title') IS NOT NULL
+         AND get_json_object(raw_json,'$.payload.pull_request.body')  IS NOT NULL)
+     OR (get_json_object(raw_json,'$.type') = 'IssuesEvent'
+         AND get_json_object(raw_json,'$.payload.issue.title') IS NOT NULL
+         AND get_json_object(raw_json,'$.payload.issue.body')  IS NOT NULL) )
+```
+
+## Re-run — the scoped run
 
 ```sh
 export DATABRICKS_HOST=https://adb-7405615444091260.0.azuredatabricks.net
 cd infra/terraform
-# proof run: bound the corpus, apply, run
-terraform apply -target=databricks_job.embeddings -var 'embeddings_limit=200000'
-databricks jobs run-now 79790319052446 --no-wait
-# then, once green, clear the bound and run the full corpus
-terraform apply -target=databricks_job.embeddings
+terraform apply -target=databricks_job.embeddings -var 'embeddings_since=2025-09-20'
 databricks jobs run-now 79790319052446 --no-wait
 ```
 
-Real duration, cost, embeddings-table row count, and whether the fork fix
-held go here once the proof run and the full run complete.
+Real duration, cost, and the scoped embeddings-table row count go here
+once it completes.

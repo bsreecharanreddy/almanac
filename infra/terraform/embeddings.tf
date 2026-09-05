@@ -57,12 +57,14 @@ resource "databricks_job" "embeddings" {
     spark_python_task {
       python_file = var.embeddings_python_file
       source      = "WORKSPACE"
-      # --limit is prepended only when embeddings_limit is set: a bounded proof
-      # run confirms the tokenizers/OpenMP fork fix on a paid cluster before
-      # the full ~2h corpus run (docs/findings/2026-09-05-embedding-worker-
-      # fork-deadlock.md). Empty (the default) embeds the whole corpus.
+      # --since-date scopes the index to recent events: measured ~168 texts/s
+      # on this cluster shape, the full 14.9M-text corpus is a ~25h CPU-bound
+      # encode and GPU is quota-blocked (docs/findings/2026-09-05-embedding-
+      # worker-fork-deadlock.md). --limit is prepended on top only for a
+      # bounded proof run. Both empty (the defaults) embed the whole corpus.
       parameters = concat(
         var.embeddings_limit != "" ? ["--limit", var.embeddings_limit] : [],
+        var.embeddings_since != "" ? ["--since-date", var.embeddings_since] : [],
         [
           "--bronze-path", "${local.lake.bronze}/events",
           "--embeddings-path", "${local.lake.features}/embeddings",
