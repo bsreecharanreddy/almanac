@@ -247,3 +247,43 @@ def test_run_embedding_pipeline_distributed_skips_without_loading_a_model(
     )
 
     assert written == 0
+
+
+def test_run_embedding_pipeline_distributed_bounds_model_loads_to_num_partitions(
+    spark: SparkSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real first run (2026-09-05, docs/findings/) measured Spark's
+    own default partition count on the real corpus at 967 -- one
+    SentenceTransformer construction per partition, each costing ~12-14
+    minutes, dominated by model-load overhead rather than the actual
+    encode work. repartition(num_partitions) is what bounds that; this
+    proves it holds regardless of how many rows are pending, with a
+    monkeypatched load_encoder that counts its own calls rather than
+    downloading real weights.
+    """
+    calls: list[str] = []
+
+    def _counting_load_encoder(model_name: str) -> _FakeEncoder:
+        calls.append(model_name)
+        return _FakeEncoder()
+
+    monkeypatch.setattr(pipeline, "load_encoder", _counting_load_encoder)
+
+    bronze_path = str(tmp_path / "bronze")
+    embeddings_path = str(tmp_path / "embeddings")
+    bronze = _bronze(
+        spark,
+        *[_pr_opened(1, n, title=f"PR {n}", body=f"body {n}") for n in range(10, 18)],
+    )
+    bronze.write.format("delta").save(bronze_path)
+
+    written = run_embedding_pipeline_distributed(
+        spark,
+        bronze_path=bronze_path,
+        embeddings_path=embeddings_path,
+        event_type="pr",
+        num_partitions=2,
+    )
+
+    assert written == 8
+    assert len(calls) <= 2
