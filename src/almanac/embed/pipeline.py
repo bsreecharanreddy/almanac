@@ -11,6 +11,9 @@ which Bronze carries exactly as authoritatively as Silver.
 from __future__ import annotations
 
 import argparse
+import os
+import sys
+import time
 from collections.abc import Callable, Iterator
 from typing import Literal, Protocol, cast
 
@@ -205,13 +208,34 @@ def _embed_partition(
     """
 
     def embed(pdfs: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
+        # HuggingFace tokenizers (Rayon) and torch (OpenMP) both deadlock when a
+        # process that has already touched their threadpools is forked -- which
+        # every mapInPandas Python worker is. Measured 2026-09-05
+        # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md): the
+        # encode stage froze with workers alive but producing nothing for
+        # 10-50 min. The job cluster sets both vars so torch sees OMP at import;
+        # this setdefault is the backup for tokenizers (read at first use).
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+        os.environ.setdefault("OMP_NUM_THREADS", "1")
         encoder: TextEncoder | None = None
+        seen = 0
+        started = time.monotonic()
         for pdf in pdfs:
             if pdf.empty:
                 continue
             if encoder is None:  # loaded lazily: an empty partition never pays for it
                 encoder = load_encoder(model_name)
             vectors = embed_texts(pdf["text"].tolist(), encoder, batch_size=batch_size)
+            seen += len(pdf)
+            elapsed = max(time.monotonic() - started, 1e-6)
+            # stderr, flushed: the one channel a mapInPandas worker has that
+            # reaches the delivered cluster logs, so the next run shows exactly
+            # where an encode stalls rather than only that it did.
+            print(
+                f"[embed] {seen} texts, {elapsed:.0f}s, {seen / elapsed:.1f} texts/s",
+                file=sys.stderr,
+                flush=True,
+            )
             yield pdf.assign(embedding=[v.tolist() for v in vectors])[
                 [f.name for f in _EMBEDDING_SCHEMA.fields]
             ]
@@ -228,12 +252,18 @@ def run_embedding_pipeline_distributed(
     model_name: str = DEFAULT_MODEL,
     batch_size: int = 64,
     num_partitions: int = 16,
+    limit: int | None = None,
     register: bool = False,
     schema: str = "embeddings",
 ) -> int:
     """Same incremental shape as `run_embedding_pipeline`, but the encode
     step runs through `mapInPandas` -- one model load per partition,
     parallel across every executor, not collected to the driver.
+
+    `limit` caps the pending set for a bounded proof run before committing
+    a paid cluster to the full corpus (docs/findings/2026-09-05-embedding-
+    worker-fork-deadlock.md) -- `DataFrame.limit` reads partitions in order
+    with no shuffle, so the count and the encode see the same rows.
 
     `num_partitions` bounds how many times `load_encoder` runs: measured
     for real 2026-09-05 (docs/findings/), Spark's own default partition
@@ -253,6 +283,8 @@ def run_embedding_pipeline_distributed(
     texts = _pending_texts(
         spark, bronze_path=bronze_path, embeddings_path=embeddings_path, event_type=event_type
     )
+    if limit is not None:
+        texts = texts.limit(limit)
     written = texts.count()
     if written > 0:
         embedded = texts.repartition(num_partitions).mapInPandas(
@@ -287,6 +319,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "dominated by model-load overhead, not the encode work itself."
         ),
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help=(
+            "Cap texts embedded this run -- a bounded proof run before a paid "
+            "cluster embeds the full corpus (docs/findings/2026-09-05-"
+            "embedding-worker-fork-deadlock.md)."
+        ),
+    )
     parser.add_argument("--schema", default="embeddings")
     parser.add_argument(
         "--register",
@@ -317,6 +359,7 @@ def main(argv: list[str] | None = None) -> int:
             model_name=args.model_name,
             batch_size=args.batch_size,
             num_partitions=args.num_partitions,
+            limit=args.limit,
             register=args.register,
             schema=args.schema,
         )

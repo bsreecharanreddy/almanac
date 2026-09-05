@@ -298,6 +298,16 @@ variable "embeddings_python_file" {
   default     = "/Workspace/Shared/almanac/scripts/embeddings.py"
 }
 
+variable "embeddings_limit" {
+  type = string
+  # A string, not a number: databricks_job task parameters are strings, and
+  # "" is the natural "no limit" sentinel. Set for a bounded proof run
+  # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md), clear it
+  # for the real full-corpus run.
+  description = "If set, --limit passed to the embeddings job -- a bounded proof run, not the full corpus."
+  default     = ""
+}
+
 variable "embeddings_pip_dependencies" {
   type = list(string)
   # Keep in sync with pyproject.toml's [project.optional-dependencies] ml

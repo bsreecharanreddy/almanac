@@ -28,6 +28,18 @@ resource "databricks_job" "embeddings" {
       data_security_mode = "SINGLE_USER"
       single_user_name   = data.databricks_current_user.me.user_name
       custom_tags        = var.tags
+      # HuggingFace tokenizers (Rayon) and torch (OpenMP) both deadlock when a
+      # process that has touched their threadpools is forked -- which every
+      # mapInPandas Python worker is. Measured 2026-09-05
+      # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md): the
+      # encode stage froze, workers alive but producing nothing for 10-50 min.
+      # Set on the cluster so torch sees OMP at import and tokenizers at first
+      # use. OMP=1 is also right on merit -- 16 single-thread Python workers
+      # across this cluster's 16 vCPUs is full use with no oversubscription.
+      spark_env_vars = {
+        TOKENIZERS_PARALLELISM = "false"
+        OMP_NUM_THREADS        = "1"
+      }
       # Diagnostics parity with the feature-build/train clusters: a job
       # cluster self-terminates and takes its logs with it. Behaviour-neutral.
       cluster_log_conf {
@@ -45,17 +57,24 @@ resource "databricks_job" "embeddings" {
     spark_python_task {
       python_file = var.embeddings_python_file
       source      = "WORKSPACE"
-      parameters = [
-        "--bronze-path", "${local.lake.bronze}/events",
-        "--embeddings-path", "${local.lake.features}/embeddings",
-        "--schema", var.embeddings_schema,
-        # Bounds load_encoder to 16 calls total, matching this job cluster's
-        # own 4-worker/16-vCPU shape -- measured 2026-09-05 that Spark's
-        # default partition count (967) turned a ~1.7h estimate into 50+
-        # real hours, dominated by per-partition model-load overhead.
-        "--num-partitions", "16",
-        "--register",
-      ]
+      # --limit is prepended only when embeddings_limit is set: a bounded proof
+      # run confirms the tokenizers/OpenMP fork fix on a paid cluster before
+      # the full ~2h corpus run (docs/findings/2026-09-05-embedding-worker-
+      # fork-deadlock.md). Empty (the default) embeds the whole corpus.
+      parameters = concat(
+        var.embeddings_limit != "" ? ["--limit", var.embeddings_limit] : [],
+        [
+          "--bronze-path", "${local.lake.bronze}/events",
+          "--embeddings-path", "${local.lake.features}/embeddings",
+          "--schema", var.embeddings_schema,
+          # Bounds load_encoder to 16 calls total, matching this job cluster's
+          # own 4-worker/16-vCPU shape -- measured 2026-09-05 that Spark's
+          # default partition count (967) turned a ~1.7h estimate into 50+
+          # real hours, dominated by per-partition model-load overhead.
+          "--num-partitions", "16",
+          "--register",
+        ],
+      )
     }
 
     library {
