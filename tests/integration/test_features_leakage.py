@@ -20,6 +20,7 @@ from pyspark.sql import Row, SparkSession
 
 from almanac.features.groups import compute_repo_activity
 from almanac.features.join import as_of_join
+from almanac.features.similarity import Neighbor, compute_pr_similarity
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -86,3 +87,47 @@ def test_pinning_the_delta_version_reproduces_the_original_result_after_a_late_a
     # "current".
     assert live[0]["events_total_to_date"] == 2
     assert live != original
+
+
+class _StaticIndex:
+    """query_similar's own filtering already excludes a too-late neighbor
+    (tests/unit/test_features_similarity.py) -- this fixture only needs to
+    return one fixed, already-eligible neighbor, since what this test
+    exercises is compute_pr_similarity's *second* input, resolutions.
+    """
+
+    def query(self, vector: list[float], *, as_of: object, k: int) -> list[Neighbor]:
+        return [Neighbor("pr:1:1", datetime(2025, 8, 1, tzinfo=UTC), 0.0)]
+
+
+def test_a_neighbors_late_arriving_resolution_is_leak_free_but_not_reproducible(
+    spark: SparkSession,
+) -> None:
+    """Retrieval's own leakage axis (§8.3a), same shape as the Delta-version
+    test above: `resolutions` is an ordinary DataFrame a caller reads from
+    Gold at some version, not something compute_pr_similarity re-derives --
+    a neighbor's resolution landing in a later Gold version, with a
+    closed_at that was always < as_of, is leak-free to include (event time,
+    not arrival time, is what governs), but it means the answer depends on
+    which `resolutions` snapshot was passed in, exactly like a live re-read
+    of Silver would for `events_total_to_date` above.
+    """
+    as_of = datetime(2025, 8, 13, tzinfo=UTC)
+    spine = spark.createDataFrame(
+        [(9, 1, as_of, [0.0, 0.0])],
+        "repo_id long, pr_number long, as_of_timestamp timestamp, embedding array<double>",
+    )
+    index = _StaticIndex()
+    resolutions_schema = "repo_id long, pr_number long, closed_at timestamp, breach boolean"
+
+    before = spark.createDataFrame([], resolutions_schema)
+    after_late_arrival = spark.createDataFrame(
+        [(1, 1, datetime(2025, 8, 10, tzinfo=UTC), True)],  # closed_at < as_of, always was
+        resolutions_schema,
+    )
+
+    pinned = compute_pr_similarity(spine, index, before).collect()
+    live = compute_pr_similarity(spine, index, after_late_arrival).collect()
+
+    assert pinned[0]["similar_prior_breach_rate"] is None
+    assert live[0]["similar_prior_breach_rate"] == 1.0

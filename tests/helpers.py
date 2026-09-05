@@ -1,11 +1,13 @@
 """Shared assertions and builders for the Spark test modules."""
 
+import math
 from datetime import datetime
 from pathlib import Path
 
 from pyspark.sql import Column, DataFrame, Row, SparkSession
 from pyspark.sql import functions as F
 
+from almanac.features.similarity import Neighbor
 from almanac.pipeline.bronze import add_ingestion_metadata, write_bronze
 
 
@@ -86,3 +88,21 @@ def raw(spark: SparkSession, *rows: RawRow) -> DataFrame:
     for name, default in _parsed_defaults().items():
         df = df.withColumn(name, default)
     return df
+
+
+class FakeSimilarityIndex:
+    """A small brute-force index -- real nearest-by-L2-distance and a real
+    as_of filter -- standing in for Task 3's real Vector Search index
+    (`almanac.features.similarity.SimilarityIndex`), the same test-double
+    shape as `embed.pipeline`'s `_FakeEncoder`. `entries` is (Neighbor, its
+    own vector); the vector `query()` receives is only used for distance,
+    never for the filter.
+    """
+
+    def __init__(self, entries: list[tuple[Neighbor, list[float]]]) -> None:
+        self._entries = entries
+
+    def query(self, vector: list[float], *, as_of: datetime, k: int) -> list[Neighbor]:
+        eligible = [(n, v) for n, v in self._entries if n.event_time < as_of]
+        by_distance = sorted(eligible, key=lambda nv: math.dist(vector, nv[1]))
+        return [n for n, _ in by_distance[:k]]
