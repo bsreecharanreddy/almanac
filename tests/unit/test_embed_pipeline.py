@@ -161,3 +161,30 @@ def test_run_embedding_pipeline_skips_already_embedded_hashes(
 
     assert written == 1
     assert encoder.calls == [["New\n\nnot yet embedded"]]
+
+
+def test_run_embedding_pipeline_registers_when_asked(spark: SparkSession, tmp_path: Path) -> None:
+    bronze_path = str(tmp_path / "bronze")
+    embeddings_path = str(tmp_path / "embeddings")
+    bronze = _bronze(spark, _pr_opened(1, 10, title="A PR", body="body text"))
+    bronze.write.format("delta").save(bronze_path)
+
+    # A schema unique to this test, not a shared "embeddings": the spark
+    # fixture's metastore is one session-wide Derby instance, and CREATE
+    # TABLE IF NOT EXISTS would silently keep a stale LOCATION from an
+    # earlier test that reused the same schema.table name -- the same
+    # isolation hazard AuditChainTest documented in Canopica.
+    schema = f"embeddings_{tmp_path.name}"
+
+    written = run_embedding_pipeline(
+        spark,
+        bronze_path=bronze_path,
+        embeddings_path=embeddings_path,
+        event_type="pr",
+        encoder=_FakeEncoder(),
+        register=True,
+        schema=schema,
+    )
+
+    assert written == 1
+    assert spark.catalog.tableExists(f"{schema}.pr_issue_embeddings")

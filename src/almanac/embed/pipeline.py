@@ -26,7 +26,10 @@ from pyspark.sql.types import (
 )
 from sentence_transformers import SentenceTransformer
 
+from almanac.features.registration import register_feature_table
+
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDINGS_TABLE = "pr_issue_embeddings"
 
 # event_type -> (GitHub's own event type name, the payload key its entity sits under)
 _EVENT_SPECS: dict[str, tuple[str, str]] = {
@@ -108,6 +111,8 @@ def run_embedding_pipeline(
     event_type: Literal["pr", "issue"],
     encoder: TextEncoder,
     batch_size: int = 64,
+    register: bool = False,
+    schema: str = "embeddings",
 ) -> int:
     """Bronze -> this event type's slice of the embeddings table, incremental.
 
@@ -125,16 +130,35 @@ def run_embedding_pipeline(
         texts = texts.join(already_embedded, on="text_hash", how="left_anti")
 
     pdf = texts.toPandas()
-    if pdf.empty:
-        return 0
+    written = 0
+    if not pdf.empty:
+        vectors = embed_texts(pdf["text"].tolist(), encoder, batch_size=batch_size)
+        # createDataFrame with an explicit schema maps by position, not by name
+        # -- and the left_anti join above reorders columns (its `on` column
+        # moves first), so this reselects by name rather than trust either
+        # side's order.
+        ordered = pdf.assign(embedding=[v.tolist() for v in vectors])[
+            [f.name for f in _EMBEDDING_SCHEMA.fields]
+        ]
+        to_write = spark.createDataFrame(ordered, schema=_EMBEDDING_SCHEMA)
+        # CDF is a Vector Search prerequisite, not this project's own choice:
+        # a Standard endpoint's DELTA_SYNC index refuses to sync from a table
+        # without it (Databricks' own vector-search docs, checked live
+        # 2026-09-04). Effective only on the write that creates the table --
+        # both PR and issue rows share one table, so whichever event_type
+        # runs first sets it for both.
+        to_write.write.format("delta").mode("append").option(
+            "delta.enableChangeDataFeed", "true"
+        ).save(embeddings_path)
+        written = len(pdf)
 
-    vectors = embed_texts(pdf["text"].tolist(), encoder, batch_size=batch_size)
-    # createDataFrame with an explicit schema maps by position, not by name --
-    # and the left_anti join above reorders columns (its `on` column moves
-    # first), so this reselects by name rather than trust either side's order.
-    ordered = pdf.assign(embedding=[v.tolist() for v in vectors])[
-        [f.name for f in _EMBEDDING_SCHEMA.fields]
-    ]
-    to_write = spark.createDataFrame(ordered, schema=_EMBEDDING_SCHEMA)
-    to_write.write.format("delta").mode("append").save(embeddings_path)
-    return len(pdf)
+    if register and DeltaTable.isDeltaTable(spark, embeddings_path):
+        # Same external-table registration run_features already uses --
+        # Vector Search's source_table wants a three-level UC name, not a
+        # bare path, same reason Gold's fact table stopped being a path
+        # (Task 9). Governance metadata only: the join logic that makes
+        # retrieval point-in-time-correct lives in features/similarity.py,
+        # not here.
+        register_feature_table(spark, table=EMBEDDINGS_TABLE, path=embeddings_path, schema=schema)
+
+    return written

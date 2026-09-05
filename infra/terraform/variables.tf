@@ -271,3 +271,23 @@ variable "model_serving_workload_size" {
   description = "Served-model workload size (Small|Medium|Large). scale_to_zero governs idle cost, not this."
   default     = "Small"
 }
+
+# Phase 5 (design doc §8.3a): the embedding index. Nothing here provisions a
+# served vector index on apply -- databricks_vector_search_index's
+# source_table must already exist, UC-registered, with Change Data Feed
+# enabled, and only a real run of the embeddings job (Task 7) creates that.
+
+variable "embeddings_schema" {
+  type        = string
+  description = "UC schema, under model_registry_catalog, holding the embeddings table the vector index syncs from."
+  default     = "embeddings"
+}
+
+variable "embedding_dimension" {
+  type = number
+  # all-MiniLM-L6-v2's own output width (src/almanac/embed/pipeline.py's
+  # DEFAULT_MODEL). Both numbers must move together if the model ever does --
+  # Terraform cannot derive one from the other.
+  description = "Vector width the embedding pipeline writes."
+  default     = 384
+}
