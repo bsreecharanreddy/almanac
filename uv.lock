@@ -178,6 +178,7 @@ dbt = [
     { name = "dbt-spark", extra = ["session"] },
 ]
 ml = [
+    { name = "databricks-ai-search" },
     { name = "lightgbm" },
     { name = "mlflow" },
     { name = "pandas" },
@@ -202,6 +203,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "databricks-ai-search", marker = "extra == 'ml'", specifier = ">=0.78" },
     { name = "dbt-core", marker = "extra == 'dbt'", specifier = ">=1.12.3,<1.13" },
     { name = "dbt-spark", extras = ["session"], marker = "extra == 'dbt'", specifier = ">=1.11.0,<1.12" },
     { name = "delta-spark", marker = "extra == 'spark'", specifier = ">=4.4.0" },
@@ -933,6 +935,20 @@ wheels = [
 ]
 
 [[package]]
+name = "databricks-ai-search"
+version = "0.78"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "deprecation" },
+    { name = "httpx" },
+    { name = "mlflow-skinny" },
+    { name = "requests" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/06/2b20728da15e189c9735d78276182372d5bc2c3dfe7971549301e1178ced/databricks_ai_search-0.78-py3-none-any.whl", hash = "sha256:992502754f6767f2670ad73dec638f2344cafb79a1489db85725b8ef33b135bc", size = 65676, upload-time = "2026-08-03T20:55:55.668Z" },
+]
+
+[[package]]
 name = "databricks-sdk"
 version = "0.134.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1110,6 +1126,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/21/1d/790855199ca10157df5552cbcfe957dcada5a82b21950e024336e67d77ad/delta_spark-4.4.0.tar.gz", hash = "sha256:7d1988ca6c3ef0ab1b886634ecdff56e930c5c2e3e479cce1125c82d7898ac3a", size = 46832, upload-time = "2026-08-20T06:38:01.32Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/03/0e/8b1df0a63b4f99fef19074c5ee51eb42423704d067c74a70b20fb688a730/delta_spark-4.4.0-py3-none-any.whl", hash = "sha256:f15cedc2c59855b1660a692f9aca1deac0c4dfcec46531b203025281b102e9c8", size = 54966, upload-time = "2026-08-20T06:38:00.261Z" },
+]
+
+[[package]]
+name = "deprecation"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/d3/8ae2869247df154b64c1884d7346d412fed0c49df84db635aab2d1c40e62/deprecation-2.1.0.tar.gz", hash = "sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff", size = 173788, upload-time = "2020-04-20T14:23:38.738Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/c3/253a89ee03fc9b9682f1541728eb66db7db22148cd94f89ab22528cd1e1b/deprecation-2.1.0-py2.py3-none-any.whl", hash = "sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a", size = 11178, upload-time = "2020-04-20T14:23:36.581Z" },
 ]
 
 [[package]]

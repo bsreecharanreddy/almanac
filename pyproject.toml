@@ -56,6 +56,11 @@ ml = [
     # API rather than a search summary -- a prior live-search result for
     # this same package claimed 5.6.1 and was stale.
     "sentence-transformers>=6.0.1",
+    # Phase 5 Task 3 (design doc §8.3a): the query-time Vector Search client.
+    # databricks-ai-search, not the deprecated databricks-vectorsearch shim
+    # -- Gate 2's finding (2026-09-04) applied at the dependency itself, not
+    # just recorded. 0.78 confirmed directly against pypi.org's JSON API.
+    "databricks-ai-search>=0.78",
 ]
 
 [build-system]
