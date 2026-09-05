@@ -46,6 +46,15 @@ FEATURE_COLUMNS: list[str] = [
     "opened_hour",
 ]
 
+# compute_pr_similarity's own output columns (design doc §8.3a). Not folded
+# into FEATURE_COLUMNS itself: whether they earn a place is Task 6's own
+# question, decided by comparing a with/without run against the same
+# registered champion, not assumed by shipping them unconditionally.
+SIMILARITY_FEATURE_COLUMNS: list[str] = [
+    "similar_neighbor_count",
+    "similar_prior_breach_rate",
+]
+
 
 @dataclass(frozen=True)
 class TrainResult:
@@ -107,6 +116,7 @@ class ClassificationResult:
     baseline_average_precision: float
     best_candidate: str
     beats_baseline: bool
+    feature_columns: list[str]
 
 
 def _best_candidate(candidates: dict[str, ClassifierCandidateResult]) -> str:
@@ -119,13 +129,19 @@ def _best_candidate(candidates: dict[str, ClassifierCandidateResult]) -> str:
 def train_classifier(
     frame: pd.DataFrame,
     *,
+    feature_columns: list[str] | None = None,
     random_state: int = 42,
     test_size: float = 0.3,
 ) -> ClassificationResult:
     """Fit the breach-rate baseline and every `CLASSIFIER_CANDIDATES`
     config on the same split; compare by average precision (design doc
     §5.3 -- PR-AUC over ROC-AUC on the measured 25.55%-positive target).
+
+    `feature_columns` defaults to `FEATURE_COLUMNS`; Task 6 (§8.3a) passes
+    `FEATURE_COLUMNS + SIMILARITY_FEATURE_COLUMNS` for the with-similarity
+    arm of the same comparison, same CLASSIFIER_CANDIDATES sweep, same split.
     """
+    columns = feature_columns if feature_columns is not None else FEATURE_COLUMNS
     train, test = train_test_split(frame, test_size=test_size, random_state=random_state)
 
     baseline = fit_naive_baseline(
@@ -139,9 +155,9 @@ def train_classifier(
     candidates: dict[str, ClassifierCandidateResult] = {}
     for name, params in CLASSIFIER_CANDIDATES.items():
         model = LGBMClassifier(random_state=random_state, verbosity=-1, **params)
-        train_features = train[FEATURE_COLUMNS].astype("float64")
+        train_features = train[columns].astype("float64")
         model.fit(train_features, train[BREACH_LABEL_COLUMN])
-        probabilities = np.asarray(model.predict_proba(test[FEATURE_COLUMNS].astype("float64")))
+        probabilities = np.asarray(model.predict_proba(test[columns].astype("float64")))
         predicted = probabilities[:, 1]
         candidates[name] = ClassifierCandidateResult(
             model=model,
@@ -158,6 +174,7 @@ def train_classifier(
         baseline_average_precision=baseline_average_precision,
         best_candidate=best_candidate,
         beats_baseline=candidates[best_candidate].average_precision > baseline_average_precision,
+        feature_columns=columns,
     )
 
 
@@ -173,13 +190,13 @@ def log_classification_run(
     mlflow.set_experiment(experiment_name)
 
     with mlflow.start_run(run_name="baseline"):
-        mlflow.log_param("feature_columns", FEATURE_COLUMNS)
+        mlflow.log_param("feature_columns", result.feature_columns)
         mlflow.log_metric("average_precision", result.baseline_average_precision)
 
     model_uris: dict[str, str] = {}
     for name, candidate in result.candidates.items():
         with mlflow.start_run(run_name=name) as run:
-            mlflow.log_param("feature_columns", FEATURE_COLUMNS)
+            mlflow.log_param("feature_columns", result.feature_columns)
             mlflow.log_param("candidate", name)
             mlflow.log_param("random_state", candidate.model.get_params()["random_state"])
             mlflow.log_metric("roc_auc", candidate.roc_auc)
