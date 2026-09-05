@@ -32,10 +32,13 @@ def join_label(training_frame: DataFrame, fact_pull_request: DataFrame) -> DataF
     return joined.where(F.col("label_exclusion").isNull()).drop("label_exclusion")
 
 
-def join_breach_label(
-    training_frame: DataFrame, fact_pull_request: DataFrame, *, threshold_seconds: int
-) -> DataFrame:
-    """Inner-join a derived breach/no-breach label (design doc §5.3).
+def compute_breach_labels(fact_pull_request: DataFrame, *, threshold_seconds: int) -> DataFrame:
+    """Every PR with a defined breach/no-breach outcome (design doc §5.3):
+    (repo_id, pr_number, closed_at, breach). The one definition of
+    "resolved" this project trains on -- reused as-is by
+    `features/similarity.py`'s `resolutions` (Phase 5, §8.3a) rather than
+    re-derived, since two copies of this CASE expression is exactly the
+    kind of duplication that goes stale silently.
 
     Wider than `join_label`'s population: a `closed_no_response` row has
     no duration to regress on, but still answers "did it breach" once it
@@ -54,7 +57,17 @@ def join_breach_label(
         F.col("label_exclusion") == "closed_no_response",
         (F.unix_timestamp("closed_at") - F.unix_timestamp("opened_at")) >= threshold_seconds,
     )
-    label = trainable.select("repo_id", "pr_number", breach.alias("breach"))
+    return trainable.select("repo_id", "pr_number", "closed_at", breach.alias("breach"))
+
+
+def join_breach_label(
+    training_frame: DataFrame, fact_pull_request: DataFrame, *, threshold_seconds: int
+) -> DataFrame:
+    """Inner-join `compute_breach_labels`'s derived breach/no-breach label
+    onto a training frame."""
+    label = compute_breach_labels(fact_pull_request, threshold_seconds=threshold_seconds).drop(
+        "closed_at"
+    )
     return training_frame.join(label, on=["repo_id", "pr_number"], how="inner")
 
 
