@@ -10,6 +10,8 @@ from lightgbm import LGBMClassifier
 from mlflow.models import infer_signature
 
 from almanac.model.train import (
+    FEATURE_COLUMNS,
+    SIMILARITY_FEATURE_COLUMNS,
     ClassifierCandidateResult,
     _best_candidate,
     train_classifier,
@@ -165,6 +167,57 @@ def test_classifier_same_seed_produces_the_same_result_twice() -> None:
         second.candidates["default"].average_precision
     )
     assert first.baseline_average_precision == second.baseline_average_precision
+
+
+def test_train_classifier_defaults_to_feature_columns_unchanged() -> None:
+    """The None path stays byte-identical to before Task 6 (design doc
+    §8.3a) -- every existing call site passes no feature_columns at all."""
+    frame = _separable_classification_frame()
+
+    result = train_classifier(frame, random_state=42)
+
+    assert result.feature_columns == FEATURE_COLUMNS
+
+
+def test_similarity_columns_let_the_with_run_win_when_the_world_says_it_should() -> None:
+    """Base features carry no signal (the no-signal fixture's own shape);
+    only a similarity column does. The without-similarity arm should stay
+    near chance and the with-similarity arm should actually learn it --
+    mirrors test_a_classification_feature_with_no_signal_scores_near_chance's
+    own no-signal-passes-first-try discipline, one level up.
+    """
+    rng = np.random.default_rng(2)
+    n = 400
+    similarity_signal = rng.uniform(0, 10, size=n)
+    frame = pd.DataFrame(
+        {
+            "prior_pr_count": rng.uniform(0, 10, size=n),
+            "prior_merge_rate": rng.uniform(0, 1, size=n),
+            "events_total_to_date": rng.integers(0, 100, size=n),
+            "bot_events_to_date": rng.integers(0, 10, size=n),
+            "prs_opened_to_date": rng.integers(0, 20, size=n),
+            "bot_share_to_date": rng.uniform(0, 1, size=n),
+            "is_draft": rng.integers(0, 2, size=n).astype(bool),
+            "is_bot_author": np.zeros(n, dtype=bool),
+            "opened_day_of_week": rng.integers(1, 8, size=n),
+            "opened_hour": rng.integers(0, 24, size=n),
+            "similar_neighbor_count": rng.integers(0, 10, size=n),
+            "similar_prior_breach_rate": similarity_signal / 10,
+            "breach": similarity_signal > 5,
+        }
+    )
+
+    without = train_classifier(frame, feature_columns=FEATURE_COLUMNS, random_state=42)
+    with_similarity = train_classifier(
+        frame, feature_columns=FEATURE_COLUMNS + SIMILARITY_FEATURE_COLUMNS, random_state=42
+    )
+
+    assert without.feature_columns == FEATURE_COLUMNS
+    assert with_similarity.feature_columns == FEATURE_COLUMNS + SIMILARITY_FEATURE_COLUMNS
+    without_ap = without.candidates[without.best_candidate].average_precision
+    with_ap = with_similarity.candidates[with_similarity.best_candidate].average_precision
+    assert with_ap > without_ap
+    assert with_similarity.beats_baseline is True
 
 
 def test_best_candidate_picks_the_higher_average_precision() -> None:
