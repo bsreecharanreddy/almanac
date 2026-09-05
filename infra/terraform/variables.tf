@@ -311,3 +311,36 @@ variable "embeddings_pip_dependencies" {
     "databricks-ai-search>=0.78",
   ]
 }
+
+# Task 4/6's real run: compute pr_similarity against the live index, then
+# compare with/without it against the registered champion. Neither job
+# needs sentence-transformers/torch -- querying an already-built index
+# is not embedding text.
+
+variable "similarity_python_file" {
+  type        = string
+  description = "Workspace path of scripts/pr_similarity.py, the job entrypoint for almanac.features.similarity_runner."
+  default     = "/Workspace/Shared/almanac/scripts/pr_similarity.py"
+}
+
+variable "similarity_comparison_python_file" {
+  type        = string
+  description = "Workspace path of scripts/similarity_comparison.py, the job entrypoint for almanac.model.similarity_comparison."
+  default     = "/Workspace/Shared/almanac/scripts/similarity_comparison.py"
+}
+
+variable "similarity_pip_dependencies" {
+  type        = list(string)
+  description = "databricks-ai-search only -- querying the real index, not embedding."
+  default     = ["databricks-ai-search>=0.78"]
+}
+
+variable "similarity_sample_size" {
+  type = string
+  # A string, not a number: databricks_job task parameters are strings.
+  # Placeholder pending Task 7's real single-query-latency measurement
+  # against the live index -- sized properly (docs/findings/) before the
+  # pr_similarity job's first real run, not left at a guess.
+  description = "Spine rows to query against the real index, bounded by measured per-query latency (§8.3a)."
+  default     = "5000"
+}

@@ -205,10 +205,12 @@ def _embed_partition(
     """
 
     def embed(pdfs: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
-        encoder = load_encoder(model_name)
+        encoder: TextEncoder | None = None
         for pdf in pdfs:
             if pdf.empty:
                 continue
+            if encoder is None:  # loaded lazily: an empty partition never pays for it
+                encoder = load_encoder(model_name)
             vectors = embed_texts(pdf["text"].tolist(), encoder, batch_size=batch_size)
             yield pdf.assign(embedding=[v.tolist() for v in vectors])[
                 [f.name for f in _EMBEDDING_SCHEMA.fields]
@@ -225,26 +227,35 @@ def run_embedding_pipeline_distributed(
     event_type: Literal["pr", "issue"],
     model_name: str = DEFAULT_MODEL,
     batch_size: int = 64,
+    num_partitions: int = 16,
     register: bool = False,
     schema: str = "embeddings",
 ) -> int:
     """Same incremental shape as `run_embedding_pipeline`, but the encode
     step runs through `mapInPandas` -- one model load per partition,
-    parallel across every executor, not collected to the driver. The real
-    run's own path (Task 7): at the measured 14.9M-text corpus (Task 1),
-    single-threaded is ~27h; distributed across this project's existing
-    4-worker job-cluster shape (16 vCPUs, Standard_D4ds_v6) it is closer
-    to ~1.7h. Deliberately not unit-tested beyond `_pending_texts`' own
-    coverage above -- a real `mapInPandas` call downloads real weights
-    inside a spawned worker process, the same "verified only against the
-    real endpoint" boundary as `load_encoder` itself.
+    parallel across every executor, not collected to the driver.
+
+    `num_partitions` bounds how many times `load_encoder` runs: measured
+    for real 2026-09-05 (docs/findings/), Spark's own default partition
+    count on the real corpus was 967 -- one `SentenceTransformer`
+    construction per ~15K-row split, each taking ~12-14 minutes,
+    overwhelmingly dominated by model-load overhead rather than the
+    actual encode work, turning a ~1.7h estimate into 50+ real hours
+    before the run was cancelled. Repartitioning first bounds the number
+    of model loads to `num_partitions`, matching this project's own
+    4-worker cluster shape rather than the upstream read's arbitrary
+    split. Deliberately not unit-tested beyond `_pending_texts`' own
+    coverage and the partition-count test above -- a real `mapInPandas`
+    call downloads real weights inside a spawned worker process, the
+    same "verified only against the real endpoint" boundary as
+    `load_encoder` itself.
     """
     texts = _pending_texts(
         spark, bronze_path=bronze_path, embeddings_path=embeddings_path, event_type=event_type
     )
     written = texts.count()
     if written > 0:
-        embedded = texts.mapInPandas(
+        embedded = texts.repartition(num_partitions).mapInPandas(
             _embed_partition(model_name, batch_size), schema=_EMBEDDING_SCHEMA
         )
         embedded.write.format("delta").mode("append").option(
@@ -263,6 +274,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--embeddings-path", required=True)
     parser.add_argument("--model-name", default=DEFAULT_MODEL)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument(
+        "--num-partitions",
+        type=int,
+        default=16,
+        help=(
+            "Bounds how many times load_encoder runs (one SentenceTransformer "
+            "construction per partition, not per row). Default matches this "
+            "project's 4-worker job-cluster shape (16 vCPUs) -- measured "
+            "2026-09-05 that Spark's own default partition count on the real "
+            "corpus (967) turned a ~1.7h estimate into 50+ real hours, "
+            "dominated by model-load overhead, not the encode work itself."
+        ),
+    )
     parser.add_argument("--schema", default="embeddings")
     parser.add_argument(
         "--register",
@@ -292,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
             event_type=event_type,
             model_name=args.model_name,
             batch_size=args.batch_size,
+            num_partitions=args.num_partitions,
             register=args.register,
             schema=args.schema,
         )
