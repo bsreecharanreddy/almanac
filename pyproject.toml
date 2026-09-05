@@ -112,6 +112,9 @@ max-complexity = 10
 # Same reasoning again: run_embedding_pipeline's I/O boundary takes one
 # keyword-only argument per independently-named path/knob (Phase 5, §8.3a).
 "src/almanac/embed/*.py" = ["PLR0913"]
+# run_similarity is the same I/O-boundary shape once more, plus the real
+# ANN index and the sample-size bound the real run needs (Phase 5, §8.3a).
+"src/almanac/features/similarity_runner.py" = ["PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"

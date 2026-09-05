@@ -49,6 +49,11 @@ resource "databricks_job" "embeddings" {
         "--bronze-path", "${local.lake.bronze}/events",
         "--embeddings-path", "${local.lake.features}/embeddings",
         "--schema", var.embeddings_schema,
+        # Bounds load_encoder to 16 calls total, matching this job cluster's
+        # own 4-worker/16-vCPU shape -- measured 2026-09-05 that Spark's
+        # default partition count (967) turned a ~1.7h estimate into 50+
+        # real hours, dominated by per-partition model-load overhead.
+        "--num-partitions", "16",
         "--register",
       ]
     }
