@@ -97,8 +97,11 @@ billing-API pull (the same caveat that estimate itself carried).
 
 ## Re-run
 
-Not yet complete as of this writing. The fixed code is deployed and a
-new run is in progress; its real duration, cost, and the resulting
-embeddings-table row count will be recorded in this same section once
-it finishes, not a fresh findings doc — the corrected outcome of the
-same measurement, not a new one.
+The re-run (`630533628470951`, 2026-09-05) confirmed this fix — the encode
+stage was submitted with exactly 16 tasks, not 967 — but then surfaced a
+**separate** defect: the `mapInPandas` Python workers froze, alive but
+producing nothing, a fork-time threadpool stall in `tokenizers` / `torch`.
+That is its own finding:
+[2026-09-05-embedding-worker-fork-deadlock.md](2026-09-05-embedding-worker-fork-deadlock.md).
+The full-corpus duration, cost, and row count land there once a run
+completes.

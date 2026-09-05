@@ -15,6 +15,7 @@ def test_defaults_cover_model_batch_size_schema_and_register() -> None:
     assert args.model_name == DEFAULT_MODEL
     assert args.batch_size == 64
     assert args.num_partitions == 16
+    assert args.limit is None
     assert args.schema == "embeddings"
     assert args.register is False
 
@@ -32,6 +33,8 @@ def test_every_default_can_be_overridden() -> None:
             "32",
             "--num-partitions",
             "64",
+            "--limit",
+            "200000",
             "--schema",
             "custom",
             "--register",
@@ -41,6 +44,7 @@ def test_every_default_can_be_overridden() -> None:
     assert args.model_name == "some/other-model"
     assert args.batch_size == 32
     assert args.num_partitions == 64
+    assert args.limit == 200000
     assert args.schema == "custom"
     assert args.register is True
 
