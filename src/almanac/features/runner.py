@@ -19,7 +19,7 @@ from almanac.features.groups import (
     compute_repo_activity,
 )
 from almanac.features.registration import primary_key_sql, register_feature_table
-from almanac.spark import local_session
+from almanac.spark import active_or_local_session
 
 
 @dataclass(frozen=True)
@@ -35,11 +35,6 @@ FEATURE_TABLES: list[FeatureTableSpec] = [
     FeatureTableSpec("repo_activity", compute_repo_activity, ["repo_id"], "event_time"),
     FeatureTableSpec("pr_static", compute_pr_static, ["repo_id", "pr_number"], None),
 ]
-
-
-def _active_or_local_session() -> SparkSession:
-    active = SparkSession.getActiveSession()
-    return active if active is not None else local_session("almanac-features")
 
 
 def run_features(
@@ -97,7 +92,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     run_features(
-        _active_or_local_session(),
+        active_or_local_session("almanac-features"),
         silver_path=args.silver_path,
         features_path=args.features_path,
         register=args.register,

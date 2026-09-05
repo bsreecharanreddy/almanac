@@ -291,3 +291,23 @@ variable "embedding_dimension" {
   description = "Vector width the embedding pipeline writes."
   default     = 384
 }
+
+variable "embeddings_python_file" {
+  type        = string
+  description = "Workspace path of scripts/embeddings.py, the job entrypoint for almanac.embed.pipeline."
+  default     = "/Workspace/Shared/almanac/scripts/embeddings.py"
+}
+
+variable "embeddings_pip_dependencies" {
+  type = list(string)
+  # Keep in sync with pyproject.toml's [project.optional-dependencies] ml
+  # group -- a raw databricks_job cannot derive them; a bundle would. torch
+  # is sentence-transformers' own transitive dependency, not listed
+  # separately, same convention model_pip_dependencies already follows for
+  # scikit-learn's own transitive deps.
+  description = "The ml extra's embedding-specific deps, installed on the embeddings job's cluster."
+  default = [
+    "sentence-transformers>=6.0.1",
+    "databricks-ai-search>=0.78",
+  ]
+}
