@@ -24,12 +24,7 @@ from almanac.model.train import (
     train_classifier,
     train_model,
 )
-from almanac.spark import local_session
-
-
-def _active_or_local_session() -> SparkSession:
-    active = SparkSession.getActiveSession()
-    return active if active is not None else local_session("almanac-model")
+from almanac.spark import active_or_local_session
 
 
 def run_training(
@@ -155,7 +150,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     run_training(
-        _active_or_local_session(),
+        active_or_local_session("almanac-model"),
         silver_path=args.silver_path,
         features_path=args.features_path,
         gold_table=args.gold_table,

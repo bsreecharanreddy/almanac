@@ -38,6 +38,14 @@ def local_session(app_name: str = DEFAULT_APP_NAME) -> SparkSession:
     return configure_spark_with_delta_pip(_builder(app_name)).getOrCreate()
 
 
+def active_or_local_session(app_name: str) -> SparkSession:
+    """A job task's own session if one is already active (Databricks
+    provides one), else a fresh local one -- every runner's own CLI needs
+    this, so it lives here once rather than once per runner."""
+    active = SparkSession.getActiveSession()
+    return active if active is not None else local_session(app_name)
+
+
 def dbt_session(
     *, warehouse: str, metastore: Path, app_name: str = f"{DEFAULT_APP_NAME}-dbt"
 ) -> SparkSession:
