@@ -9,14 +9,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from almanac.embed import pipeline
 from almanac.embed.pipeline import (
     embed_texts,
     extract_texts,
     run_embedding_pipeline,
+    run_embedding_pipeline_distributed,
 )
 
 pytestmark = pytest.mark.spark
@@ -188,3 +191,59 @@ def test_run_embedding_pipeline_registers_when_asked(spark: SparkSession, tmp_pa
 
     assert written == 1
     assert spark.catalog.tableExists(f"{schema}.pr_issue_embeddings")
+
+
+def test_embed_partition_batches_by_name_not_position(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_embed_partition`'s closure is the only piece of
+    run_embedding_pipeline_distributed real Spark's mapInPandas would
+    otherwise hide inside a spawned worker process -- called directly here,
+    with load_encoder monkeypatched, the same reselect-by-name discipline
+    run_embedding_pipeline's own reselect exists for gets checked without
+    needing a real model or real Spark distribution.
+    """
+    monkeypatch.setattr(pipeline, "load_encoder", lambda model_name: _FakeEncoder())
+    embed = pipeline._embed_partition("fake-model", batch_size=2)
+
+    # Deliberately out of _EMBEDDING_SCHEMA's own column order, the same
+    # shape a left_anti join can produce upstream.
+    pdf = pd.DataFrame(
+        {
+            "text_hash": ["h1", "h2"],
+            "entity_key": ["pr:1:10", "pr:1:11"],
+            "event_time": [datetime(2025, 8, 1, tzinfo=UTC)] * 2,
+            "text": ["a", "bb"],
+        }
+    )
+
+    (result,) = list(embed(iter([pdf])))
+
+    assert list(result.columns) == ["entity_key", "event_time", "text_hash", "embedding"]
+    assert result["embedding"].tolist() == [[1.0, 0.0], [2.0, 0.0]]
+
+
+def test_run_embedding_pipeline_distributed_skips_without_loading_a_model(
+    spark: SparkSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing pending -> `written == 0` before `_embed_partition` (and
+    therefore `load_encoder`) ever runs -- monkeypatching load_encoder to
+    fail proves this path never reaches it, not just that the count is 0.
+    """
+
+    def _fail(model_name: str) -> None:
+        raise AssertionError("load_encoder must not run when nothing is pending")
+
+    monkeypatch.setattr(pipeline, "load_encoder", _fail)
+
+    bronze_path = str(tmp_path / "bronze")
+    embeddings_path = str(tmp_path / "embeddings")
+    bronze = _bronze(spark, _pr_opened(1, 10, title="Old", body="already embedded"))
+    bronze.write.format("delta").save(bronze_path)
+    extract_texts(bronze, event_type="pr").withColumn("embedding", F.array(F.lit(0.0))).drop(
+        "text"
+    ).write.format("delta").save(embeddings_path)
+
+    written = run_embedding_pipeline_distributed(
+        spark, bronze_path=bronze_path, embeddings_path=embeddings_path, event_type="pr"
+    )
+
+    assert written == 0
