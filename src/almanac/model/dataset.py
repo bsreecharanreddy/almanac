@@ -71,6 +71,14 @@ def join_breach_label(
     return training_frame.join(label, on=["repo_id", "pr_number"], how="inner")
 
 
+def join_similarity_features(training_frame: DataFrame, similarity_frame: DataFrame) -> DataFrame:
+    """Left-join `compute_pr_similarity`'s output (Phase 5, §8.3a) --
+    unlike the label joins above, a PR the similarity index never scored
+    (no embedding, or run before Task 7's real index existed) keeps its
+    row with the similar_* columns null, not dropped."""
+    return training_frame.join(similarity_frame, on=["repo_id", "pr_number"], how="left")
+
+
 def _read_delta(spark: SparkSession, path: str, version: int | None) -> DataFrame:
     reader = spark.read.format("delta")
     if version is not None:
@@ -139,12 +147,19 @@ def build_classification_frame(
     features_path: str,
     gold_table: str,
     threshold_seconds: int,
+    similarity_frame: DataFrame | None = None,
     silver_version: int | None = None,
     features_version: int | None = None,
     gold_version: int | None = None,
 ) -> pd.DataFrame:
     """Same shape as `build_training_frame`, with the wider §5.3 breach
     label in place of the continuous one.
+
+    `similarity_frame` is `compute_pr_similarity`'s own output (Phase 5,
+    §8.3a) -- left-joined on (repo_id, pr_number) when given. Absent, not
+    zero-filled, when not: every existing call site passes nothing at all,
+    so the frame it gets back is unchanged from before this parameter
+    existed.
     """
     training_frame = _build_feature_frame(
         spark,
@@ -153,6 +168,8 @@ def build_classification_frame(
         silver_version=silver_version,
         features_version=features_version,
     )
+    if similarity_frame is not None:
+        training_frame = join_similarity_features(training_frame, similarity_frame)
     fact_pull_request = _read_table(spark, gold_table, gold_version)
     return join_breach_label(
         training_frame, fact_pull_request, threshold_seconds=threshold_seconds
