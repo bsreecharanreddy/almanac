@@ -123,3 +123,52 @@ def test_an_issue_neighbor_never_joins_a_same_numbered_pr(spark: SparkSession) -
 
     assert result[0]["similar_neighbor_count"] == 1
     assert result[0]["similar_prior_breach_rate"] is None
+
+
+def test_a_malformed_neighbor_key_counts_but_never_resolves(spark: SparkSession) -> None:
+    """A real 2026-09-06 run found degenerate `issue:<repo_id>` keys in the
+    index (Task 2's extract_texts read the wrong number path). Such a
+    neighbor can't be identified as a specific entity, so it counts toward
+    similar_neighbor_count but can never join resolutions -- not a crash."""
+    spine = _spine(spark, [(1, 100, _T3, [0.0, 0.0])])
+    index = FakeSimilarityIndex([(Neighbor("issue:1", _T1, 0.0), [0.0, 0.0])])
+    resolutions = _resolutions(spark, [(1, 1, _T2, True)])
+
+    result = compute_pr_similarity(spine, index, resolutions).collect()
+
+    assert result[0]["similar_neighbor_count"] == 1
+    assert result[0]["similar_prior_breach_rate"] is None
+
+
+def test_the_spine_is_read_once_so_a_nondeterministic_sample_cannot_shift(
+    spark: SparkSession,
+) -> None:
+    """`run_similarity` samples the spine with `orderBy(rand(seed)).limit(n)`,
+    which Spark classifies as nondeterministic. Task 4's 2026-09-06 run read
+    the spine twice -- neighbor pairs came from one evaluation, the final
+    join's keys from another -- and only the 44 of 10,000 rows the two
+    samples shared survived. Counting reads pins the fix at the point it
+    broke, since a second evaluation is invisible in the output whenever the
+    two happen to agree (as they do locally)."""
+
+    class CountingSpine:
+        def __init__(self, df: DataFrame) -> None:
+            self._df = df
+            self.reads = 0
+
+        def select(self, *cols: object) -> DataFrame:
+            self.reads += 1
+            return self._df.select(*cols)  # type: ignore[arg-type]
+
+        @property
+        def sparkSession(self) -> SparkSession:  # noqa: N802
+            return self._df.sparkSession
+
+    spine = CountingSpine(_spine(spark, [(1, 100, _T3, [0.0, 0.0]), (1, 101, _T3, None)]))
+    index = FakeSimilarityIndex([(Neighbor("pr:1:1", _T1, 0.0), [0.0, 0.0])])
+    resolutions = _resolutions(spark, [(1, 1, _T2, True)])
+
+    result = compute_pr_similarity(spine, index, resolutions).collect()  # type: ignore[arg-type]
+
+    assert spine.reads == 1
+    assert {row["pr_number"] for row in result} == {100, 101}

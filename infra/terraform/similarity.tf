@@ -39,21 +39,29 @@ resource "databricks_job" "pr_similarity" {
     spark_python_task {
       python_file = var.similarity_python_file
       source      = "WORKSPACE"
-      parameters = [
-        "--silver-path", "${local.lake.silver}/events",
-        "--embeddings-path", "${local.lake.features}/embeddings",
-        "--similarity-path", "${local.lake.features}/pr_similarity",
-        "--gold-table", var.model_gold_table,
-        "--threshold-seconds", "1487",
-        "--endpoint-name", databricks_vector_search_endpoint.embeddings.name,
-        "--index-name", databricks_vector_search_index.pr_issue_embeddings.name,
-        # Bounded, not the full ~13.18M-row PR-opened population: each
-        # spine row costs one real call against a paid, live endpoint,
-        # not a Spark-distributable transform. Sized from the real
-        # single-query latency Task 7 measures before this job's first
-        # real run, recorded in docs/findings/.
-        "--sample-size", var.similarity_sample_size,
-      ]
+      # --since-date must match the embeddings job's own window: the index
+      # only holds PRs opened on or after it, and compute_pr_similarity's
+      # point-in-time filter only returns older neighbors, so a spine
+      # reaching back further finds nothing for those rows
+      # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md -- the
+      # first real run made exactly this mistake).
+      parameters = concat(
+        var.embeddings_since != "" ? ["--since-date", var.embeddings_since] : [],
+        [
+          "--silver-path", "${local.lake.silver}/events",
+          "--embeddings-path", "${local.lake.features}/embeddings",
+          "--similarity-path", "${local.lake.features}/pr_similarity",
+          "--gold-table", var.model_gold_table,
+          "--threshold-seconds", "1487",
+          "--endpoint-name", databricks_vector_search_endpoint.embeddings.name,
+          "--index-name", databricks_vector_search_index.pr_issue_embeddings.name,
+          # Bounded, not the full PR-opened population: each spine row costs
+          # one real call against a paid, live endpoint, not a Spark-
+          # distributable transform. Sized from the real single-query
+          # latency measured 2026-09-05 (~34 ms from the cluster).
+          "--sample-size", var.similarity_sample_size,
+        ],
+      )
     }
 
     library {

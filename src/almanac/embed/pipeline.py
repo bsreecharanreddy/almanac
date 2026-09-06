@@ -84,20 +84,24 @@ def extract_texts(bronze: DataFrame, *, event_type: Literal["pr", "issue"]) -> D
     title = F.get_json_object("raw_json", f"$.payload.{payload_key}.title")
     body = F.get_json_object("raw_json", f"$.payload.{payload_key}.body")
     text = F.concat_ws("\n\n", title, body)
+    repo_id = F.get_json_object("raw_json", "$.repo.id")
+    # `$.payload.{payload_key}.number`, NOT `$.payload.number`: only a
+    # PullRequestEvent carries the number at payload top level -- an
+    # IssuesEvent puts it under `payload.issue`. Measured 2026-09-06 that
+    # the wrong path silently produced degenerate `issue:<repo_id>` keys
+    # for every issue (concat_ws drops the null), colliding in the index.
+    number = F.get_json_object("raw_json", f"$.payload.{payload_key}.number")
 
     opened = (
         (F.get_json_object("raw_json", "$.type") == gh_type)
         & (F.get_json_object("raw_json", "$.payload.action") == "opened")
         & title.isNotNull()
         & body.isNotNull()
+        & repo_id.isNotNull()
+        & number.isNotNull()
     )
     return bronze.where(opened).select(
-        F.concat_ws(
-            ":",
-            F.lit(event_type),
-            F.get_json_object("raw_json", "$.repo.id"),
-            F.get_json_object("raw_json", "$.payload.number"),
-        ).alias("entity_key"),
+        F.concat_ws(":", F.lit(event_type), repo_id, number).alias("entity_key"),
         F.to_timestamp(F.get_json_object("raw_json", f"$.payload.{payload_key}.created_at")).alias(
             "event_time"
         ),

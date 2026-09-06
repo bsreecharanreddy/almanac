@@ -33,6 +33,10 @@ _NEIGHBOR_PAIR_SCHEMA = StructType(
     ]
 )
 
+_SPINE_KEY_SCHEMA = StructType(
+    [StructField("repo_id", LongType()), StructField("pr_number", LongType())]
+)
+
 
 class Neighbor(NamedTuple):
     entity_key: str
@@ -65,8 +69,17 @@ def query_similar(
     return index.query(vector, as_of=as_of, k=k)
 
 
-def _parse_entity_key(entity_key: str) -> tuple[str, int, int]:
-    kind, repo_id, number = entity_key.split(":")
+def _parse_entity_key(entity_key: str) -> tuple[str, int, int] | None:
+    """`<kind>:<repo_id>:<number>`, or None if the key is malformed. Task 4's
+    first real run (2026-09-06) crashed here on `issue:<repo_id>` keys: Task
+    2's extract_texts read `$.payload.number` for issues too, but an
+    IssuesEvent carries its number under `payload.issue`, and `concat_ws`
+    silently drops the null. A neighbor that names no specific entity can't
+    be resolved, the same as a well-formed issue neighbor."""
+    kind, _, rest = entity_key.partition(":")
+    repo_id, _, number = rest.partition(":")
+    if not (repo_id.isdigit() and number.isdigit()):
+        return None
     return kind, int(repo_id), int(number)
 
 
@@ -93,7 +106,13 @@ def _neighbor_rows(spine_row: Row, index: SimilarityIndex, *, k: int) -> list[_N
     neighbors = query_similar(index, spine_row["embedding"], as_of, k=k)
     rows = []
     for neighbor in neighbors:
-        kind, n_repo_id, n_number = _parse_entity_key(neighbor.entity_key)
+        parsed = _parse_entity_key(neighbor.entity_key)
+        # Only a well-formed "pr" neighbor can ever resolve against
+        # `resolutions` (issues carry no SLA-breach outcome; a degenerate
+        # key names no specific entity) -- kept null rather than joined on
+        # repo_id/number alone, which an issue and an unrelated PR in the
+        # same repo could collide on.
+        pr = parsed[1:] if parsed is not None and parsed[0] == "pr" else (None, None)
         # A plain tuple, not Row(repo_id=..., ...): createDataFrame with an
         # explicit schema maps by *position* even for Row objects (verified
         # directly, not assumed -- Row(b=2, a=1) against schema [a, b] comes
@@ -104,12 +123,8 @@ def _neighbor_rows(spine_row: Row, index: SimilarityIndex, *, k: int) -> list[_N
                 spine_row["repo_id"],
                 spine_row["pr_number"],
                 spine_row["as_of_timestamp"],
-                # Only a "pr" neighbor can ever resolve against `resolutions`
-                # (issues carry no SLA-breach outcome) -- kept null rather
-                # than joined on repo_id/number alone, which an issue and an
-                # unrelated PR in the same repo could collide on.
-                n_repo_id if kind == "pr" else None,
-                n_number if kind == "pr" else None,
+                pr[0],
+                pr[1],
             )
         )
     return rows
@@ -133,23 +148,29 @@ def compute_pr_similarity(
     first is the deliberate boundary here -- never a substitute for the
     real ANN index, which is still what answers each individual query.
     """
-    pairs = [
-        row
-        for spine_row in spine.select(
-            "repo_id",
-            "pr_number",
-            "as_of_timestamp",
-            "embedding",
-            F.unix_timestamp("as_of_timestamp").alias("as_of_epoch"),
-        ).collect()
-        for row in _neighbor_rows(spine_row, index, k=k)
-    ]
+    # Collected once, and every later reference reads THIS list rather than
+    # the DataFrame again. `run_similarity` samples with
+    # `orderBy(rand(seed)).limit(n)`, and Spark classifies `rand` as
+    # nondeterministic -- a second evaluation may draw a different sample.
+    # Task 4's 2026-09-06 real run did exactly that: ~62,000 neighbor pairs
+    # computed against sample A, then joined back against sample B, leaving
+    # only the 44 of 10,000 rows the two samples happened to share. It also
+    # saves a second full scan of Silver.
+    spine_rows = spine.select(
+        "repo_id",
+        "pr_number",
+        "as_of_timestamp",
+        "embedding",
+        F.unix_timestamp("as_of_timestamp").alias("as_of_epoch"),
+    ).collect()
+    spine_keys = spine.sparkSession.createDataFrame(
+        [(row["repo_id"], row["pr_number"]) for row in spine_rows], schema=_SPINE_KEY_SCHEMA
+    )
+    pairs = [row for spine_row in spine_rows for row in _neighbor_rows(spine_row, index, k=k)]
     if not pairs:
-        return (
-            spine.select("repo_id", "pr_number")
-            .withColumn("similar_neighbor_count", F.lit(0).cast(LongType()))
-            .withColumn("similar_prior_breach_rate", F.lit(None).cast(DoubleType()))
-        )
+        return spine_keys.withColumn(
+            "similar_neighbor_count", F.lit(0).cast(LongType())
+        ).withColumn("similar_prior_breach_rate", F.lit(None).cast(DoubleType()))
 
     neighbor_pairs = spine.sparkSession.createDataFrame(pairs, schema=_NEIGHBOR_PAIR_SCHEMA)
     resolved = resolutions.select(
@@ -177,8 +198,6 @@ def compute_pr_similarity(
     # produced zero pairs above and would otherwise vanish rather than
     # surface as "unknown" (every as_of_join in this package makes the same
     # choice -- every spine row survives).
-    return (
-        spine.select("repo_id", "pr_number")
-        .join(per_spine, on=["repo_id", "pr_number"], how="left")
-        .withColumn("similar_neighbor_count", F.coalesce(F.col("similar_neighbor_count"), F.lit(0)))
+    return spine_keys.join(per_spine, on=["repo_id", "pr_number"], how="left").withColumn(
+        "similar_neighbor_count", F.coalesce(F.col("similar_neighbor_count"), F.lit(0))
     )
