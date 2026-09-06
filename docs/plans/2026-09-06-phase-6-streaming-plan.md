@@ -196,7 +196,7 @@ This is the task §4.6's throughput measurement promotes from nice-to-have
 to load-bearing. The live feed is a ~11% tail and cannot demonstrate
 completeness; replay can, on demand, deterministically.
 
-**Interface:**
+**Interface (as built):**
 
 ```python
 def replay_hours(
@@ -204,29 +204,49 @@ def replay_hours(
     hours: list[str],
     dest: str,
     *,
-    lateness: timedelta = ...,
+    source: Path | None = None,  # one real archive-hour file; defaults to the reduced-era fixture
+    lateness: timedelta = timedelta(0),
     duplicate_rate: float = 0.0,
     shuffle: bool = False,
     seed: int = 0,
 ) -> ReplayStats: ...
 ```
 
+`hours` names poll cycles, not distinct files: one real hour is split
+into `len(hours)` **chronologically contiguous** slices, delivered in
+order so the watermark advances smoothly and nothing is spuriously
+dropped by construction. `duplicate_rate` carries each cycle's *latest*
+events forward into the next (a real cross-batch duplicate, close enough
+to the boundary to be deduped rather than watermark-dropped). `lateness`,
+when set, appends one trailing cycle that redelivers every event
+`lateness` after its own `created_at`, once the watermark has already
+passed the whole replay.
+
 **`seed` is not decoration.** Phase 5's Bug 3 was a nondeterministic
 `rand` sample read twice; a replay harness that injects disorder
 unseeded is the same defect waiting to happen, and an unreproducible
 correctness test is not a correctness test.
 
+**`source` was added beyond the plan's sketch.** Replay must go through
+`write_stream_silver`'s `_reject_non_reduced_era` guard unchanged (Task
+9 runs the identical path live), so it can only replay `REDUCED_V3`-era
+data — and **no committed fixture was in that era**: both existing ones
+predate the 2025-10-15 payload reduction. Added a third,
+`reduced-2025-11-03-14.jsonl.gz` (2,000 events, `scripts/build_fixtures.py`),
+plus a `reduced_events_path` conftest fixture.
+
 **Tests, one per forced condition:**
-- `test_forces_event_after_watermark_passed`
+
+- `test_forces_event_after_watermark_passed` — the trailing late cycle's redeliveries are all counted by `late_event_count` and none of them duplicate what on-time delivery already wrote.
 - `test_forces_duplicate_across_micro_batches`
 - `test_forces_out_of_order_within_batch`
-- `test_forces_gap_and_observes_recovery`
-- `test_replayed_stream_equals_batch_silver` — **the gate.** Replayed streaming output must equal batch Silver output over the same committed fixtures. If they disagree, one is wrong, and the test names the differing rows.
+- `test_forces_gap_and_observes_recovery` — three cycles, same checkpoint, each transition a real restart; no loss, nothing double-counted.
+- `test_replayed_stream_equals_batch_silver` — **the gate.** Replayed streaming output must equal batch Silver output over the same committed fixture. If they disagree, one is wrong, and the test names the differing rows. **It caught two real, silent Task 2/3 bugs** (see STATUS): the landing envelope typed `event` as a struct via `payloads.EVENT_SCHEMA`, which omits `actor`, nulling every `actor_login`; and `stream_events` wrote `event_date` as a `DateType` where batch and the rest of the codebase use a `yyyy-MM-dd` string.
 
-Uses the **committed fixtures**, not new synthetic data, so a replay
+Uses the **committed fixture**, not new synthetic data, so a replay
 result is directly comparable to a batch result over the same input.
 
-**Done when:** all five pass, and the equality test is reproducible across seeds.
+**Done when:** all five pass (confirmed 3× — 439s/247s/216s), and the whole-repo `make check` is green.
 **Commit:** `feat(stream): replay harness forcing late, duplicate and out-of-order events`
 
 ## Task 5: Streaming feature aggregation

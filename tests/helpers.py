@@ -96,9 +96,15 @@ def raw(spark: SparkSession, *rows: RawRow) -> DataFrame:
 
 
 def land_poll(landing: Path, events: list[dict[str, object]], *, polled_at: str, name: str) -> Path:
-    """One poller landing file -- the same envelope ``stream.poller._write_poll`` produces."""
+    """One poller landing file -- the same envelope ``stream.poller._write_poll`` produces.
+
+    ``event`` is JSON-encoded as a string, not embedded as a nested object:
+    a nested object would force the landing zone's read schema to type it
+    via ``payloads.EVENT_SCHEMA``, which omits ``actor`` on purpose, silently
+    dropping it before ``parse_events`` ever sees the event.
+    """
     path = landing / f"{name}.jsonl"
-    lines = (json.dumps({"polled_at": polled_at, "event": e}) for e in events)
+    lines = (json.dumps({"polled_at": polled_at, "event": json.dumps(e)}) for e in events)
     path.write_text("\n".join(lines) + "\n")
     return path
 

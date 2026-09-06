@@ -115,6 +115,12 @@ max-complexity = 10
 # run_similarity is the same I/O-boundary shape once more, plus the real
 # ANN index and the sample-size bound the real run needs (Phase 5, §8.3a).
 "src/almanac/features/similarity_runner.py" = ["PLR0913"]
+# replay_hours takes one keyword-only argument per independently-tunable
+# forcing knob (source, lateness, duplicate_rate, shuffle, seed) -- the
+# explicit keywords are what make a call like
+# `replay_hours(spark, hours, dest, lateness=...)` readable at the call
+# site (Phase 6, Task 4).
+"src/almanac/stream/replay.py" = ["PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"
