@@ -312,6 +312,26 @@ same way `primary_key_sql` already is —
 `test_timeseries_pk_unchanged` (a regression guard: §4.4a's DDL is already
 correct and must not drift while adding these).
 
+**As built.** `change_data_feed_sql` (one `str`) and `not_null_key_sql`
+(one `ALTER COLUMN` per key column, `list[str]`), plus a shared
+`_key_columns` helper both it and `primary_key_sql` route through so the
+two cannot disagree about what the key is. **Only CDF round-trips
+locally**: a probe against open-source Delta 4.4.0 confirmed
+`ALTER COLUMN … SET NOT NULL` is refused on a populated table ("cannot
+change nullable column to non-nullable") — Databricks-managed Delta
+accepts it, so `not_null_key_sql` gets the same string-plus-deferred-
+execution treatment `primary_key_sql`'s TIMESERIES constraint already
+has, verified live in Task 9. The exact CDF/NOT-NULL SQL was taken
+verbatim from Microsoft Learn's online-feature-store page (Gate 2,
+re-checked live 2026-09-06). **One scope addition beyond the Files
+list**: `features/runner.py`'s `--register` block now also runs these two
+statements (CDF, then NOT NULL, then the existing PK constraint that
+needs them), so `--register` produces a genuinely publish-ready table
+rather than a half-state a later task must remember to finish — the same
+"complete the wiring where the flag is" call as Task 4's `source` param.
+The `register=True` path stays unexercised by the local suite (the
+Derby metastore rejects TIMESERIES), exactly as before.
+
 **Done when:** `make check` green; the existing registration tests still pass unmodified.
 **Commit:** `feat(features): CDF and NOT NULL keys for online publishing`
 
