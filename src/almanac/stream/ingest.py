@@ -24,19 +24,24 @@ from pyspark.sql.types import StringType, StructField, StructType
 
 from almanac.explore.schema import SchemaEra
 from almanac.pipeline.eras import normalize_events
-from almanac.pipeline.payloads import EVENT_SCHEMA, parse_events
+from almanac.pipeline.payloads import parse_events
 
 if TYPE_CHECKING:
     from pyspark.sql.streaming.query import StreamingQuery
 
 # The poller's own envelope (stream.poller._write_poll): one raw event plus
-# the moment it was polled. `event` reuses EVENT_SCHEMA rather than a second
-# declaration of GH Archive's shape -- the same reuse `payloads.py` already
-# argues for.
+# the moment it was polled. `event` is a raw JSON *string*, not a struct
+# typed by payloads.EVENT_SCHEMA -- EVENT_SCHEMA deliberately omits `actor`
+# (its type varies pre/post 2015), so typing this field would silently drop
+# it before `parse_events` ever saw the event, nulling every `actor_login`
+# in the stream. Caught for real by Task 4's batch-equality gate, 2026-09-06:
+# Task 3's own unit tests never exercised it because their fixture events
+# carried no `actor` field at all. A string preserves exactly what GitHub
+# sent, matching Bronze's own raw-string contract.
 _LANDING_SCHEMA = StructType(
     [
         StructField("polled_at", StringType()),
-        StructField("event", EVENT_SCHEMA),
+        StructField("event", StringType()),
     ]
 )
 
@@ -73,15 +78,19 @@ def stream_events(
     """
     raw = spark.readStream.schema(_LANDING_SCHEMA).json(landing)
     as_raw_json = raw.select(
-        F.to_json(F.col("event")).alias("raw_json"),
+        F.col("event").alias("raw_json"),
         F.to_timestamp(F.col("polled_at")).alias("ingested_at"),
     )
 
     parsed = parse_events(as_raw_json)
     created_at = F.to_timestamp(F.col("created_at_raw"))
-    with_partition_cols = parsed.withColumn("event_date", F.to_date(created_at)).withColumn(
-        "event_hour", F.hour(created_at)
-    )
+    # `date_format`, not `to_date`: batch stamps event_date as the string
+    # `burn.day`/`build_bronze` are given (`F.lit(event_date)`), and a DateType
+    # column here would silently disagree with that schema on write -- caught
+    # by Task 4's batch-equality gate, 2026-09-06.
+    with_partition_cols = parsed.withColumn(
+        "event_date", F.date_format(created_at, "yyyy-MM-dd")
+    ).withColumn("event_hour", F.hour(created_at))
     normalized = normalize_events(with_partition_cols)
 
     delay_seconds = F.unix_timestamp("ingested_at") - F.unix_timestamp("created_at")

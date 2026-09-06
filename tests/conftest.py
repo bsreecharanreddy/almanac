@@ -43,3 +43,10 @@ def modern_events_path() -> Path:
 @pytest.fixture(scope="session")
 def legacy_events_path() -> Path:
     return _one_fixture("legacy-*.jsonl.gz")
+
+
+@pytest.fixture(scope="session")
+def reduced_events_path() -> Path:
+    """Post-2025-10-15 payload reduction (SchemaEra.REDUCED_V3) -- the only
+    committed fixture streaming's own era guard can accept."""
+    return _one_fixture("reduced-*.jsonl.gz")

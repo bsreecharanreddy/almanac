@@ -207,9 +207,10 @@ def test_poll_time_is_recorded_separately_from_the_events_created_at(tmp_path: P
 
     [path] = list(tmp_path.glob("*.jsonl"))
     record = json.loads(path.read_text().splitlines()[0])
+    event = json.loads(record["event"])
     assert record["polled_at"] == fixed_now.isoformat()
-    assert record["event"]["created_at"] == _EVENT_1["created_at"]
-    assert record["polled_at"] != record["event"]["created_at"]
+    assert event["created_at"] == _EVENT_1["created_at"]
+    assert record["polled_at"] != event["created_at"]
 
 
 def test_two_polls_under_a_fixed_clock_do_not_overwrite_each_other(tmp_path: Path) -> None:
@@ -232,7 +233,7 @@ def test_two_polls_under_a_fixed_clock_do_not_overwrite_each_other(tmp_path: Pat
     files = sorted(tmp_path.glob("*.jsonl"))
     assert len(files) == 2, "both polls' files must survive, not collapse into one"
     assert stats.events_written == 2
-    ids_seen = {json.loads(f.read_text().splitlines()[0])["event"]["id"] for f in files}
+    ids_seen = {json.loads(json.loads(f.read_text().splitlines()[0])["event"])["id"] for f in files}
     assert ids_seen == {"1", "2"}
 
 

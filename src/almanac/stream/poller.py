@@ -189,10 +189,20 @@ def _write_poll(
     harness) -- without it, ``Path.replace`` would silently overwrite an
     earlier poll's file, an unsignalled data-loss bug on a live clock this
     is cheap enough to rule out entirely.
+
+    ``event`` is embedded as a JSON-encoded *string*, not a nested object:
+    a nested object forces the landing zone's own read schema to type it,
+    and ``payloads.EVENT_SCHEMA`` deliberately omits ``actor`` (its type
+    varies pre/post 2015), which would silently null every ``actor_login``
+    in the stream before ``parse_events`` ever saw the event -- caught for
+    real by Task 4's batch-equality gate, 2026-09-06. A string round-trips
+    exactly what GitHub sent, matching Bronze's own raw-string contract.
     """
     final = dest / f"events_{polled_at:%Y%m%dT%H%M%S%f}_{poll_index:06d}.jsonl"
     tmp = final.with_suffix(final.suffix + ".part")
-    lines = (json.dumps({"polled_at": polled_at.isoformat(), "event": e}) for e in events)
+    lines = (
+        json.dumps({"polled_at": polled_at.isoformat(), "event": json.dumps(e)}) for e in events
+    )
     tmp.write_text("\n".join(lines) + "\n")
     tmp.replace(final)
     return final

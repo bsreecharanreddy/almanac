@@ -23,6 +23,13 @@ _EVENT = {
     "type": "PushEvent",
     "created_at": "2026-09-06T12:00:00Z",
     "repo": {"id": 42, "name": "acme/almanac"},
+    # Present on purpose: `actor` is exactly the field `payloads.EVENT_SCHEMA`
+    # omits (its type varies pre/post 2015), so it only survives the landing
+    # zone's round trip if `event` is carried there as a raw string rather
+    # than a struct typed by that schema -- a real bug Task 4's
+    # batch-equality gate caught 2026-09-06, invisible to every test below
+    # until this field was added.
+    "actor": {"login": "alice"},
 }
 
 
@@ -91,6 +98,26 @@ def test_event_id_and_schema_era_match_the_batch_paths_own_computation(
     row = one(spark.read.format("delta").load(str(dest)))
     assert row["event_id"] == "abc123"
     assert row["schema_era"] == SchemaEra.REDUCED_V3.value
+
+
+def test_actor_login_survives_the_landing_zone_round_trip(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    """`actor` is exactly the field `payloads.EVENT_SCHEMA` omits (its type
+    varies pre/post 2015); it only comes through if the landing zone carries
+    `event` as a raw string rather than a struct typed by that schema."""
+    landing, dest, checkpoint = tmp_path / "landing", tmp_path / "dest", tmp_path / "checkpoint"
+    landing.mkdir()
+    land_poll(
+        landing,
+        [_event("1", "2026-09-06T12:00:00Z")],
+        polled_at="2026-09-06T12:00:01Z",
+        name="poll_0",
+    )
+
+    _ingest(spark, landing, dest, checkpoint, watermark=timedelta(minutes=10))
+
+    assert one(spark.read.format("delta").load(str(dest)))["actor_login"] == "alice"
 
 
 # --- lateness: reported via observe(), because a row this old is dropped
