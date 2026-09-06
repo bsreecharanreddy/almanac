@@ -266,16 +266,31 @@ discipline as the offline features. A streaming aggregate at time T uses
 only events with `created_at < T`. CLAUDE.md's one governing principle
 does not get an exemption because the compute model changed.
 
+**As built.** `compute_repo_stream_features` / `compute_actor_stream_features`
+(one parametrized `_stream_features`, two wrappers), each a timeseries-keyed
+row per event: `events_prior_1h`, `events_prior_24h` (`rangeBetween(-N, -1)`
+— the `-1` is the strict `<`), `secs_since_last_event` (`lag`),
+`arrival_per_hour_24h`. **The strict `<` lives in the feature, not a
+downstream join** — the offline groups are inclusive-of-self and lean on
+`as_of_join` for the boundary, but the online store serves the latest row
+per entity with no join in the path. An **unseen** entity yields all-null,
+not zero (unknown ≠ quiet, the discipline `compute_author_activity`
+applies to an unclosed prior PR); once seen, `0` in a window is a real
+value. A tie-break on `event_id` makes the frame deterministic on a shared
+`created_at`, and a same-second prior event is not counted.
+
 **Tests:**
-- `test_rolling_counts_exclude_events_at_or_after_as_of` — strict `<`, matching `as_of_join`.
-- `test_cold_start_entity_yields_null_not_zero` — the same discipline `compute_author_activity` already applies to an unclosed prior PR.
-- `test_streaming_leakage_suite` *(integration)* — the existing suite gains a streaming case.
+
+- `test_rolling_counts_exclude_events_at_or_after_the_events_own_time`, `test_a_same_second_event_is_not_counted_as_prior` — strict `<`, matching `as_of_join`.
+- `test_cold_start_entity_yields_null_not_zero`, `test_zero_in_window_is_kept_once_the_entity_has_been_seen` — the unknown-vs-zero line.
+- `test_actor_features_partition_on_actor_not_repo` — the actor timeline crosses repos.
+- `test_streaming_features_are_leak_free_and_reproducible_only_when_version_pinned` *(integration, in `test_features_leakage.py`)* — a late arrival with `created_at < T` is leak-free but moves a live re-read, so a build pins the Silver version exactly as offline does.
 
 **Explicitly out of scope, recorded rather than omitted:** re-serving the
 Phase 4 champion on live features. Its vector needs fields the live feed
 does not carry.
 
-**Done when:** the leakage suite is green including the new streaming case.
+**Done when:** the leakage suite is green including the new streaming case; whole-repo `make check` green.
 **Commit:** `feat(stream): point-in-time-correct streaming features`
 
 ## Task 6: Close the online-store prerequisite gaps
