@@ -15,10 +15,19 @@ against local fixtures and replayed archive hours. Streaming plus a
 non-scale-to-zero online store is the most expensive shape this project
 has run, so the ordering matters more here than it did in Phase 5.
 
-**Scope decision already taken (2026-09-06):** the cloud window is pulled
-forward to before the 2026-09-24 credit expiry rather than §9's original
-Nov 2–8, and the phase covers **both** streaming ingest and the online
-store, meeting §9's Phase 6 gate as written rather than amending it.
+**Scope decisions already taken (2026-09-06):** the cloud window is pulled
+forward from §9's original Nov 2–8, and the phase covers **both** streaming
+ingest and the online store, meeting §9's Phase 6 gate as written rather
+than amending it.
+
+**Amended after Task 1.** The pull-forward is *not* a race against the
+2026-09-24 credit expiry. §11 now records that **credit expiry is a budget,
+not a wall** — modest paid spend afterwards is acceptable provided
+resources come down when idle, and **teardown ships with provisioning**
+rather than as a follow-up. The window moves earlier because the work is
+ready. Phase 6 is explicitly **not** scoped down to fit a credit balance;
+if a capacity or window length is chosen for cost, the arithmetic is
+stated and the choice is the user's, not a silent narrowing.
 
 ## Task dependency and cost
 
@@ -98,9 +107,9 @@ class EventStreamConfig(BaseModel):
     name: str
     kind: Literal["event_stream"]
     url: str
-    auth: AuthConfig                 # reused, not redefined
-    rate_limit: RateLimitConfig      # reused, not redefined
-    pages_per_poll: int = 3          # the Link header's real ceiling (§4.6)
+    auth: AuthConfig  # reused, not redefined
+    rate_limit: RateLimitConfig  # reused, not redefined
+    pages_per_poll: int = 3  # the Link header's real ceiling (§4.6)
     poll_interval_header: str = "X-Poll-Interval"
     max_attempts: int = 3
 ```
@@ -115,11 +124,10 @@ log line.
 **Interfaces:**
 
 ```python
-def poll_once(client: RestClient, cfg: EventStreamConfig,
-              etag: str | None) -> PollResult: ...
-def run_poller(cfg: EventStreamConfig, dest: Path, *,
-               max_polls: int | None = None,
-               clock: Clock = ...) -> PollStats: ...
+def poll_once(client: RestClient, cfg: EventStreamConfig, etag: str | None) -> PollResult: ...
+def run_poller(
+    cfg: EventStreamConfig, dest: Path, *, max_polls: int | None = None, clock: Clock = ...
+) -> PollStats: ...
 ```
 
 `PollResult` carries events, the new `ETag`, the server's poll interval,
@@ -146,10 +154,10 @@ and remaining rate budget. `PollStats` aggregates the window.
 **Interfaces:**
 
 ```python
-def stream_events(spark: SparkSession, landing: str, *,
-                  watermark: str = "10 minutes") -> DataFrame: ...
-def write_bronze_stream(df: DataFrame, dest: str,
-                        checkpoint: str) -> StreamingQuery: ...
+def stream_events(
+    spark: SparkSession, landing: str, *, watermark: str = "10 minutes"
+) -> DataFrame: ...
+def write_bronze_stream(df: DataFrame, dest: str, checkpoint: str) -> StreamingQuery: ...
 ```
 
 Era normalization goes through the **existing** `pipeline/eras.py`
@@ -178,9 +186,16 @@ completeness; replay can, on demand, deterministically.
 **Interface:**
 
 ```python
-def replay_hours(spark: SparkSession, hours: list[str], dest: str, *,
-                 lateness: timedelta = ..., duplicate_rate: float = 0.0,
-                 shuffle: bool = False, seed: int = 0) -> ReplayStats: ...
+def replay_hours(
+    spark: SparkSession,
+    hours: list[str],
+    dest: str,
+    *,
+    lateness: timedelta = ...,
+    duplicate_rate: float = 0.0,
+    shuffle: bool = False,
+    seed: int = 0,
+) -> ReplayStats: ...
 ```
 
 **`seed` is not decoration.** Phase 5's Bug 3 was a nondeterministic
@@ -267,8 +282,9 @@ correct and must not drift while adding these).
 
 ```python
 def create_store(name: str, capacity: Capacity = "CU_1") -> OnlineStore: ...
-def publish_feature_table(store: OnlineStore, source: str, online: str,
-                          mode: PublishMode = "TRIGGERED") -> PublishResult: ...
+def publish_feature_table(
+    store: OnlineStore, source: str, online: str, mode: PublishMode = "TRIGGERED"
+) -> PublishResult: ...
 def delete_store(name: str) -> None: ...
 ```
 

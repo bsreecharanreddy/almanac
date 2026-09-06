@@ -566,6 +566,18 @@ measured 2026 volume of **~155–162K events/hour** (§12's corrected figure,
 itself a Gate 1 correction of an earlier `n=1` claim), a 60-second poll
 surfaces on the order of **11%** of the stream.
 
+> **Superseded 2026-09-06 by Task 1's `n=30` measurement: the real figure
+> is ~7.1–7.4%, not ~11%.** Authenticated polling for 30 consecutive
+> intervals returned **zero id overlap between consecutive polls, on all
+> 30** — the window turns over completely inside 60 seconds — at a mean
+> 192.2 events/poll, i.e. ~11,500/hour. Two further results changed the
+> plan rather than confirming it: the **rate limit is not the binding
+> constraint** (~180 requests/hour used of 5,000, so the 7% ceiling comes
+> from honouring `x-poll-interval`, a courtesy, not a technical limit),
+> and the feed carries a stable **305-second lag**, which is a floor on
+> end-to-end freshness that no pipeline work can beat.
+> `docs/findings/2026-09-06-events-api-and-online-store-rates.md`.
+
 Two things follow. First, **authentication is mandatory, not an
 optimization**: three pages per poll at 60 polls/hour is 180 requests/hour
 against an unauthenticated ceiling of 60. Second, and more important, the
@@ -628,16 +640,52 @@ prerequisite `publish_table` demands.
 
 **Scheduling.** §9 placed Phase 6 at Nov 2–8, after the credit expiry. The
 project is running ~8 weeks ahead of that schedule, so the cloud window is
-**pulled forward to before the 2026-09-24 expiry**, on the same reasoning
-§8.3a used for Phase 5 and §5.2 before it. Streaming plus a non-scale-to-
-zero online store is the most expensive shape this project has run, which
-makes the bounded-window discipline above load-bearing rather than
-procedural.
+**pulled forward**, on the same reasoning §8.3a used for Phase 5 and §5.2
+before it. Streaming plus a non-scale-to-zero online store is the most
+expensive shape this project has run, which makes the bounded-window
+discipline above load-bearing rather than procedural.
 
-**Unmeasured, and named as such** (§13's rule): real remaining credit,
-real Events API throughput over a proper multi-poll window, and the
-Lakebase CU rate — none of which have been measured yet, all of which
-Task 1 resolves before anything is provisioned.
+**Amended 2026-09-06, after Task 1 measured what was actually left.** The
+original wording made the pull-forward a race against the 2026-09-24
+expiry. It is not one: §11 now records that **credit expiry is a budget,
+not a wall** — modest paid spend afterwards is acceptable provided
+resources come down when idle. The window is pulled forward because the
+work is ready, not to beat a deadline, and Phase 6 is **not** scoped down
+to fit a balance.
+
+What Task 1 did change is the arithmetic everything was being planned
+against, and it was wrong in a way worth recording. The project's cost
+figures track Databricks DBUs; measured against Azure's own Cost
+Management API, **DBUs were only 53% of real spend** — $65.19 of $122.40
+between 2026-09-01 and 09-06. Virtual Machines ($30.65), NAT Gateway
+($14.97) and Storage ($11.05) made up the rest and appear in no findings
+doc. So remaining credit was **~$61.60, not the ~$118** a DBU-only reading
+implies. NAT and Storage also bill partly per-transaction rather than
+flat, so they rise with activity — an early "standing cost" estimate of
+$4.43/day was activity-inflated and the real idle rate is ~$2.30/day. Full
+method and numbers in
+`docs/findings/2026-09-06-events-api-and-online-store-rates.md`.
+
+**Measured by Task 1, 2026-09-06** (this paragraph previously listed all
+three as unmeasured):
+`docs/findings/2026-09-06-events-api-and-online-store-rates.md`.
+
+- **Events API throughput** — resolved at `n=30`, see the correction above.
+- **Remaining credit** — resolved, and it moved the number the whole phase
+  was being planned against. Databricks DBUs are **only 53% of real Azure
+  spend** ($65.19 of $122.40 across 09-01→09-06; VMs, NAT Gateway and
+  Storage are the rest and appear in no prior findings doc), so remaining
+  credit was **~$61.60, not ~$118**. Every earlier cost figure in this
+  repo is DBU-only and understates real spend by ~47%.
+- **The Lakebase CU rate** — **still unresolved, and named as such.**
+  `system.billing.list_prices` returns zero rows for `LAKEBASE` /
+  `POSTGRES` / `ONLINE` / `OLTP`, the *second* occurrence of the gap Phase
+  5 hit for `VECTOR`/`SEARCH`. Azure's Retail Prices API lists "Premium
+  Database Serverless Compute" at $0.26/DBU-hour in `westus3`, which is
+  the **probable** meter by naming but an inference, not a confirmed
+  mapping — Vector Search's real SKU was only confirmed by provisioning
+  it. Task 9 confirms this one the same way. Bounded estimate: **~$6/day
+  at 1 DBU/hour, ~$25/day if it behaves like Vector Search at 4.**
 
 ## 5. The model
 
@@ -1495,6 +1543,8 @@ an open choice with a defensible alternative.
 | ML platform is the deliverable | Pure data platform, no models | Without a model there is no feature store, and without a feature store there is no point-in-time story — which is the whole reason to build this |
 | Azure spend front-loaded to weeks 3–4 | Cloud work late, as a final phase | Free credits expire 2026-09-24; a late cloud phase wastes them entirely |
 | Free credits fund the data-platform proof; ML serving paid for later | Split evenly, or save credits for serving | Spark backfill at volume is the expensive operation; training and serving are cheap |
+| **Credit expiry is a budget, not a wall** (2026-09-06) | Scope phases down to fit the remaining balance | Broadens the row above. Modest real spend after 2026-09-24 is acceptable *provided* it is spent judiciously and **resources are torn down when not in use** — the point of provisioning is to learn, build and document, not to keep anything online. Future demos bring infrastructure up on demand. Scoping a phase down to fit a balance would have traded architecture quality for a constraint that was never real |
+| **Teardown ships with provisioning** (2026-09-06) | Tear down as a follow-up task | Two incidents: Vector Search billed a flat 4 DBU/hour idle because nothing scaled to zero, and Lakebase documents the same property up front. A delete path written after the fact is written under time pressure, or not at all |
 | 3 Power BI pages | 4+ pages | Beyond three, page count stops carrying signal and starts costing hours |
 | dbt included, scoped to Gold only | No dbt, or dbt through Silver | Market-demanded and cheap at Gold; rewriting Silver in dbt would discard the Spark work that is the point |
 | Streaming built in Phase 6 | Deferred to a future project | Most-probed interview topic, and a deferred project may never happen |
