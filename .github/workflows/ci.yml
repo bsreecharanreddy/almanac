@@ -3,6 +3,28 @@ name: CI
 on:
   push:
     branches: [main]
+    # A docs-only push cannot change what the suite checks: `docs/` holds
+    # only .md and .png, nothing under it is read at runtime (the
+    # `docs/findings/...` strings in `src/` are prose citations inside
+    # comments), and ruff/mypy/pytest never walk it. This does NOT weaken
+    # the full-suite gate, which was the first objection to it -- GitHub
+    # skips a run only when *every* path in the push diff matches: "When
+    # all the path names match patterns in `paths-ignore`, the workflow
+    # will not run" (Actions workflow-syntax reference, checked
+    # 2026-09-06). A commit touching both docs and code still runs.
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'CLAUDE.md'
+
+  # Deliberately unfiltered. A pull request is the merge gate, and a
+  # skipped run reports no status at all -- so if a required status check
+  # is ever enabled, a filtered docs-only PR would wait forever on a check
+  # that will never report. Branch protection is unavailable today (the
+  # API returns 403 for a private repo on the free plan) but becomes
+  # available the moment this repo goes public. Filtering `push` alone
+  # fixes the burst this was written for -- all six redundant runs on
+  # 2026-09-06 were pushes to `main` -- without arming that trap.
   pull_request:
 
 # One run per ref at a time; a newer push cancels the older run rather than
