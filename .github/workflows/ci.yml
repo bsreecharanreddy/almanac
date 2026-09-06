@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# One run per ref at a time; a newer push cancels the older run rather than
+# racing it. The full suite is ~45 min on a 2-core runner, so a burst of
+# commits otherwise leaves several redundant runs grinding in parallel --
+# six at once on 2026-09-06, all superseded by the newest, which is the
+# only one whose result meant anything.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
