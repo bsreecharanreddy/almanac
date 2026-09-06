@@ -184,7 +184,7 @@ WHERE event_date >= '2025-09-20'
 ## Re-run — the scoped run
 
 ```sh
-export DATABRICKS_HOST=https://adb-7405615444091260.0.azuredatabricks.net
+export DATABRICKS_HOST=https://<workspace>.azuredatabricks.net
 cd infra/terraform
 terraform apply -target=databricks_job.embeddings -var 'embeddings_since=2025-09-20'
 databricks jobs run-now 79790319052446 --no-wait

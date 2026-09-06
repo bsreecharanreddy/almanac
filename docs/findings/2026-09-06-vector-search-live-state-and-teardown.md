@@ -55,8 +55,11 @@ this service and a long idle one is the worst.
 
 ![Vector Search endpoint, AI Search tab](../images/vector-search-endpoint.png)
 
-The Creator column is masked; every other identifying field in these two
-captures is an infrastructure name, not a person.
+Masked in these captures: the Creator column here, and the MCP server URL
+in the index capture below, which carried the workspace host. The
+workspace host is written as `<workspace>.azuredatabricks.net` throughout
+this repo for the same reason. Everything left visible is a resource
+name or a measured number.
 
 ```
 name                 almanac-embeddings
@@ -137,7 +140,7 @@ index sync.
 ## Recreate
 
 ```sh
-export DATABRICKS_HOST=https://adb-7405615444091260.0.azuredatabricks.net
+export DATABRICKS_HOST=https://<workspace>.azuredatabricks.net
 cd infra/terraform
 terraform apply -target=databricks_vector_search_endpoint.embeddings
 terraform apply -target=databricks_vector_search_index.pr_issue_embeddings

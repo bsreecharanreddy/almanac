@@ -7,7 +7,7 @@
 `default` candidate — `docs/findings/2026-09-04-classification-model-serving-measured.md`).
 `terraform apply -target=databricks_model_serving.pr_review_sla_risk`;
 20 real `POST` invocations against
-`https://adb-7405615444091260.0.azuredatabricks.net/serving-endpoints/almanac-pr-review-sla-risk/invocations`,
+`https://<workspace>.azuredatabricks.net/serving-endpoints/almanac-pr-review-sla-risk/invocations`,
 timed with `curl -w "%{time_total}"` (excludes CLI startup overhead —
 the first, CLI-based call is reported separately below and not mixed
 into the percentiles).
