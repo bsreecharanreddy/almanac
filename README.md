@@ -163,7 +163,7 @@ flowchart LR
   subgraph ml[ML platform]
     R[Model registry<br/>MLflow]
     E[Model Serving<br/>scale-to-zero]
-    V[Retrieval index<br/>feature infrastructure]
+    V[Vector Search<br/>pre-computed embeddings]
   end
 
   GHA --> B
@@ -173,13 +173,13 @@ flowchart LR
   S --> F
   G --> BI[Power BI]
   F --> R --> E
-  F --> V
+  B --> V
   V --> F
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
-  class GHA,B,S,G,F,R,E done
-  class API,V,BI todo
+  class GHA,B,S,G,F,R,E,V done
+  class API,BI todo
 ```
 
 Solid = built and green. Dashed = designed, not built.
