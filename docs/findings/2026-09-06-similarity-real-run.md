@@ -182,7 +182,7 @@ bad rate.
 ## Re-run
 
 ```sh
-export DATABRICKS_HOST=https://adb-7405615444091260.0.azuredatabricks.net
+export DATABRICKS_HOST=https://<workspace>.azuredatabricks.net
 cd infra/terraform && terraform apply -target=databricks_job.pr_similarity
 databricks jobs run-now 518991216623709 --no-wait
 # then similarity_comparison once pr_similarity's table exists
