@@ -21,7 +21,7 @@ The role could not be granted because the account console rejected the only
 Global Administrator this tenant had:
 
 ```
-AADSTS500200: User account 'bsreecharanreddy@outlook.com' is a personal
+AADSTS500200: User account '<redacted>@outlook.com' is a personal
 Microsoft account. Personal Microsoft accounts are not supported for this
 application unless explicitly invited to an organization.
 ```

@@ -53,6 +53,11 @@ this service and a long idle one is the worst.
 
 ## Endpoint, as deployed
 
+![Vector Search endpoint, AI Search tab](../images/vector-search-endpoint.png)
+
+The Creator column is masked; every other identifying field in these two
+captures is an infrastructure name, not a person.
+
 ```
 name                 almanac-embeddings
 id                   9ea6c036-ee06-47ab-a184-3abdf059dd94
@@ -63,6 +68,8 @@ creation_timestamp   1788614302839  (2026-09-05)
 ```
 
 ## Index, as deployed
+
+![Vector Search index in Catalog Explorer](../images/vector-search-index.png)
 
 ```
 name                 almanac_dbx.embeddings.pr_issue_embeddings_index
