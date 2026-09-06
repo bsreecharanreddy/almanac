@@ -18,7 +18,12 @@ from almanac.features.groups import (
     compute_pr_static,
     compute_repo_activity,
 )
-from almanac.features.registration import primary_key_sql, register_feature_table
+from almanac.features.registration import (
+    change_data_feed_sql,
+    not_null_key_sql,
+    primary_key_sql,
+    register_feature_table,
+)
 from almanac.spark import active_or_local_session
 
 
@@ -60,6 +65,17 @@ def run_features(
         spec.compute(events).write.format("delta").mode("overwrite").save(path)
         if register:
             register_feature_table(spark, table=spec.name, path=path, schema=schema)
+            # Online-publish prerequisites, in dependency order: NOT NULL
+            # keys before the PRIMARY KEY that needs them, CDF anytime
+            # (design §4.6). Verified against real UC in Phase 6's cloud burn.
+            spark.sql(change_data_feed_sql(schema=schema, table=spec.name))
+            for stmt in not_null_key_sql(
+                schema=schema,
+                table=spec.name,
+                entity_cols=spec.entity_cols,
+                event_time_col=spec.event_time_col,
+            ):
+                spark.sql(stmt)
             drop_sql, add_sql = primary_key_sql(
                 schema=schema,
                 table=spec.name,
