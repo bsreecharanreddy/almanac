@@ -91,7 +91,9 @@ carrying its `n` and the exact command that produced it.
 
 **Files:**
 - New: `src/almanac/stream/__init__.py`, `src/almanac/stream/poller.py`
-- New: `config/sources/github_events.yaml`
+- New: `conf/sources/github_events.yml` (the plan originally said
+  `config/sources/*.yaml`; the repo's real convention, matching
+  `github_rest.yml`, is `conf/sources/*.yml`)
 - Test: `tests/unit/test_stream_poller.py`
 
 **Config — composed, not inherited.** `RestSourceConfig` already carries

@@ -1,0 +1,26 @@
+# The GitHub Events API as a live stream (design doc §4.6).
+#
+# Confirmed live 2026-09-06
+# (docs/findings/2026-09-06-events-api-and-online-store-rates.md): this
+# captures ~7% of the real firehose, because the retrievable window turns
+# over completely inside one poll interval -- zero event-id overlap
+# across 30 consecutive polls. It is a sample, not a mirror, which is why
+# Task 4's replay harness carries the completeness proof this source
+# cannot.
+name: github_events
+kind: event_stream
+
+url: "https://api.github.com/events?per_page=100"
+
+auth:
+  scheme: bearer
+  token_env: GITHUB_TOKEN
+
+rate_limit:
+  requests_per_hour: 5000
+  header_remaining: X-RateLimit-Remaining
+  header_reset: X-RateLimit-Reset
+
+pages_per_poll: 3
+poll_interval_header: X-Poll-Interval
+max_attempts: 3
