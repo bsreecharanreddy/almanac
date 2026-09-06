@@ -5,12 +5,12 @@ which carries the two live probes and the decisions this plan wires into
 code. Same register as `docs/plans/2026-09-04-phase-5-embeddings-vector-index-plan.md`:
 interfaces and test intent, not full inline code, since there is no separate
 review pass between writing this and implementing it. TDD discipline,
-`make check` before every commit, one STATUS.md verification-log row per
-task, unchanged.
+`make check` (lint → typecheck → test) green before every commit, one
+STATUS.md verification-log row per task, one commit per task, unchanged.
 
 **Ordering principle, unchanged from Phase 5:** every real-money step —
 the live poll window, the online store, the streaming cluster — happens
-once, last, in Task 8, after everything upstream is built and tested
+once, last, in Task 9, after everything upstream is built and tested
 against local fixtures and replayed archive hours. Streaming plus a
 non-scale-to-zero online store is the most expensive shape this project
 has run, so the ordering matters more here than it did in Phase 5.
@@ -20,6 +20,22 @@ forward to before the 2026-09-24 credit expiry rather than §9's original
 Nov 2–8, and the phase covers **both** streaming ingest and the online
 store, meeting §9's Phase 6 gate as written rather than amending it.
 
+## Task dependency and cost
+
+Tasks 2–8 are local-only and cost nothing; each is independently
+committable and testable against fixtures. Only Tasks 1 and 9 touch the
+cloud, and only Task 9 provisions anything billable.
+
+```
+1 (measure, cloud) ─┐
+                    ├─→ 2 (config+poller) ─→ 3 (ingest) ─→ 4 (replay) ─→ 5 (features) ─┐
+                    │                                                                   ├─→ 9 (cloud run)
+                    └─────────────→ 6 (CDF/NOT NULL) ─→ 7 (online store) ─→ 8 (job TF) ─┘
+```
+
+Task 6 has no dependency on the streaming path and can be done at any
+point after Task 1; it is placed where it is because Task 7 needs it.
+
 ---
 
 ## Task 1: Measure before provisioning — throughput, credit, CU rate
@@ -27,6 +43,9 @@ store, meeting §9's Phase 6 gate as written rather than amending it.
 Not a code task. The same cloud-verification shape as Phase 5 Task 1 and
 Phase 2's DBU-rate lookup, and it exists because §4.6's two probes are
 `n=1` and must not become design premises unexamined.
+
+**Prerequisite:** the Databricks PAT has expired (1-hour lifetime); re-mint
+before starting. Azure CLI auth is live (`bscr-az-portfolio`).
 
 **What gets measured and committed to
 `docs/findings/2026-09-06-events-api-and-online-store-rates.md` before
@@ -55,36 +74,68 @@ it does not block the phase. If the Lakebase idle rate prices the bounded
 window above ~15% of remaining credit, capacity drops to `CU_1` or the
 window shortens; the arithmetic is committed either way.
 
-## Task 2: The event poller
+**Done when:** the findings doc exists with four measured numbers, each
+carrying its `n` and the exact command that produced it.
+**Commit:** `docs: measure Events API throughput and online-store rates`
+
+## Task 2: Event-stream config and the poller
 
 **Files:**
 - New: `src/almanac/stream/__init__.py`, `src/almanac/stream/poller.py`
+- New: `config/sources/github_events.yaml`
 - Test: `tests/unit/test_stream_poller.py`
 
+**Config — composed, not inherited.** `RestSourceConfig` already carries
+`auth: AuthConfig` and `rate_limit: RateLimitConfig`, but its own shape
+(`url_template`, `list_url_template`, `enrichment_fields`) does not
+describe a polled event stream, and it is `frozen` / `extra="forbid"`.
+So a sibling model reusing the same two components:
+
+```python
+class EventStreamConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    kind: Literal["event_stream"]
+    url: str
+    auth: AuthConfig                 # reused, not redefined
+    rate_limit: RateLimitConfig      # reused, not redefined
+    pages_per_poll: int = 3          # the Link header's real ceiling (§4.6)
+    poll_interval_header: str = "X-Poll-Interval"
+    max_attempts: int = 3
+```
+
+This follows `RestSourceConfig`'s own precedent — "distinct from
+`SourceConfig`: the shapes do not overlap" — and the repo's
+composition-over-inheritance convention. **The token comes from
+`auth.token_env`**, a named environment variable, exactly as the §4.5a
+client already does. No token literal enters the repo, the config, or a
+log line.
+
 **Interfaces:**
-- `poll_once(client, etag: str | None) -> PollResult` — one conditional
-  request. Returns events, the new `ETag`, the server's `x-poll-interval`,
-  and remaining rate budget.
-- `run_poller(dest: str, *, max_polls: int | None, clock) -> PollStats` —
-  the loop. Writes each poll's raw JSON to `dest` as one object per event,
-  partitioned by ingest time.
 
-**Behaviour that must be tested, all against a faked transport — no
-network in the unit suite (`-m "not network"` is CI's contract):**
-- Honours `x-poll-interval` from the response, never a hardcoded sleep.
-- Sends `If-None-Match` and treats `304` as "no new events", not an error.
-- Backs off on `403`/`429` using `Retry-After` when present. Per the
-  `almanac-recurring-ci-failure` lesson carried from Canopica: **a 429 is
-  a signal to handle, not a limit to raise.**
-- Writes are `.part`-then-rename, so a crash never leaves a half-written
-  object — the existing Bronze convention, reused not reinvented.
-- Records the *poll* time separately from the event's own `created_at`.
-  These diverge, and that divergence is exactly what Task 3's watermark
-  measures.
+```python
+def poll_once(client: RestClient, cfg: EventStreamConfig,
+              etag: str | None) -> PollResult: ...
+def run_poller(cfg: EventStreamConfig, dest: Path, *,
+               max_polls: int | None = None,
+               clock: Clock = ...) -> PollStats: ...
+```
 
-**Reuse, not duplication:** `source.py` already has a rate-limited,
-`Link`-paginating REST client from §4.5a's second source. The poller
-extends that client rather than adding a second HTTP path.
+`PollResult` carries events, the new `ETag`, the server's poll interval,
+and remaining rate budget. `PollStats` aggregates the window.
+
+**Tests — faked transport, no network (CI runs `-m "not network"`):**
+- `test_respects_server_poll_interval` — sleeps on the header value, never a constant.
+- `test_conditional_request_sends_if_none_match`
+- `test_304_is_no_new_events_not_an_error`
+- `test_backs_off_on_429_using_retry_after` — **a 429 is a signal to handle, not a limit to raise.**
+- `test_partial_write_then_rename` — a crash never leaves a half-written object (existing Bronze convention).
+- `test_poll_time_recorded_separately_from_created_at` — the divergence Task 3's watermark measures.
+- `test_token_never_appears_in_logs_or_error_messages`
+
+**Done when:** all seven pass; `make check` green.
+**Commit:** `feat(stream): poll the GitHub Events API with ETag and backoff`
 
 ## Task 3: Streaming ingest — watermark, dedup, exactly-once
 
@@ -93,27 +144,26 @@ extends that client rather than adding a second HTTP path.
 - Test: `tests/unit/test_stream_ingest.py`, `tests/integration/test_stream_exactly_once.py`
 
 **Interfaces:**
-- `stream_events(spark, landing_path, *, watermark: str) -> DataFrame` —
-  a streaming read of the landing zone, era-normalized through the
-  **existing** `pipeline/eras.py` handlers, watermarked on the event's own
-  `created_at`.
-- `write_bronze_stream(df, dest, checkpoint) -> StreamingQuery` — the
-  idempotent Delta sink.
 
-**The correctness requirements, each with its own test:**
-- **Dedup is on `event_id` within the watermark** — the same key Silver's
-  batch dedup uses (§4.2), so the two paths agree by construction. A
-  duplicate delivered inside the watermark is dropped; one delivered
-  outside it is counted and reported, never silently absorbed.
-- **Exactly-once across a restart.** The integration test kills the query
-  mid-stream, restarts from the same checkpoint, and asserts the output is
-  byte-identical to an uninterrupted run — the streaming analogue of
-  Phase 1's "rerun any hour twice → byte-identical" gate.
-- **Late arrival is counted, not discarded silently.** A row later than
-  the watermark increments a metric that Task 8 publishes.
-- **§4.1a is not silently skipped:** the legacy era has no `event_id`, but
-  the live feed is `REDUCED_V3` only, so the streaming path asserts the
-  era rather than handling a case it can never see.
+```python
+def stream_events(spark: SparkSession, landing: str, *,
+                  watermark: str = "10 minutes") -> DataFrame: ...
+def write_bronze_stream(df: DataFrame, dest: str,
+                        checkpoint: str) -> StreamingQuery: ...
+```
+
+Era normalization goes through the **existing** `pipeline/eras.py`
+handlers rather than a second implementation.
+
+**Tests:**
+- `test_dedups_on_event_id_within_watermark` — the *same* key Silver's batch dedup uses (§4.2), so the paths agree by construction.
+- `test_duplicate_outside_watermark_is_counted_not_silently_absorbed`
+- `test_late_row_increments_metric` — late arrival is reported, never discarded quietly.
+- `test_exactly_once_across_restart` *(integration)* — kill the query mid-stream, restart from the same checkpoint, assert output byte-identical to an uninterrupted run. The streaming analogue of Phase 1's "rerun any hour twice" gate.
+- `test_asserts_reduced_era` — §4.1a's legacy era has no `event_id`, but the live feed is `REDUCED_V3` only, so the path asserts the era rather than handling a case it can never meet. Deliberate, not overlooked.
+
+**Done when:** the restart test passes repeatedly (run it 3×; a flaky exactly-once test is a failing one).
+**Commit:** `feat(stream): watermarked, exactly-once Bronze ingest`
 
 ## Task 4: The replay harness — where correctness is actually proved
 
@@ -126,22 +176,30 @@ to load-bearing. The live feed is a ~11% tail and cannot demonstrate
 completeness; replay can, on demand, deterministically.
 
 **Interface:**
-- `replay_hours(spark, hours, dest, *, lateness, duplicate_rate, shuffle) -> ReplayStats`
-  — feeds real committed GH Archive fixtures through the **identical**
-  Task 3 path, injecting controlled disorder.
 
-**What it must be able to force, each asserted:**
-- An event arriving after its watermark has passed.
-- The same `event_id` delivered twice, in different micro-batches.
-- Events delivered out of `created_at` order within a batch.
-- A gap (a missing interval), so recovery is observable.
+```python
+def replay_hours(spark: SparkSession, hours: list[str], dest: str, *,
+                 lateness: timedelta = ..., duplicate_rate: float = 0.0,
+                 shuffle: bool = False, seed: int = 0) -> ReplayStats: ...
+```
 
-**The harness reuses the committed fixtures**, not new synthetic data —
-the same files Phase 1's tests already use, so a replay result is
-comparable to a batch result over the same input. That comparison is the
-gate: **replayed streaming output must equal batch Silver output over the
-same hours.** If the two disagree, one of them is wrong, and the test says
-which rows.
+**`seed` is not decoration.** Phase 5's Bug 3 was a nondeterministic
+`rand` sample read twice; a replay harness that injects disorder
+unseeded is the same defect waiting to happen, and an unreproducible
+correctness test is not a correctness test.
+
+**Tests, one per forced condition:**
+- `test_forces_event_after_watermark_passed`
+- `test_forces_duplicate_across_micro_batches`
+- `test_forces_out_of_order_within_batch`
+- `test_forces_gap_and_observes_recovery`
+- `test_replayed_stream_equals_batch_silver` — **the gate.** Replayed streaming output must equal batch Silver output over the same committed fixtures. If they disagree, one is wrong, and the test names the differing rows.
+
+Uses the **committed fixtures**, not new synthetic data, so a replay
+result is directly comparable to a batch result over the same input.
+
+**Done when:** all five pass, and the equality test is reproducible across seeds.
+**Commit:** `feat(stream): replay harness forcing late, duplicate and out-of-order events`
 
 ## Task 5: Streaming feature aggregation
 
@@ -149,21 +207,28 @@ which rows.
 - New: `src/almanac/stream/features.py`
 - Test: `tests/unit/test_stream_features.py`, extend `tests/integration/test_features_leakage.py`
 
-**Scope is constrained by §4.6's first finding** and the plan says so
+**Scope is constrained by §4.6's first finding**, and the plan says so
 plainly: reduced-era events cannot produce §5.1's label or any text
 feature, so the online feature set is what the reduced payload supports —
 rolling event counts per repo and per actor, arrival rate, inter-event
-timing, and time-since-last-event.
+timing, time-since-last-event.
 
-**The non-negotiable:** these are computed with the **same** point-in-time
+**The non-negotiable:** computed with the **same** point-in-time
 discipline as the offline features. A streaming aggregate at time T uses
-only events with `created_at < T`. The leakage suite gains a streaming
-case; CLAUDE.md's one governing principle does not get an exemption
-because the compute model changed.
+only events with `created_at < T`. CLAUDE.md's one governing principle
+does not get an exemption because the compute model changed.
 
-**Explicitly out of scope, and recorded rather than omitted:** re-serving
-the Phase 4 champion on live features. Its vector needs fields the live
-feed does not carry. Phase 6 serves fresh features and proves the path.
+**Tests:**
+- `test_rolling_counts_exclude_events_at_or_after_as_of` — strict `<`, matching `as_of_join`.
+- `test_cold_start_entity_yields_null_not_zero` — the same discipline `compute_author_activity` already applies to an unclosed prior PR.
+- `test_streaming_leakage_suite` *(integration)* — the existing suite gains a streaming case.
+
+**Explicitly out of scope, recorded rather than omitted:** re-serving the
+Phase 4 champion on live features. Its vector needs fields the live feed
+does not carry.
+
+**Done when:** the leakage suite is green including the new streaming case.
+**Commit:** `feat(stream): point-in-time-correct streaming features`
 
 ## Task 6: Close the online-store prerequisite gaps
 
@@ -178,58 +243,106 @@ Two gaps found during design (§4.6's table), both pure DDL:
   in `embed/pipeline.py`, absent for feature tables.
 - `ALTER TABLE … ALTER COLUMN <pk> SET NOT NULL` — required; not enforced.
 
-Tested as string-building plus a real local-metastore round trip, the same
-way `primary_key_sql` already is. The `TIMESERIES` primary key needs no
-change — §4.4a already emits it.
+**Tests:** string-building plus a real local-metastore round trip, the
+same way `primary_key_sql` already is —
+`test_enables_cdf_on_feature_table`, `test_sets_pk_columns_not_null`,
+`test_timeseries_pk_unchanged` (a regression guard: §4.4a's DDL is already
+correct and must not drift while adding these).
 
-## Task 7: Online store, authored not applied
+**Done when:** `make check` green; the existing registration tests still pass unmodified.
+**Commit:** `feat(features): CDF and NOT NULL keys for online publishing`
+
+## Task 7: Online store wrapper, authored not applied
 
 **Files:**
 - New: `src/almanac/stream/online_store.py`
-- Modify: `infra/terraform/` (online store + its teardown path), `pyproject.toml`
-  (`databricks-feature-engineering>=0.13.0` into the `ml` extra, floor
-  re-checked live at implementation time, not carried from this plan)
+- Modify: `pyproject.toml` — `databricks-feature-engineering>=0.13.0` into
+  the `ml` extra, **floor re-checked live against PyPI's JSON API at
+  implementation time**, not carried from this plan (Phase 5 Task 2's
+  Gate 2 catch: a live-search claim about a version was wrong, PyPI's own
+  API was right)
 - Test: `tests/unit/test_online_store.py`
 
 **Interfaces** wrap the documented API rather than reimplementing it:
-`create_online_store(name, capacity)`, `publish_feature_table(...)`,
-`delete_online_store(name)`.
+
+```python
+def create_store(name: str, capacity: Capacity = "CU_1") -> OnlineStore: ...
+def publish_feature_table(store: OnlineStore, source: str, online: str,
+                          mode: PublishMode = "TRIGGERED") -> PublishResult: ...
+def delete_store(name: str) -> None: ...
+```
 
 **Provisioned with its teardown in the same change.** §4.6 records that
-Lakebase does not scale to zero; this task therefore ships the delete path
-and the cost note *before* Task 8 spends anything, which is precisely what
-Phase 5 did not do for Vector Search and had to correct afterwards.
+Lakebase does not scale to zero; this task therefore ships `delete_store`
+and the cost note *before* Task 9 spends anything — precisely what Phase 5
+did not do for Vector Search and had to correct afterwards.
 
-`publish_mode` starts `TRIGGERED`; `CONTINUOUS` is what Task 8 measures,
-since it is the mode that keeps a streaming pipeline alive and therefore
-the one that costs money.
+**Tests** are contract tests against a faked client (no cloud):
+`test_capacity_defaults_to_smallest`, `test_publish_requires_cdf_source`,
+`test_delete_is_idempotent`.
 
-**Cannot `apply` until Task 8** — the source feature tables must exist
-with CDF first. Same "author now, apply once the dependency is real" shape
-as `databricks_model_serving`'s `entity_version` and Phase 5's index.
+**Done when:** `make check` green. **Cannot `apply` until Task 9** — the
+source feature tables must exist with CDF first. Same "author now, apply
+once the dependency is real" shape as `databricks_model_serving`'s
+`entity_version` and Phase 5's index.
+**Commit:** `feat(stream): Lakebase online-store wrapper with teardown`
 
-## Task 8: The real cloud run, then teardown
+## Task 8: Terraform — the streaming job and the online store
+
+**Files:**
+- New: `infra/terraform/streaming.tf`
+- Modify: `infra/terraform/variables.tf`
+
+Follows the established per-workload pattern (`embeddings.tf`,
+`similarity.tf`), not a new one: a `databricks_job` for the poller +
+streaming query, plus the online-store resource.
+
+**Two things carried from prior incidents rather than rediscovered:**
+- `variables.tf`'s existing notes record that a raw `databricks_job`
+  cannot derive library dependencies the way a bundle would — the
+  streaming job declares its own explicitly.
+- **`prevent_destroy` stays OFF** on the online store, deliberately, and
+  the comment says why: it is provisioned for a bounded window and torn
+  down at the end of Task 9. Phase 5's `vector_search.tf` carries the
+  mirror-image note; the reasoning is recorded at the resource, not in a
+  commit message that nobody will find.
+
+**Done when:** `terraform fmt -check` and `terraform validate` clean, and
+`terraform plan` shows the expected resources to add and nothing else to
+change.
+**Commit:** `infra: Terraform for the streaming job and online store`
+
+## Task 9: The real cloud run, then teardown
 
 The only task that spends money, and the only one that can close §9's
 gate: **"live events land and update online features."**
 
 **Sequence, in order:**
-1. `terraform apply` the online store at the capacity Task 1's rate
-   analysis chose.
+1. `terraform apply` the online store at the capacity Task 1's rate analysis chose.
 2. Run the poller against the live API for a bounded window, authenticated.
 3. Streaming ingest live → Bronze → streaming features.
 4. `publish_table` in `CONTINUOUS` mode; confirm a live event reaches the
    online store and changes a served feature value. **This is the gate**,
-   and it is demonstrated end to end, not asserted.
+   demonstrated end to end, not asserted.
 5. Measure: end-to-end freshness lag (event `created_at` → online store
-   readable), the real capture fraction over the window, late-arrival and
+   readable), real capture fraction over the window, late-arrival and
    duplicate counts, and the **real idle DBU/hour of the online store**.
-6. **Tear down**, and record the measured idle rate in the findings doc
-   the way `2026-09-06-vector-search-live-state-and-teardown.md` does.
+6. **Tear down**, recording the measured idle rate the way
+   `2026-09-06-vector-search-live-state-and-teardown.md` does.
 
-**Capture before the irreversible step** — endpoint metadata, a live query,
-and the measured numbers get written down *before* teardown, not after.
+**Capture before the irreversible step** — store metadata, a live query,
+and every measured number get written down *before* teardown, not after.
 That rule exists because Phase 5 nearly lost its evidence.
+
+**A teardown-order trap to check first, not discover:** Phase 5's targeted
+`terraform destroy` pulled in `databricks_job.pr_similarity` as a
+dependent and would have destroyed its run history — the evidence for four
+real runs. Run `terraform plan -destroy -target=…` and **read the resource
+count** before applying it here.
+
+**Done when:** the gate is demonstrated, the numbers are in a findings doc,
+and `terraform plan` shows the store gone.
+**Commit:** `feat(stream): live streaming window measured, online store torn down`
 
 ---
 
@@ -249,9 +362,9 @@ That rule exists because Phase 5 nearly lost its evidence.
   reduced-era payload (§4.6), not merely unbuilt.
 - **Backfilling the online store with full history** — the gate is
   freshness, not coverage.
-- **Multi-region or HA read replicas** — the API supports up to 3, and
-  this is a portfolio window, not a production SLA.
-- **Enriching live events via the §4.5a REST client** to recover the
-  dropped fields. Genuinely interesting, genuinely a different phase: it
-  would restore label-capable live data at 5,000 req/hour against a
-  bounded repo set. Named here so its absence reads as a decision.
+- **Multi-region or HA read replicas** — the API supports up to 3, and this
+  is a portfolio window, not a production SLA.
+- **Enriching live events via the §4.5a REST client** to recover the dropped
+  fields. Genuinely interesting, genuinely a different phase: it would
+  restore label-capable live data at 5,000 req/hour against a bounded repo
+  set. Named here so its absence reads as a decision.
