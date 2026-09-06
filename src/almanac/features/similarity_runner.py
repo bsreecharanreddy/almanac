@@ -20,12 +20,23 @@ from almanac.model.dataset import compute_breach_labels
 from almanac.spark import active_or_local_session
 
 
-def build_similarity_spine(events: DataFrame, embeddings: DataFrame) -> DataFrame:
+def build_similarity_spine(
+    events: DataFrame, embeddings: DataFrame, *, since_date: str | None = None
+) -> DataFrame:
     """The PR-opened spine, each row's own embedding joined in by
     entity_key -- the same "pr:{repo_id}:{pr_number}" format Task 2's
     extract_texts builds from Bronze's raw JSON strings, reconstructed
     here from Silver's typed columns instead.
+
+    `since_date` (a Silver `event_date` lower bound) must match the
+    embeddings job's own `--since-date`: the index only holds PRs opened on
+    or after it, and `compute_pr_similarity`'s point-in-time filter only
+    ever returns *older* neighbors -- a spine that reaches back before the
+    embedded window finds nothing for those rows
+    (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md).
     """
+    if since_date is not None:
+        events = events.where(F.col("event_date") >= since_date)
     spine = build_pr_opened_spine(events)
     keyed = spine.withColumn(
         "entity_key",
@@ -50,6 +61,7 @@ def run_similarity(
     k: int = 10,
     sample_size: int | None = None,
     sample_seed: int = 42,
+    since_date: str | None = None,
 ) -> int:
     """Compute and overwrite the similarity feature table.
 
@@ -63,7 +75,7 @@ def run_similarity(
     """
     events = spark.read.format("delta").load(f"{silver_path}/clean")
     embeddings = spark.read.format("delta").load(embeddings_path)
-    spine = build_similarity_spine(events, embeddings)
+    spine = build_similarity_spine(events, embeddings, since_date=since_date)
     if sample_size is not None:
         spine = spine.orderBy(F.rand(seed=sample_seed)).limit(sample_size)
 
@@ -94,6 +106,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Bound the spine before querying the real index. Omit for the full population.",
     )
     parser.add_argument("--sample-seed", type=int, default=42)
+    parser.add_argument(
+        "--since-date",
+        default=None,
+        help="Silver event_date lower bound -- must match the embeddings job's --since-date.",
+    )
     return parser
 
 
@@ -111,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         k=args.k,
         sample_size=args.sample_size,
         sample_seed=args.sample_seed,
+        since_date=args.since_date,
     )
     print(f"Computed similarity for {written} spine rows.")
     return 0
