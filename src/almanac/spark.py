@@ -25,6 +25,19 @@ def _builder(app_name: str) -> SparkSession.Builder:
         # Non-negotiable: event-time correctness depends on it.
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.ui.showConsoleProgress", "false")
+        # This session only ever runs local[*] (design doc §8) against test
+        # or fixture data of at most a few thousand rows. Spark's default
+        # 200 shuffle partitions is then pure scheduler overhead -- ~200
+        # near-empty tasks per join/window/aggregation, and the suite runs
+        # thousands. 8 fits a typical local core count without
+        # oversubscribing a 2-core CI runner. Databricks sets its own from
+        # the cluster (a job task takes `active_or_local_session`'s existing
+        # session, never this builder), and `embed.pipeline`'s one
+        # partition-count-sensitive path passes an explicit `repartition()`,
+        # so neither is affected. The UI binds a port on every session start
+        # and nothing here reads it.
+        .config("spark.sql.shuffle.partitions", "8")
+        .config("spark.ui.enabled", "false")
     )
 
 
