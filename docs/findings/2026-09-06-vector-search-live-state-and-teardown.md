@@ -137,21 +137,43 @@ champion, `system.billing` history, and the storage account holding the
 So this is **not** a re-embed. Recreation is `terraform apply` plus one
 index sync.
 
+## Torn down, 2026-09-06
+
+Done, and **not** with `terraform destroy`. A targeted destroy planned
+**3 resources, not 2**: `databricks_job.pr_similarity` came along as a
+dependent, because its parameters reference the endpoint and index names.
+Deleting a Databricks job deletes its run history with it, and that
+history is the evidence for four real runs — including the crash that
+found bug 1 and the run that proved bug 3 fixed. The job also costs
+nothing idle, so destroying it bought nothing.
+
+Terraform 1.15.8 has no `-exclude` that works alongside `-target`, so the
+two resources were deleted directly and the state reconciled after:
+
+```sh
+databricks vector-search-indexes delete-index almanac_dbx.embeddings.pr_issue_embeddings_index
+databricks vector-search-endpoints delete-endpoint almanac-embeddings
+terraform state rm databricks_vector_search_index.pr_issue_embeddings \
+                   databricks_vector_search_endpoint.embeddings
+```
+
+Verified after: `list-endpoints` returns empty, `terraform plan` reports
+**2 to add, 0 to change, 0 to destroy**, and all four `pr_similarity` runs
+are still listed against the surviving job.
+
 ## Recreate
 
 ```sh
 export DATABRICKS_HOST=https://<workspace>.azuredatabricks.net
 cd infra/terraform
-terraform apply -target=databricks_vector_search_endpoint.embeddings
-terraform apply -target=databricks_vector_search_index.pr_issue_embeddings
+terraform apply     # the two resources are the only diff: 2 to add
 databricks vector-search-indexes sync-index \
   --index-name almanac_dbx.embeddings.pr_issue_embeddings_index
 # wait for get-index ... status.ready = true, then re-run the query above
 ```
 
-**Note before destroying:** `vector_search.tf` carries
-`prevent_destroy = true` on the index, added 2026-09-05 because the
-provider reads `endpoint_id`/`index_subtype` as drifting to null and a
-plain `apply` would otherwise destroy and recreate it. That guard has to
-be removed deliberately for a teardown, and **restored afterwards** — it
-is protecting against a different failure than this teardown is.
+**Set `prevent_destroy = true` back on the index in the same change that
+recreates it.** It was turned off deliberately for this teardown, but it
+guards a different failure: the provider reads
+`endpoint_id`/`index_subtype` as drifting to null, so a plain `apply`
+against a *live* index would destroy and recreate it.
