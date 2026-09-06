@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pyspark.sql import SparkSession
 
-from almanac.model.dataset import join_breach_label, join_label
+from almanac.model.dataset import join_breach_label, join_label, join_similarity_features
 
 pytestmark = pytest.mark.spark
 
@@ -84,3 +84,27 @@ def test_breach_label_covers_trainable_and_closed_no_response_and_excludes_the_r
     }
 
     assert result == {1: True, 2: False, 3: True, 4: False}
+
+
+def test_join_similarity_features_keeps_every_row_even_when_never_scored(
+    spark: SparkSession,
+) -> None:
+    """A left join, not inner (design doc §8.3a): a PR the similarity index
+    never scored keeps its row, with the similar_* columns null -- unlike
+    the label joins above, absence here is not exclusion."""
+    training_frame = spark.createDataFrame(
+        [(1, 5, "alice"), (1, 6, "bob")],
+        "repo_id long, pr_number long, author_login string",
+    )
+    similarity_frame = spark.createDataFrame(
+        [(1, 5, 3, 0.5)],
+        "repo_id long, pr_number long, similar_neighbor_count long, "
+        "similar_prior_breach_rate double",
+    )
+
+    result = {
+        r["pr_number"]: r["similar_prior_breach_rate"]
+        for r in join_similarity_features(training_frame, similarity_frame).collect()
+    }
+
+    assert result == {5: 0.5, 6: None}
