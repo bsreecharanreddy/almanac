@@ -271,3 +271,101 @@ variable "model_serving_workload_size" {
   description = "Served-model workload size (Small|Medium|Large). scale_to_zero governs idle cost, not this."
   default     = "Small"
 }
+
+# Phase 5 (design doc §8.3a): the embedding index. Nothing here provisions a
+# served vector index on apply -- databricks_vector_search_index's
+# source_table must already exist, UC-registered, with Change Data Feed
+# enabled, and only a real run of the embeddings job (Task 7) creates that.
+
+variable "embeddings_schema" {
+  type        = string
+  description = "UC schema, under model_registry_catalog, holding the embeddings table the vector index syncs from."
+  default     = "embeddings"
+}
+
+variable "embedding_dimension" {
+  type = number
+  # all-MiniLM-L6-v2's own output width (src/almanac/embed/pipeline.py's
+  # DEFAULT_MODEL). Both numbers must move together if the model ever does --
+  # Terraform cannot derive one from the other.
+  description = "Vector width the embedding pipeline writes."
+  default     = 384
+}
+
+variable "embeddings_python_file" {
+  type        = string
+  description = "Workspace path of scripts/embeddings.py, the job entrypoint for almanac.embed.pipeline."
+  default     = "/Workspace/Shared/almanac/scripts/embeddings.py"
+}
+
+variable "embeddings_limit" {
+  type = string
+  # A string, not a number: databricks_job task parameters are strings, and
+  # "" is the natural "no limit" sentinel. Set for a bounded proof run
+  # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md), clear it
+  # for the real run.
+  description = "If set, --limit passed to the embeddings job -- a bounded proof run, not the scoped corpus."
+  default     = ""
+}
+
+variable "embeddings_since" {
+  type = string
+  # The real run's scope knob, and the default matches what is deployed:
+  # the full 14.9M-text corpus is ~25h of CPU-bound encode at the measured
+  # ~168 texts/s and GPU is quota-blocked, so the index is built over
+  # recent events. "2025-09-20" was measured at ~1.73M qualifying texts and
+  # the real run embedded 1,459,551 (docs/findings/2026-09-05-embedding-
+  # worker-fork-deadlock.md). "" embeds the whole corpus.
+  description = "--since-date (Bronze event_date lower bound) for the embeddings job; \"\" is the full corpus."
+  default     = "2025-09-20"
+}
+
+variable "embeddings_pip_dependencies" {
+  type = list(string)
+  # Keep in sync with pyproject.toml's [project.optional-dependencies] ml
+  # group -- a raw databricks_job cannot derive them; a bundle would. torch
+  # is sentence-transformers' own transitive dependency, not listed
+  # separately, same convention model_pip_dependencies already follows for
+  # scikit-learn's own transitive deps.
+  description = "The ml extra's embedding-specific deps, installed on the embeddings job's cluster."
+  default = [
+    "sentence-transformers>=6.0.1",
+    "databricks-ai-search>=0.78",
+  ]
+}
+
+# Task 4/6's real run: compute pr_similarity against the live index, then
+# compare with/without it against the registered champion. Neither job
+# needs sentence-transformers/torch -- querying an already-built index
+# is not embedding text.
+
+variable "similarity_python_file" {
+  type        = string
+  description = "Workspace path of scripts/pr_similarity.py, the job entrypoint for almanac.features.similarity_runner."
+  default     = "/Workspace/Shared/almanac/scripts/pr_similarity.py"
+}
+
+variable "similarity_comparison_python_file" {
+  type        = string
+  description = "Workspace path of scripts/similarity_comparison.py, the job entrypoint for almanac.model.similarity_comparison."
+  default     = "/Workspace/Shared/almanac/scripts/similarity_comparison.py"
+}
+
+variable "similarity_pip_dependencies" {
+  type        = list(string)
+  description = "databricks-ai-search only -- querying the real index, not embedding."
+  default     = ["databricks-ai-search>=0.78"]
+}
+
+variable "similarity_sample_size" {
+  type = string
+  # A string, not a number: databricks_job task parameters are strings.
+  # 10000: measured 2026-09-05 that a single similarity_search against the
+  # live index is ~180 ms p50 from a laptop (~100 ms expected from a
+  # same-region cluster), and compute_pr_similarity queries sequentially on
+  # the driver -- 10 K rows is a ~20-30 min job and enough to train Task 6's
+  # champion comparison. Larger is a one-line change
+  # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md).
+  description = "Spine rows to query against the real index, bounded by measured per-query latency (§8.3a)."
+  default     = "10000"
+}

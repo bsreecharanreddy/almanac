@@ -1097,6 +1097,137 @@ It would be the third-most-common portfolio project in existence and it
 would violate §2 — an LLM must never produce a number a decision depends
 on.
 
+### 8.3a Phase 5 concretized — real scale, point-in-time retrieval, measured lift (2026-09-04)
+
+Written via `almanac-design-decision` and a brainstorming pass, before any
+Phase 5 code. Every prior phase has finished weeks ahead of §9's original
+window (Phase 4 landed Sep 4 against an Oct 5–18 slot), and the $184
+credit does not expire until Sep 24 — 20 days out. **The cloud step runs
+now, against the still-live credit, for the same reason §5.2 gave Phase
+4's live serving the same treatment**: §9's "funded by a bounded paid
+window after Sep 24" framing for retrieval was reasoned from a schedule
+that no longer holds, and running now spends credit that would otherwise
+be wasted rather than reversing the underlying allocation logic (expensive
+compute still funded by free credit). ≈$145 of the $184 credit remains as
+of this writing (STATUS.md, Task 9's cost line) — the budget this section
+sizes against.
+
+**Gate 1 — the 5% toy-sample projection §8.3 was written against is now
+stale, and must not be reused.** §8.3's "~218k at 5%, ~4.6M at 100%"
+numbers came from Phase 0 Task 8: a 30-day slice, projected from one
+hour's PR rate, before Tier 3 ever ran. The real Q3 2025 backfill now
+exists at 92 days, unsampled — and §5.3's own real query against
+`fact_pull_request` already counted **20,234,983** PR rows in that
+population (the sum of every `label_exclusion` category), before a single
+issue is added. That is 4–5× the old 100%-sample estimate, not because
+the old measurement was wrong, but because it measured a different
+thing (a 30-day repo-sampled projection) than what now actually exists
+(a 92-day unsampled backfill). **Task 1 below re-measures the real corpus
+— PR and issue title+body counts, against the real Gold/Silver quarter —
+before any sample-rate or index-technology decision is made from it.**
+Restating the old figures as current would repeat the exact mistake this
+project's own design-decision skill is written to prevent (Gate 1's own
+two worked examples).
+
+**The as-of join utility (§4.4a, `as_of_join`) does not generalize to
+retrieval, and reusing it would be wrong, not just inconvenient.**
+`as_of_join` answers "the latest feature row before T" — a carry-forward
+window function, one ordered timeline per key. A neighbor lookup answers
+a different question: "the closest vectors among all candidates valid
+before T" — there is no single ordering that makes that a carry-forward.
+Phase 5 needs a genuinely new retrieval primitive, not an extension of
+Task 8's.
+
+**Brute-force nearest-neighbor at this scale would repeat a mistake this
+project has already made twice.** `as_of_join`'s original shape and
+`compute_author_activity`'s self-join both blew up into a real O(n²) cost
+on the same real quarter (11.7 PiB of intermediate,
+`docs/findings/2026-09-04-author-activity-self-join.md`) before being
+fixed. A point-in-time-filtered candidate set grows with the corpus (every
+PR opened before the query PR), so a naive self-join over 20M+ rows to
+find nearest neighbors is the same trap a third time. This is the concrete
+argument for real ANN infrastructure here, not just the governance
+preference §8.3 already stated — at this row count, exact brute force is
+not a simpler fallback, it is the thing that breaks.
+
+**Gate 2, live (2026-09-04): point-in-time filtering expresses cleanly on
+Databricks Vector Search, closing half of §13's open item.** Confirmed
+against the [Vector Search filtering guide](https://docs.databricks.com/aws/en/vector-search/vector-search-filtering-guide):
+metadata filters accept an operator encoded in the key (`{"opened_at <":
+value}`), combined with the similarity query itself, over `TIMESTAMP`
+columns — a native range predicate, not a workaround. The other half —
+cost — is **not** disclosed on either the [cost-management guide](https://docs.databricks.com/aws/en/ai-search/cost-management)
+or the public pricing page (both fetched live today; neither exposes a
+dollar figure, the same shape of gap Phase 2 hit for DBU rates and
+resolved by querying `system.billing.list_prices` directly rather than
+guessing). **Task 1 pulls the real Vector Search SKU rate the same way**,
+before committing to it over the FAISS fallback. What is confirmed:
+billing splits into DBU (serving/ingestion) and DSU (storage); a Standard
+endpoint's one vector-search unit covers ~2M vectors at dimension 768 —
+**~4M at our dimension 384** (`all-MiniLM-L6-v2`), so the re-measured
+corpus (Task 1) plausibly fits in one unit, but that is now a number to
+check, not assume. Terraform support is current:
+[`databricks_vector_search_endpoint`](https://registry.terraform.io/providers/databricks/databricks/latest/docs/resources/vector_search_endpoint)
+(`endpoint_type = "STANDARD"` is the value confirmed available; whether a
+storage-optimized type is exposed through this resource is unverified and
+gets checked against the live provider schema, not assumed) and
+[`databricks_vector_search_index`](https://registry.terraform.io/providers/databricks/databricks/latest/docs/resources/vector_search_index)
+(`primary_key`, `index_type`, syncs from a UC Delta table — the same
+"UC registration for governance" shape §4.4a already used for feature
+tables).
+
+**Decision rule stays exactly §8.3's, now with both halves checkable
+against real numbers**: Vector Search unless Task 1's real SKU rate
+exceeds ~10% of the ~$145 remaining (~$14.50), in which case FAISS
+rebuilt per batch — cheap at this vector count for the *rebuild*, but the
+point-in-time query path would still need the metadata-filter-then-search
+logic hand-rolled, since FAISS has no native filtered ANN. That cost is
+real and belongs in the same comparison, not left out because FAISS's
+sticker price looks like zero.
+
+**Similarity features must respect point-in-time correctness on two axes,
+not one.** The query side is the metadata filter above (`opened_at <
+as_of`). The **label** side is a second, easy-to-miss leak: a neighbor's
+*breach outcome* is only knowable once that neighbor's own PR has closed
+— an unresolved neighbor's outcome is unknown, not "not yet breached",
+the exact distinction `author_activity`'s "unclosed prior PR counted as
+unknown rather than not-merged" already established for a different
+feature (§4.4a). `pr_similarity` (new feature group, entity key
+`(repo_id, pr_number)`) computes similarity stats against the neighbor
+set unconditionally, but any neighbor-outcome-derived feature (e.g. "share
+of similar prior PRs that breached") is null for neighbors unresolved as
+of the query time, not defaulted to non-breach.
+
+**Success is downstream lift on the existing champion, or an honest
+null — matching the phase table's own gate exactly.** `pr_similarity`
+features get added to the classification frame Task 12 already built
+(Phase 4), retrained through the same comparison-sweep/PR-AUC-gate
+machinery, and compared against the registered champion's measured
+**0.612 PR-AUC** — promoted only if it wins, left alone and written up
+if it does not. This is the same "no ship without beating a measured
+baseline" discipline §5.1 already enforces in code, one level up: the
+baseline being beaten is now the current champion, not the naive
+segment-rate model.
+
+**`POST /similar-prs`: a demoed query path, not a persistent custom API
+service.** Same reasoning §5.2 already gave for deferring `/similar-prs`
+and `/features/{id}?as_of=` out of Phase 4 — no custom API service exists
+yet, and building one speculatively is the mistake, not the missing
+endpoint. Phase 5 is the first phase with a concrete reason for the
+`/similar-prs` half (the index now exists), so it gets a thin script/CLI
+demoed the same way the serving endpoint was demoed — direct queries
+against the live index, measured, not wrapped in a new always-on service.
+`/features/{id}?as_of=` stays deferred; nothing in Phase 5 gives it a
+concrete reason yet.
+
+**Deferred out of this section, on purpose:** hybrid/lexical search and
+reranking (§3.2's own "not a chatbot" framing gives this no product
+reason to exist here); embedding models other than `all-MiniLM-L6-v2`
+(already measured feasible on CPU, §8.3); a standalone issue-dedup product
+surface (issue embeddings feed the same index and the same point-in-time
+discipline, but get their own feature/product framing only if a concrete
+use surfaces); GPU inference; the `@challenger` retraining workflow.
+
 ---
 
 ## 9. Phasing — built around the credit deadline
