@@ -67,7 +67,7 @@ def _wait_if_exhausted(response: httpx.Response, session: RestSession) -> None:
         session.sleep(_reset_wait(response, session))
 
 
-def _next_link(link_header: str) -> str | None:
+def next_link(link_header: str) -> str | None:
     """The `rel="next"` URL from an RFC 8288 `Link` header, if any."""
     for part in link_header.split(","):
         segments = [s.strip() for s in part.split(";")]
@@ -102,7 +102,7 @@ def list_pr_numbers(session: RestSession, owner: str, repo: str) -> Iterator[int
         for pr in response.json():
             yield int(pr["number"])
         _wait_if_exhausted(response, session)
-        url = _next_link(response.headers.get("Link", ""))
+        url = next_link(response.headers.get("Link", ""))
 
 
 def _to_enrichment(owner: str, repo: str, number: int, payload: dict[str, object]) -> PrEnrichment:
