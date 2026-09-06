@@ -157,19 +157,30 @@ and remaining rate budget. `PollStats` aggregates the window.
 
 ```python
 def stream_events(
-    spark: SparkSession, landing: str, *, watermark: str = "10 minutes"
+    spark: SparkSession, landing: str, *, watermark: timedelta = timedelta(minutes=10)
 ) -> DataFrame: ...
-def write_bronze_stream(df: DataFrame, dest: str, checkpoint: str) -> StreamingQuery: ...
+def write_stream_silver(
+    df: DataFrame, dest: str, checkpoint: str, *, available_now: bool = False
+) -> StreamingQuery: ...
 ```
 
 Era normalization goes through the **existing** `pipeline/eras.py`
-handlers rather than a second implementation.
+handlers rather than a second implementation, reusing
+`payloads.parse_events` too — so a row landed here has the exact
+`SILVER_COLUMNS` shape a batch Silver run would produce. **Renamed from
+this plan's own `write_bronze_stream`**: what it writes is Silver-shaped
+(normalized, deduped, via the same functions as the batch Silver path),
+not raw — the true streaming-Bronze equivalent is the landing zone itself
+(Task 2's `.jsonl` files), matching §4.6's own words, "a poller lands raw
+event JSON to cloud storage." Calling the write target "Bronze" while it
+holds `SILVER_COLUMNS`-shaped rows would mislead a reader who knows the
+batch pipeline's own naming.
 
 **Tests:**
 - `test_dedups_on_event_id_within_watermark` — the *same* key Silver's batch dedup uses (§4.2), so the paths agree by construction.
-- `test_duplicate_outside_watermark_is_counted_not_silently_absorbed`
-- `test_late_row_increments_metric` — late arrival is reported, never discarded quietly.
-- `test_exactly_once_across_restart` *(integration)* — kill the query mid-stream, restart from the same checkpoint, assert output byte-identical to an uninterrupted run. The streaming analogue of Phase 1's "rerun any hour twice" gate.
+- `test_duplicate_outside_watermark_is_counted_not_silently_absorbed` — **found to be a stricter claim than it first looked**: verified directly that a row this old is dropped by `dropDuplicatesWithinWatermark` *before it reaches a `foreachBatch` write at all* — counting it from the written output is structurally impossible, not just harder. Fixed with Spark's `observe()`, attached *before* the watermark step, read back via `late_event_count(query)`.
+- `test_late_row_increments_metric` — late arrival is reported, never discarded quietly. Unified with the row above under one mechanism (`is_late` + the same `observe()`), since both are the same underlying quantity: processing delay against the watermark.
+- `test_exactly_once_across_restart` *(integration)* — restart from the same checkpoint as a **new** `StreamingQuery` object (a real Python-level "crash" is not needed: a second `.start()` against a checkpoint is the actual restart contract), assert output equal to an uninterrupted run over the same data (compared as a row set, not literal bytes — Parquet's physical layout isn't reproducible byte-for-byte even from identical input). The streaming analogue of Phase 1's "rerun any hour twice" gate.
 - `test_asserts_reduced_era` — §4.1a's legacy era has no `event_id`, but the live feed is `REDUCED_V3` only, so the path asserts the era rather than handling a case it can never meet. Deliberate, not overlooked.
 
 **Done when:** the restart test passes repeatedly (run it 3×; a flaky exactly-once test is a failing one).
