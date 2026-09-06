@@ -6,8 +6,9 @@ index, not a service (design doc §8.3a).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from databricks.ai_search.client import AISearchClient
 from pyspark.sql import DataFrame
@@ -26,10 +27,17 @@ class VectorSearchIndex:
     endpoint_name: str
     index_name: str
     client: AISearchClient
+    # get_index does a metadata round-trip; compute_pr_similarity calls
+    # `query` once per spine row, so the handle is fetched once, not per call
+    # (measured 2026-09-05: ~2x on p50 latency).
+    _index: Any = field(default=None, repr=False)
 
     def query(self, vector: list[float], *, as_of: datetime, k: int) -> list[Neighbor]:
-        index = self.client.get_index(endpoint_name=self.endpoint_name, index_name=self.index_name)
-        result = index.similarity_search(
+        if self._index is None:
+            self._index = self.client.get_index(
+                endpoint_name=self.endpoint_name, index_name=self.index_name
+            )
+        result = self._index.similarity_search(
             columns=["entity_key", "event_time"],
             query_vector=vector,
             # Confirmed live 2026-09-04 (STATUS.md, design doc §8.3a): a
@@ -55,7 +63,9 @@ def load_index(*, endpoint_name: str, index_name: str) -> VectorSearchIndex:
     arguments picks that up the same way every other Databricks SDK client
     in this project does."""
     return VectorSearchIndex(
-        endpoint_name=endpoint_name, index_name=index_name, client=AISearchClient()
+        endpoint_name=endpoint_name,
+        index_name=index_name,
+        client=AISearchClient(disable_notice=True),
     )
 
 

@@ -190,5 +190,14 @@ terraform apply -target=databricks_job.embeddings -var 'embeddings_since=2025-09
 databricks jobs run-now 79790319052446 --no-wait
 ```
 
-Real duration, cost, and the scoped embeddings-table row count go here
-once it completes.
+Run `603111972146916`, 2026-09-05: **TERMINATED / SUCCESS**, 135.8 min
+(6.3 min setup + 129.4 min exec), **≈$5.36** at $2.370/hr. **1,459,551 new
+texts embedded** — the fork fix held the whole run (`[embed]` progress
+flowing across all 16 tasks, both the PR and issue passes, no freeze).
+`almanac_dbx.embeddings.pr_issue_embeddings` now holds **1,859,551 rows**
+(1.46 M scoped + the proof run's 0.4 M; the ~270 K gap from the 1.73 M
+estimate is proof-run rows the `left_anti` text_hash dedup correctly
+skipped). Encode throughput held at ~12–14 texts/s per partition, a touch
+above the proof run's 10.5. Cumulative embeddings spend across the two
+cancelled runs, the proof, and this scoped run: **≈$24** of the trial
+credit.

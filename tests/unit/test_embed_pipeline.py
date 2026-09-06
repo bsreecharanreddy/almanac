@@ -30,23 +30,29 @@ _BRONZE_SCHEMA = (
 )
 
 
-def _event(event_type: str, *, action: str, repo_id: int, number: int, **payload: object) -> str:
+def _event(event_type: str, *, action: str, repo_id: int, **payload: object) -> str:
     return json.dumps(
         {
             "type": event_type,
             "repo": {"id": repo_id},
-            "payload": {"action": action, "number": number, **payload},
+            "payload": {"action": action, **payload},
         }
     )
 
 
 def _pr_opened(repo_id: int, number: int, *, title: str | None, body: str | None) -> str:
+    # number under payload.pull_request, matching the real GitHub shape
+    # extract_texts reads ($.payload.{payload_key}.number).
     return _event(
         "PullRequestEvent",
         action="opened",
         repo_id=repo_id,
-        number=number,
-        pull_request={"title": title, "body": body, "created_at": "2025-08-01T00:00:00Z"},
+        pull_request={
+            "number": number,
+            "title": title,
+            "body": body,
+            "created_at": "2025-08-01T00:00:00Z",
+        },
     )
 
 
@@ -55,8 +61,12 @@ def _issue_opened(repo_id: int, number: int, *, title: str | None, body: str | N
         "IssuesEvent",
         action="opened",
         repo_id=repo_id,
-        number=number,
-        issue={"title": title, "body": body, "created_at": "2025-08-01T00:00:00Z"},
+        issue={
+            "number": number,
+            "title": title,
+            "body": body,
+            "created_at": "2025-08-01T00:00:00Z",
+        },
     )
 
 

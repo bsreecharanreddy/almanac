@@ -310,13 +310,14 @@ variable "embeddings_limit" {
 
 variable "embeddings_since" {
   type = string
-  # The real run's scope knob. Full 14.9M-text corpus is ~25h of CPU-bound
-  # encode at the measured ~168 texts/s and GPU is quota-blocked, so the
-  # index is built over recent events. "2025-09-20" was measured at ~1.73M
-  # qualifying texts (docs/findings/2026-09-05-embedding-worker-fork-
-  # deadlock.md). "" embeds the whole corpus.
-  description = "If set, --since-date (Bronze event_date lower bound) passed to the embeddings job."
-  default     = ""
+  # The real run's scope knob, and the default matches what is deployed:
+  # the full 14.9M-text corpus is ~25h of CPU-bound encode at the measured
+  # ~168 texts/s and GPU is quota-blocked, so the index is built over
+  # recent events. "2025-09-20" was measured at ~1.73M qualifying texts and
+  # the real run embedded 1,459,551 (docs/findings/2026-09-05-embedding-
+  # worker-fork-deadlock.md). "" embeds the whole corpus.
+  description = "--since-date (Bronze event_date lower bound) for the embeddings job; \"\" is the full corpus."
+  default     = "2025-09-20"
 }
 
 variable "embeddings_pip_dependencies" {
@@ -359,9 +360,12 @@ variable "similarity_pip_dependencies" {
 variable "similarity_sample_size" {
   type = string
   # A string, not a number: databricks_job task parameters are strings.
-  # Placeholder pending Task 7's real single-query-latency measurement
-  # against the live index -- sized properly (docs/findings/) before the
-  # pr_similarity job's first real run, not left at a guess.
+  # 10000: measured 2026-09-05 that a single similarity_search against the
+  # live index is ~180 ms p50 from a laptop (~100 ms expected from a
+  # same-region cluster), and compute_pr_similarity queries sequentially on
+  # the driver -- 10 K rows is a ~20-30 min job and enough to train Task 6's
+  # champion comparison. Larger is a one-line change
+  # (docs/findings/2026-09-05-embedding-worker-fork-deadlock.md).
   description = "Spine rows to query against the real index, bounded by measured per-query latency (§8.3a)."
-  default     = "5000"
+  default     = "10000"
 }

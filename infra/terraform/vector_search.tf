@@ -46,6 +46,16 @@ resource "databricks_vector_search_index" "pr_issue_embeddings" {
       embedding_dimension = var.embedding_dimension
     }
   }
+
+  # The provider reads `endpoint_id` and `index_subtype` (both server-assigned
+  # -- HYBRID is the default subtype) as drifting to null on every plan, which
+  # forces a replace. Measured 2026-09-05: a plain `terraform apply` would
+  # destroy and recreate the index, throwing away its sync. Neither attribute
+  # is something this config sets, so ignoring them is safe.
+  lifecycle {
+    ignore_changes  = [endpoint_id, index_subtype]
+    prevent_destroy = true
+  }
 }
 
 output "vector_search_endpoint_url" {
