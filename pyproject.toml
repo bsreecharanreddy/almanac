@@ -61,6 +61,15 @@ ml = [
     # -- Gate 2's finding (2026-09-04) applied at the dependency itself, not
     # just recorded. 0.78 confirmed directly against pypi.org's JSON API.
     "databricks-ai-search>=0.78",
+    # Phase 6 Task 7 (design doc §4.6): the Lakebase online-store client.
+    # The plan carried `>=0.13.0` from Microsoft Learn's install snippet;
+    # pypi.org's JSON API says the current release is **0.17.1**, and the
+    # repo's convention is to floor at the current release, not at a doc's
+    # stated minimum. Introspected directly rather than trusted: 0.17.1's
+    # `FeatureEngineeringClient` really does carry `create_online_store`,
+    # `publish_table`, `get_online_store` and `delete_online_store`, all
+    # keyword-only.
+    "databricks-feature-engineering>=0.17.1",
 ]
 
 [build-system]
@@ -125,6 +134,11 @@ max-complexity = 10
 # `replay_hours(spark, hours, dest, lateness=...)` readable at the call
 # site (Phase 6, Task 4).
 "src/almanac/stream/replay.py" = ["PLR0913"]
+# publish_feature_table takes the two collaborators it cannot construct
+# (the client, the session) plus one keyword per thing the service names
+# independently -- store, source table, online table, publish mode. Naming
+# them at the call site is what makes a publish readable (Phase 6, Task 7).
+"src/almanac/stream/online_store.py" = ["PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -148,6 +162,17 @@ ignore_missing_imports = true
 # endpoint, Task 7).
 [[tool.mypy.overrides]]
 module = ["databricks.ai_search.*"]
+ignore_missing_imports = true
+
+# databricks-feature-engineering 0.17.1 ships no py.typed either, and neither
+# does the databricks.ml_features package its entities live in (Phase 6 Task 7,
+# design doc §4.6). Used only for the one `FeatureEngineeringClient()`
+# construction in stream/online_store.py's `load_client`; every method this
+# project calls on it is restated as a typed `OnlineStoreClient` Protocol
+# there, so the untyped surface is that single constructor. databricks-sdk
+# itself *does* ship py.typed, so `NotFound` stays checked.
+[[tool.mypy.overrides]]
+module = ["databricks.feature_engineering.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

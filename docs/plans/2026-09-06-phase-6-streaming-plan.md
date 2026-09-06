@@ -365,6 +365,37 @@ did not do for Vector Search and had to correct afterwards.
 `test_capacity_defaults_to_smallest`, `test_publish_requires_cdf_source`,
 `test_delete_is_idempotent`.
 
+**As built.** The version floor re-check the plan demanded paid off:
+PyPI's JSON API gives **0.17.1** as current, not the `>=0.13.0` this plan
+carried from Microsoft Learn's install snippet, and the repo's convention
+is to floor at the current release. The real 0.17.1 API was then
+**introspected rather than trusted** — every method is keyword-only, and
+`create_online_store` requires `capacity` rather than defaulting it, so
+the smallest-capacity default is genuinely this wrapper's decision to
+make. Reading `delete_online_store`'s source produced the sharpest
+finding: **it raises `NotFound` on a store that is already gone**, so
+`delete_store`'s idempotency is fixing real behaviour, not decorating it,
+and `_FakeClient` reproduces the raise so the test cannot pass against a
+wrapper that does nothing.
+
+Signatures are `create_store(client, *, name, capacity="CU_1")`,
+`publish_feature_table(client, spark, *, store, source, online,
+mode="TRIGGERED")`, `delete_store(client, *, name)`, plus
+`has_change_data_feed(spark, table)` and `load_client()`. The client is
+**injected**, not constructed inside, so a fake satisfies it — the same
+`load_index()` / `similar_prs(index=…)` split `embed/query.py` already
+uses, with an `OnlineStoreClient` Protocol and a `cast` at the untyped
+boundary exactly as `embed/pipeline.py`'s `TextEncoder` does.
+
+Two additions beyond the plan's three tests, both grounded rather than
+speculative: **SNAPSHOT publishes without CDF** (the docs require CDF for
+`TRIGGERED`/`CONTINUOUS` only, so guarding all three would refuse a
+publish the service accepts), and
+`test_the_real_client_still_matches_the_protocol`, which introspects the
+real class — the floor is unbounded above, so a later release could move
+these signatures out from under the Protocol while every fake-based test
+kept passing. Verified non-vacuous before being committed.
+
 **Done when:** `make check` green. **Cannot `apply` until Task 9** — the
 source feature tables must exist with CDF first. Same "author now, apply
 once the dependency is real" shape as `databricks_model_serving`'s
