@@ -23,7 +23,7 @@ dependency — nothing here needs `databricks-feature-engineering` or Feast
 (design doc §4.4a).
 
 **Spec:** `docs/design/2026-09-01-almanac-system-design.md` §4.4 and §4.4a
-(the Phase 3 concretization committed `6feaf75`). §3.1 (peer-of-Gold), §5.1
+(the Phase 3 concretization committed `ba745b0`). §3.1 (peer-of-Gold), §5.1
 (the label and its era-bound components), and §9's phase table are also
 load-bearing constraints this plan inherits.
 

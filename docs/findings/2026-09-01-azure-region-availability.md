@@ -186,7 +186,7 @@ Two caveats if that move ever happens:
 1. An earlier reading of this data concluded the restriction was
    **subscription-wide**, generalizing from `eastus2` and `eastus` alone.
    `centralus` and `westus3` disprove it. Same shape of error as the
-   overstated volume claim corrected in `535cbeb`: a conclusion drawn from
+   overstated volume claim corrected in `947935f`: a conclusion drawn from
    too small a sample, where widening the sample was cheap.
 2. Standard-tier Databricks workspaces were **discontinued 2026-04-01** for
    new creation, with existing ones auto-upgrading to Premium by
