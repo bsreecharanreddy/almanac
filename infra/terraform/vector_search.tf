@@ -53,8 +53,16 @@ resource "databricks_vector_search_index" "pr_issue_embeddings" {
   # destroy and recreate the index, throwing away its sync. Neither attribute
   # is something this config sets, so ignoring them is safe.
   lifecycle {
-    ignore_changes  = [endpoint_id, index_subtype]
-    prevent_destroy = true
+    ignore_changes = [endpoint_id, index_subtype]
+    # prevent_destroy is deliberately OFF while the index is torn down for
+    # cost (2026-09-06: a STANDARD endpoint bills a flat 4 DBU/hour idle,
+    # ~$202/month, and the next use is Phase 7's demo window). Turn it back
+    # ON in the same change that recreates the index -- it guards a
+    # different failure: the provider reads endpoint_id/index_subtype as
+    # drifting to null, so a plain `apply` would destroy and recreate a
+    # live index. See docs/findings/2026-09-06-vector-search-live-state-
+    # and-teardown.md.
+    prevent_destroy = false
   }
 }
 
