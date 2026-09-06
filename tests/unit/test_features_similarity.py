@@ -7,7 +7,7 @@ row's own as_of, not just because `resolutions` has since resolved it.
 from datetime import UTC, datetime
 
 import pytest
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession
 
 from almanac.features.similarity import Neighbor, compute_pr_similarity
 from tests.helpers import FakeSimilarityIndex
@@ -156,9 +156,9 @@ def test_the_spine_is_read_once_so_a_nondeterministic_sample_cannot_shift(
             self._df = df
             self.reads = 0
 
-        def select(self, *cols: object) -> DataFrame:
+        def select(self, *cols: Column | str) -> DataFrame:
             self.reads += 1
-            return self._df.select(*cols)  # type: ignore[arg-type]
+            return self._df.select(*cols)
 
         @property
         def sparkSession(self) -> SparkSession:  # noqa: N802
