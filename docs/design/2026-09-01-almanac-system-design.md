@@ -89,7 +89,7 @@ data.gharchive.org (hourly .json.gz) ─────┘        │  missing-file
       └───────────┬───────────────┘                  ▼
                   ▼                   ┌──────────────────────────────────┐
             ┌───────────┐             │ ML LIFECYCLE                     │
-            │ Power BI  │             │ training → MLflow registry →     │
+            │  AI/BI    │             │ training → MLflow registry →     │
             │ (3 pages) │             │ serving endpoint → drift +       │
             └───────────┘             │ training/serving skew monitoring │
                                       └──────────────────────────────────┘
@@ -724,6 +724,38 @@ stated plainly: two BI surfaces to maintain for one phase, in exchange
 for keeping the Power BI signal without letting it dictate the
 architecture.
 
+**Corrected 2026-09-07, before Task 9: page 3 becomes a third AI/BI
+dashboard, and Power BI leaves the build entirely.** The paragraph above
+is kept because its Desktop finding still holds and still forces pages
+1–2; what it got wrong is the sentence "page 3 stays Power BI, authored
+in the browser Service", which was never checked past Desktop's platform
+support. Two things were verified when the gap was found — page 3 carried
+an exit-gate row with no owning task in the plan:
+
+- **Publishing from the Databricks UI to Power BI requires a Power BI
+  Premium license** (Premium capacity, PPU, or Fabric capacity) plus XMLA
+  Read Write on the capacity. Microsoft Learn, *Publish to the Power BI
+  service from Azure Databricks*, updated 2026-08-20. That is a paid
+  product this project does not hold, on a credit expiring 2026-09-24.
+- The one free path — connecting manually from the Power BI service —
+  runs on a **free license restricted to My workspace**, which cannot
+  share and cannot publish anywhere else (Microsoft Learn, *Power BI free
+  user feature availability*). A portfolio report nobody can open is not
+  a portfolio report; a screenshot would have been its only artifact.
+  Sign-up is also unverifiable in advance here, since Power BI rejects
+  personal Microsoft accounts and this tenant's only Global Administrator
+  was one.
+
+So the "two BI surfaces" trade above was priced without its real cost.
+Page 3 ships as a third `databricks_dashboard`: version-controlled,
+Terraform-managed, destroyable with the rest, and carrying §7's
+non-negotiable limitations panel unchanged. **The Power BI signal is
+carried by the ADR that records this evaluation** (§4.7's Task 11
+candidate, *AI/BI over Power BI*) rather than by an unshareable report —
+and the project's own ordering rule points the same way: page 3 is
+explicitly §7's *analyst* page, and §1 puts the ML-platform story ahead
+of the analyst one whenever they compete.
+
 **Lineage is Unity Catalog's own, not OpenLineage. This supersedes §9's
 Phase 7 row**, and it is a decision made against measured state rather
 than a preference:
@@ -1126,7 +1158,7 @@ reasoning about it.
   threshold`. Same §3.1 boundary reasoning §5.2 already used for the
   continuous label: a label is supervision about the outcome, not a
   point-in-time feature, and Gold's contract (the continuous truth,
-  useful to other consumers such as the Power BI reporting layer) stays
+  useful to other consumers such as the reporting layer) stays
   unchanged — no dbt model touched, no re-run of the Gold job.
 - **The threshold is reused, not recomputed**: **1,487 s (p75, ≈25
   min)**, the value Task 9 already measured over the *narrower*
@@ -1217,6 +1249,11 @@ the LLM.
 
 ## 7. Reporting — three Power BI pages
 
+> **Superseded on the tool, not the content (§4.7, 2026-09-07).** All three
+> pages ship as Databricks AI/BI dashboards; Power BI is out. The page
+> definitions below — including the non-negotiable limitations panel — stand
+> unchanged. §4.7 carries the two licensing findings that forced it.
+
 Cut from the guide's four. "Repository Deep Dive" is dropped as the least
 differentiated page per hour spent.
 
@@ -1264,7 +1301,7 @@ measured and reported.
 | IaC | Terraform | Apply/destroy cycles are a cost control, not a demo |
 | CI/CD | GitHub Actions | Contracts and DQ enforced as build failures |
 | Language | Python 3.12+, `uv`, `ruff`, `mypy --strict`, `pytest` | Current-generation tooling only |
-| BI | Power BI | 3 pages, import mode |
+| BI | ~~Power BI~~ → **Databricks AI/BI (§4.7, 2026-09-07)** | 3 pages, defined as committed JSON. Power BI Desktop is Windows-only, and both cloud paths are Premium-gated or unshareable |
 | Local dev | Single Docker container, `pyspark` + `delta-spark`, `local[*]` | **Not** a Spark master/worker Compose cluster — slower at this volume and teaches nothing |
 
 ### 8.1 Serving topology
@@ -1635,7 +1672,7 @@ turning Sep 24 from a cliff into a planning input.
 | **4 — Model + MLflow** | Oct 5–18 | Measured baseline first, then the SLA-risk model. MLflow tracking + registry. Batch scoring, then a serving endpoint. Drift and training/serving skew monitoring. **Live serving window on bounded paid spend (§8.1)**, measuring cold start. | Model beats baseline by a measured margin, or the null result is documented |
 | **5 — Embeddings + vector index** | Oct 19 – Nov 1 | Incremental embedding pipeline, ANN index, similarity features, measured downstream lift. **Index choice decided by §8.3's rule, on measured vector count.** | Measured lift, or an honest documented null result |
 | **6 — Streaming** | ~~Nov 2–8~~ → **pulled forward to before Sep 24 (§4.6, 2026-09-06)** | Live Events API ingest, watermarks, late-arrival and exactly-once handling, online feature freshness. **Scope confirmed to include the online store**, deferred since §4.4a. | Live events land and update online features |
-| **7 — Governance, BI, docs** | Nov 9–22 | OpenLineage, contracts enforced in CI, 3 Power BI pages, ADRs, limitations, decision memo, postmortem. Second bounded paid window for the final live demo. | A stranger clones and runs locally in <15 min |
+| **7 — Governance, BI, docs** | Nov 9–22 | OpenLineage, contracts enforced in CI, ~~3 Power BI pages~~ → **3 AI/BI dashboards (§4.7)**, ADRs, limitations, decision memo, postmortem. Second bounded paid window for the final live demo. | A stranger clones and runs locally in <15 min |
 | **8 — Ship** | Nov 23 | Tag `v1.0`. Stop. | — |
 
 **Only Phases 1 and 2 are deadline-bound.** Everything from Phase 3 on is
@@ -1707,7 +1744,7 @@ an open choice with a defensible alternative.
 | Free credits fund the data-platform proof; ML serving paid for later | Split evenly, or save credits for serving | Spark backfill at volume is the expensive operation; training and serving are cheap |
 | **Credit expiry is a budget, not a wall** (2026-09-06) | Scope phases down to fit the remaining balance | Broadens the row above. Modest real spend after 2026-09-24 is acceptable *provided* it is spent judiciously and **resources are torn down when not in use** — the point of provisioning is to learn, build and document, not to keep anything online. Future demos bring infrastructure up on demand. Scoping a phase down to fit a balance would have traded architecture quality for a constraint that was never real |
 | **Teardown ships with provisioning** (2026-09-06) | Tear down as a follow-up task | Two incidents: Vector Search billed a flat 4 DBU/hour idle because nothing scaled to zero, and Lakebase documents the same property up front. A delete path written after the fact is written under time pressure, or not at all |
-| 3 Power BI pages | 4+ pages | Beyond three, page count stops carrying signal and starts costing hours |
+| 3 report pages (~~Power BI~~ → AI/BI, §4.7 2026-09-07) | 4+ pages | Beyond three, page count stops carrying signal and starts costing hours. The *count* was the decision and it held; only the tool changed |
 | dbt included, scoped to Gold only | No dbt, or dbt through Silver | Market-demanded and cheap at Gold; rewriting Silver in dbt would discard the Spark work that is the point |
 | Streaming built in Phase 6 | Deferred to a future project | Most-probed interview topic, and a deferred project may never happen |
 | Data contract enforced as a CI test | Contract as a markdown document | A contract nothing enforces is a wish |
