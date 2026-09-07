@@ -17,7 +17,10 @@ review queue. The domain is incidental, and that is the point.
 > MLflow) — 13 of 13 tasks: a measured regression null result, reframed to
 > classification (§5.3), a real non-null result registered live in Unity
 > Catalog, and a live serving endpoint with measured warm latency and a
-> measured cold start (51.96 s).**
+> measured cold start (51.96 s). Phase 5 (semantic layer + vector search)
+> complete. Phase 6 (streaming ingest + online feature store) — 10 of 10
+> tasks, exit gate demonstrated against the live GitHub feed and the
+> billable stack torn down.**
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -131,6 +134,36 @@ review queue. The domain is incidental, and that is the point.
 > table that pointed at nothing Silver ever wrote — caught because the
 > registration was exercised against real data rather than trusted from
 > the DDL reading correctly.
+> **Phase 5 shipped the semantic layer and vector search**; see
+> [`docs/STATUS.md`](docs/STATUS.md) for its task-level record.
+> **Phase 6 made the platform live.** A poller reads GitHub's public
+> Events API on its advertised interval, lands raw JSONL, and a
+> Structured Streaming job builds streaming Silver and two online feature
+> tables that are published to a **Lakebase** online store and served from
+> Postgres. The exit gate was demonstrated end to end rather than
+> asserted: across two live windows, **84 repos had their served feature
+> values change**, 684 were added and none lost — one repo went from
+> `events_prior_24h=11` to `18` because of events polled 25 minutes after
+> the first value was read out of Lakebase. Offline↔online consistency was
+> checked against the raw feed rather than the pipeline's own account of
+> itself: **4,925/4,925 repos and 3,721/3,721 actors**, zero duplicates in
+> 6,801 events. **Freshness is reported decomposed**, because most of it
+> is not ours: end-to-end p50 **561 s**, of which GitHub's own feed delay
+> is **302 s (54%)** and only **121 s** is pipeline work. Live capture is
+> **8.5–8.9%** of the archive's 155–162K events/hour — the public feed is
+> a sample, not a firehose.
+> **The live window falsified four things this repo had written down**,
+> which is the more useful result: the feed is not REDUCED_V3-only (a 2021
+> event arrived mid-window); `publish_table` does not create its catalog,
+> which must be a *standard* catalog and needs its schema pre-created; and
+> `dropDuplicatesWithinWatermark` handled late events by **discarding**
+> them, costing 161 repos in the run whose checkpoint had a watermark to
+> restore. That last one is fixed — dedup moved to an insert-only Delta
+> `MERGE` on `event_id`, leaving the stream stateless — and the others are
+> corrected in place with the runs that disproved them.
+> The ephemeral Lakebase stack was **torn down**; its idle DBU rate is the
+> one number still unmeasured, because `system.billing.usage` lags a day
+> and cannot be read during the window that generates it.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 
@@ -151,6 +184,7 @@ flowchart LR
   subgraph src[Sources]
     GHA[GH Archive<br/>hourly .json.gz]
     API[GitHub REST API<br/>second source]
+    EV[GitHub Events API<br/>live firehose sample]
   end
 
   subgraph lake[ADLS Gen2 · Delta Lake · westus3]
@@ -160,10 +194,17 @@ flowchart LR
     F[Features<br/>point-in-time joins]
   end
 
+  subgraph stream[Streaming · bounded live windows]
+    L[Landing zone<br/>raw JSONL · UC volume]
+    SS[Streaming Silver<br/>MERGE dedup on event_id<br/>stateless, keeps late events]
+    SF[Stream features<br/>repo · actor activity]
+  end
+
   subgraph ml[ML platform]
     R[Model registry<br/>MLflow]
     E[Model Serving<br/>scale-to-zero]
     V[Vector Search<br/>pre-computed embeddings]
+    O[Lakebase online store<br/>Postgres · low-latency serving]
   end
 
   GHA --> B
@@ -175,14 +216,20 @@ flowchart LR
   F --> R --> E
   B --> V
   V --> F
+  EV --> L --> SS --> SF --> O
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
-  class GHA,B,S,G,F,R,E,V done
+  classDef gone fill:#fff3cd,stroke:#d39e00,color:#000,stroke-dasharray:2 2
+  class GHA,B,S,G,F,R,E,V,EV,L,SS,SF done
   class API,BI todo
+  class O gone
 ```
 
-Solid = built and green. Dashed = designed, not built.
+Solid green = built and green. Dashed grey = designed, not built.
+Dashed amber = built and demonstrated live, then **torn down on purpose** —
+a Lakebase online store bills for existing, so it runs for a measured window
+and is destroyed with its stack.
 
 ## What has been measured
 
