@@ -295,9 +295,21 @@ check.
 
 ## Task 9: Dashboards as code
 
-**Pages 1–2 as `databricks_dashboard` resources** with their JSON
+**All three pages as `databricks_dashboard` resources** with their JSON
 committed and referenced by `file_path`, so they are diffable, reviewable
 and destroyable like every other resource here.
+
+**Page 3 joined them on 2026-09-07, and the reason is worth keeping.** It
+was found carrying an exit-gate row that no task owned — the plan said
+"pages 1–2" throughout while the gate asked for a Power BI page. Checking
+the assumption underneath it rather than just assigning it an owner
+settled it the other way: publishing from Databricks to Power BI needs a
+**Premium/PPU/Fabric license**, and the one free path is restricted to
+**My workspace, which cannot share** — so the artifact would have been a
+screenshot of a report nobody could open. Corrected in §4.7, marked and
+dated, with the original Desktop finding kept intact. Page 3 keeps §7's
+non-negotiable limitations panel unchanged; the Power BI evaluation is
+carried by Task 11's *AI/BI over Power BI* ADR instead.
 
 **Page 2 ships with two panels visibly marked unavailable**, not faked and
 not quietly dropped: feature freshness lag and training/serving skew
@@ -316,9 +328,9 @@ they are ADLS paths today. That registration is part of this task, or the
 drift panels join the marked-unavailable list. **Decide by checking, not
 by assuming.**
 
-**Done when:** `terraform plan` shows both dashboards, and every panel
+**Done when:** `terraform plan` shows all three dashboards, and every panel
 either has real data or is marked.
-**Commit:** `feat(reporting): SLA-risk and platform-health dashboards, defined as code`
+**Commit:** `feat(reporting): three dashboards defined as code, page 3 included`
 
 ## Task 10: The narrow window — dashboards against real Gold, then down
 
@@ -415,8 +427,8 @@ published measurement.
 - [ ] The lineage artifact states its own blind spots
 - [ ] A deliberate contract breach on the feature/streaming surfaces fails CI, demonstrated
 - [ ] Data contract + SLA published, every number citing its finding
-- [ ] Pages 1–2 exist as Terraform-managed dashboard JSON in the repo
-- [ ] Page 3 built in Power BI, carrying the limitations panel
+- [ ] All three pages exist as Terraform-managed dashboard JSON in the repo
+- [ ] Page 3 carries §7's non-negotiable limitations panel
 - [ ] Dashboards demonstrated against real Gold in a bounded window, then torn down
 - [ ] One command up, one command down — proven by use, not by test
 - [ ] Coverage on transformation and feature logic measured, and gated or explained
@@ -439,3 +451,6 @@ published measurement.
   vendor-neutral lineage export, and that is stated where the decision is.
 - **A fourth report page** — §11 already settled that page count stops
   carrying signal past three.
+- **Power BI itself** — dropped rather than deferred, and §4.7 records why
+  with both sources. Nothing about it becomes cheaper in Phase 8: the
+  licensing is a product constraint, not a scheduling one.

@@ -214,7 +214,7 @@ flowchart LR
   B --> S
   S --> G
   S --> F
-  G --> BI[Power BI]
+  G --> BI[AI/BI dashboards<br/>3 pages, defined as code]
   F --> R --> E
   B --> V
   V --> F
@@ -273,7 +273,7 @@ bind in both directions; it bound upward, from one month to a quarter.
 | Infrastructure | Terraform |
 | Language | Python 3.12 — `uv`, Pydantic v2, `ruff`, `mypy --strict`, `pytest` |
 | CI | GitHub Actions — lint, format, types, tests on every push |
-| Reporting | Power BI |
+| Reporting | Databricks AI/BI — 3 dashboards, JSON committed and Terraform-managed |
 
 Stack choices, and what each substitution costs, are argued in the design
 doc rather than asserted here.
