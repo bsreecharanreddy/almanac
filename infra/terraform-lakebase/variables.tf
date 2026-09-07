@@ -131,9 +131,10 @@ variable "prefix_online_catalog" {
   type = string
   # Separate from `catalog`, and deliberately so: Databricks requires an
   # online table's Unity Catalog catalog name to equal its backing Postgres
-  # database name. publish_table creates a matching catalog by default, so
-  # targeting the source catalog would be the thing that fails -- quietly, at
-  # serving time rather than publish time.
-  description = "Catalog the published online tables land in; created by publish_table."
+  # database name, which the source catalog has no reason to satisfy.
+  # Created by `databricks_catalog.online` (a STANDARD catalog), NOT by publish_table --
+  # this stack claimed the latter until a real publish failed with
+  # `NotFound: Catalog 'almanac_lb_online' does not exist` (2026-09-07).
+  description = "Catalog the published online tables land in; a Lakebase-backed Database Catalog."
   default     = "almanac_lb_online"
 }

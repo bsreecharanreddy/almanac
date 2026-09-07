@@ -95,6 +95,7 @@ that was never deployed.
 
 ```bash
 terraform plan -destroy      # read the resource count before applying it
+terraform apply -target=databricks_external_location.stream   # see "force_destroy" below
 terraform destroy
 ```
 
@@ -103,4 +104,27 @@ and would have thrown away the run history that was the evidence for four
 real runs. Everything in this stack is meant to go, but the count is still
 the check that it is going and nothing else is.
 
-Capture every measurement **before** teardown, never after.
+Capture every measurement **before** teardown, never after. One item is easy
+to miss because it is needed *after*: **record the workspace id**
+(`terraform state show azurerm_databricks_workspace.this | grep workspace_id`).
+Billing usage lands a day late, so the DBU reading happens after this stack
+is gone, and without that id the rows are unattributable.
+
+### Four traps this teardown actually hit, 2026-09-07
+
+1. **`terraform output` returns empty once any referenced resource is gone.**
+   `outputs.tf` reads the Lakebase instance, so after a partial destroy
+   *every* output is blank — including `workspace_url`. The symptom is a
+   Databricks **auth** error, which points at credentials rather than the
+   real cause. Use
+   `terraform state show azurerm_databricks_workspace.this` instead.
+2. **The external location refuses to delete**, reporting dependent managed
+   tables and volumes that no longer exist (their catalogs were verified
+   gone). Identical counts on retry, so it is orphaned metadata, not a race.
+3. **`force_destroy = true` in config is not enough.** Terraform destroys
+   from *prior state*, and `force_destroy` has no remote counterpart, so it
+   never reaches the provider until an `apply` writes it into state — hence
+   the targeted apply above.
+4. **Never fix that with a bare `terraform apply`.** With resources already
+   destroyed but still in config, a plain apply plans to *recreate* them,
+   Lakebase instance included. `-target` the one resource and read the plan.

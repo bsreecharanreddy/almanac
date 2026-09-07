@@ -2,7 +2,29 @@
 
 **Date:** 2026-09-07
 **Phase:** 6, Task 9
-**Status:** one fixed, one open and needing a decision
+**Status:** gate met; three assumptions fixed, one design question left open
+
+**Phase 6's exit gate is met.** A live GitHub event reached the online store
+and *changed* a served feature value, demonstrated end to end across two
+windows rather than asserted:
+
+| | |
+|---|---|
+| Repos whose served values **changed** | **84** |
+| New repos added | 684 |
+| Repos lost | 0 |
+
+```
+repo 1125421191:  events_prior_24h=11  @ 02:26:54
+               →  events_prior_24h=18  @ 04:51:02
+```
+
+The second value could only exist because of events polled 25 minutes after
+the first was read out of Postgres.
+
+**Offline↔online consistency is exact**, checked against the raw JSONL rather
+than against the pipeline's own account of itself: 4,925/4,925 distinct
+`repo_id` and 3,721/3,721 distinct `actor_login`.
 
 The first real live window (30 polls, 6,801 events, 2026-09-07 02:03–02:34
 UTC) falsified two claims this project had recorded as settled. Both were
@@ -81,15 +103,33 @@ confirms the consequence directly: a never-before-seen `event_id` whose
 event time is behind the watermark is counted by `late_event_count` and
 **absent from Silver**.
 
-### The caveat that keeps this from being a live outage
+### Confirmed in production, and the prediction came first
 
-Whether those rows are actually lost depends on where the watermark sits
-when their batch runs. Today the job polls to completion *first*, then runs
-ingest with `available_now=True`, so all 30 files are read in one batch
-whose watermark has not advanced — and they survive. **That is an accident
-of batching, not a property of the design.** In the continuous shape
-`write_stream_silver`'s own docstring calls "Task 9's real shape", the
-watermark would have advanced and roughly one event in six would vanish.
+Whether those rows are lost depends on where the watermark sits when their
+batch runs — which made the session's two windows a natural experiment. The
+prediction was written down *before* the second one ran.
+
+| | Cycle A | Cycle B |
+|---|---|---|
+| Checkpoint | fresh (watermark at 0) | **resumed (watermark advanced)** |
+| Events polled | 6,801 | 1,206 |
+| Distinct repos polled | 4,925 | 943 (845 new) |
+| Repos reaching the online store | 4,925 | 684 new |
+| **Repos lost** | **0** | **161** |
+
+Union of distinct `repo_id` across all 35 polls: 5,770. Served by the online
+store: 5,609. The 161 missing are exactly that difference, and all belong to
+cycle B — the run whose watermark had been restored from the checkpoint.
+
+So the design does not lose data on a cold start and does lose it on every
+run after: a first run that looks correct and a steady state that quietly
+is not. The earlier reading — "an accident of batching" — was right about
+the mechanism and too optimistic about the consequence.
+
+**Two independent measurements agree exactly.** Spark's `observe()` reported
+`late_events=217` for cycle B; counting `polled_at - created_at > 600s` in
+the raw JSONL gives 217 of 1,206 (18.0%). For cycle A, `observe()` gave
+1,206 of 6,801 (17.7%) against 18.0% client-side on a 439-event subsample.
 
 ### Options, not yet decided
 
@@ -104,6 +144,93 @@ watermark would have advanced and roughly one event in six would vanish.
 Option 2 matches what the batch path already does and is the current
 recommendation, but it is a design change and is not being made under Task
 9's own gate.
+
+## Finding 3 — `publish_table` does not create its catalog (fixed)
+
+With ingest fixed, `features` succeeded and `publish` failed:
+
+```
+NotFound: Catalog 'almanac_lb_online' does not exist.
+```
+
+`variables.tf` had asserted the opposite — *"created by publish_table"* — in
+a comment written from the API's shape rather than from a run. A Lakebase
+online table lands in a **Database Catalog**: a UC catalog backed by a
+Postgres database on the instance, created by
+`databricks_database_database_catalog` (note the doubled word; the provider
+namespaces it under the `database` service). It must exist before the
+publish.
+
+Fixed by adding that resource and referencing it from the publish task's
+`--online-schema` argument, so Terraform orders the catalog before the job
+that writes into it. `terraform validate` could not have caught this and did
+not; only a real publish did.
+
+**Two side confirmations from the same run**, both previously unproven:
+
+- **`ALTER COLUMN … SET NOT NULL` works on Databricks-managed Delta.** OSS
+  Delta 4.4.0 refuses it on a populated table, which is why Task 6 split the
+  CDF statement (locally round-trippable) from this one (not). The
+  `features --register` stage ran it for real and succeeded.
+- **The corrected ingest guard passes live data**, including the 3
+  `modern_v2` events that aborted the previous run.
+
+## Task 9's measurements
+
+### Freshness, decomposed
+
+Task 1 warned that an undecomposed freshness number "will read as pipeline
+latency when it is mostly GitHub's". Measured over cycle B's 976 floor-cohort
+events (those at the API's 300s minimum, excluding late arrivals):
+
+| Component | p50 | Share |
+|---|---|---|
+| GitHub feed delay | 302 s | 54% |
+| Almanac poll → served | 260 s | 46% |
+| **End to end (created_at → readable in Lakebase)** | **561 s** | |
+
+Range: min 434 s, p95 688 s, max 690 s.
+
+Only **121 s** of Almanac's 260 s is pipeline work — ingest 68 s, features
+35 s, publish 18 s. The remaining ~139 s is the bounded-window design: an
+event captured by the first poll waits for the fifth to finish before ingest
+starts at all. A continuous trigger removes that term; it is not latency
+anything in the code is spending.
+
+### Capture fraction
+
+1,206 events over 5 polls = 241.2/poll ≈ **13,783/hour**, against §12's
+archive-measured 155–162K/hour:
+
+| Baseline | Capture |
+|---|---|
+| 155,000/hr | 8.9% |
+| 162,000/hr | 8.5% |
+
+Task 1 measured 7.1–7.4% on its own 30-poll window. Both are `n=1` windows at
+different times of day; the honest statement is "the same order, ~7–9%", not
+a revision of Task 1.
+
+### Duplicates
+
+**Zero**, across all 6,801 events of cycle A: 6,801 distinct `event_id` from
+6,801 rows. This extends Task 1's "zero overlap between consecutive polls"
+from adjacent pairs to a whole 30-poll window.
+
+### Cost
+
+The Lakebase instance ran ~3.5 hours at CU_1 (created 01:55 UTC, stopped
+02:49–03:19 during a test run, destroyed ~05:5x).
+
+**The DBU rate itself is still unmeasured**, for a reason worth recording:
+`system.billing.usage` is *empty* in a newly created metastore — 0 rows
+total, not merely 0 for this workspace — and in the main westus3 metastore it
+lags roughly a day (latest `usage_date` was 2026-09-06 while this ran on
+09-07). So the measurement cannot be taken during the window it measures.
+It is deferred rather than lost: usage records survive resource deletion, and
+`workspace_id = 7405616381250124` was captured before teardown so the rows
+remain attributable. This is the third time this project has hit a gap in
+Databricks' own price/usage surfaces.
 
 ## Method
 
