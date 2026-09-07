@@ -66,23 +66,52 @@ anything billable.
 `scale_to_zero = true`, drew zero inference DBUs on 09-07, and
 `auto_capture_config` is `null`. Nothing has ever been logged.
 
-**Two one-way constraints make this a decision, not a setting**, both
-documented on the resource: payload logging **cannot be re-enabled once
-disabled**, and **catalog, schema and table prefix cannot be changed after
-initial setup**. So the target is chosen once, deliberately, and never
-turned off.
-
-**The change:** add an `auto_capture_config` block to
-`databricks_model_serving.pr_review_sla_risk` in `infra/terraform/`,
-targeting a dedicated schema so the request log is never confused with
-modelling data. Apply it, then send a small number of real invocations
+**The change:** add an `ai_gateway { inference_table_config { … } }` block
+to `databricks_model_serving.pr_review_sla_risk` in `infra/terraform/`,
+plus its own `databricks_schema` — not the schema holding the registered
+model, because Databricks creates an internal `_checkpoints` volume beside
+the table whose deletion corrupts it. Apply, then send real invocations
 against the model's actual signature so the table is created and provably
 non-empty.
 
+**As built — the mechanism in this plan's first draft was the wrong one,
+caught before anything was applied.** The draft said `auto_capture_config`.
+The Terraform provider still documents that block **with no deprecation
+marker**, but Databricks' product docs for it are formally *retired* and
+direct to AI Gateway: the provider trails the product, so **the provider's
+silence is not evidence.** Second time a gate-2 check has caught a
+load-bearing API as superseded before design hardened around it.
+
+That also **corrected this task's stated constraint.** "Payload logging
+cannot be re-enabled once disabled; catalog/schema/prefix cannot change
+after setup" describes the *legacy* mechanism. The real one runs the other
+way — once AI Gateway tables are on, the endpoint **cannot go back to
+legacy** — and enabling on an endpoint with no inference table configured
+is explicitly supported, which is this endpoint's exact case. What is
+genuinely irreversible is only the data: the log starts when capture
+starts.
+
+**A second claim was corrected by measurement, not by reading.** The docs
+describe a "fast inference table" for CPU custom-model endpoints — a
+`_payload` **view** over an `_otel_logs` table, delivering in seconds. What
+was actually created here is a **MANAGED table with no `_otel_logs` beside
+it**, so the 1-hour best-effort path applies instead. The code comment
+asserting the fast path was corrected to say what was observed.
+
 **Done when:** the inference table exists in UC, contains rows from a real
-invocation, and `terraform plan` is clean. **Record the row count and the
-first `event_time`** — that timestamp is the honest start of the series and
-page 2 must not imply history before it.
+invocation, and a **targeted** `terraform plan` is clean. **Record the row
+count, the true first `request_time`, and the measured delivery lag** —
+that timestamp is the honest start of the series and page 2 must not imply
+history before it.
+
+**Targeted, and this is not optional.** A bare `terraform plan` here reads
+**6 to add, 1 to change**: the five extra creates are Phase 5's and Phase
+6's deliberately torn-down infrastructure — the Lakebase instance
+(~$12.06/day), the Vector Search endpoint (~$6.72/day, no scale-to-zero),
+its index, the streaming job and its volume. Phase 6's teardown notes
+already recorded that "a bare `apply` plans to recreate the Lakebase
+instance"; this is that trap, met again in the opposite direction. Apply
+with `-target` on the schema and the endpoint only.
 **Commit:** `feat(serving): log inference requests, so page 2 has a series to plot`
 
 ## Task 2: Extract column lineage the way this repo's own storage requires

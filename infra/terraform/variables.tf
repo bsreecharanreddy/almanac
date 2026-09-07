@@ -229,6 +229,16 @@ variable "model_registry_schema" {
   default     = "models"
 }
 
+# Phase 7 Task 1. Its own schema, not `models`: Databricks also creates an
+# internal `<payload table ID>_checkpoints` volume alongside the inference
+# table, and mixing that machinery into the schema holding the registered
+# model makes both harder to reason about and to grant on.
+variable "serving_logs_schema" {
+  type        = string
+  description = "Unity Catalog schema, under model_registry_catalog, holding the serving endpoint's inference table."
+  default     = "serving_logs"
+}
+
 variable "model_python_file" {
   type        = string
   description = "Workspace path of scripts/model.py, the job entrypoint for almanac.model.runner."

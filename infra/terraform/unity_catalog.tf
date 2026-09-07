@@ -111,3 +111,15 @@ resource "databricks_schema" "models" {
   # unlike the lake, there is no paid re-burn to recover it.
   force_destroy = false
 }
+
+resource "databricks_schema" "serving_logs" {
+  catalog_name = var.model_registry_catalog
+  name         = var.serving_logs_schema
+  comment      = "Inference table for the pr_review_sla_risk endpoint (Phase 7 Task 1)."
+
+  # Same reasoning as `models` above, and it binds harder here. A prediction
+  # log is the one artifact in this project that cannot be re-derived at any
+  # price: re-provisioning replays no history, because the only traffic that
+  # can ever be captured is traffic that happened while capture was on.
+  force_destroy = false
+}
