@@ -281,7 +281,8 @@ doc rather than asserted here.
 ## Layout
 
 ```text
-src/almanac/        extract (URLs, fetching) · explore (schema, measurement) · pipeline · gold · spark
+src/almanac/        extract · explore · pipeline · gold · features · model · embed · stream
+                    contracts (governed surfaces) · governance (lineage) · infra (the cloud window)
 dbt/                the Gold project — models, snapshots, sources, both targets
 tests/              unit tests + committed fixtures; tests never touch the network
 docs/design/        the authoritative architecture and phasing document
@@ -289,7 +290,7 @@ docs/findings/      measurements, each with its method and sample size
 docs/plans/         per-phase implementation plans, written before any code
 docs/lineage/       column lineage, generated from Unity Catalog by `make lineage`
 docs/data-contract.md   what a consumer may rely on, every number citing its finding
-infra/terraform/    Azure resource group, ADLS Gen2, Databricks workspace
+infra/terraform/    Azure resource group, ADLS Gen2, Databricks workspace, the jobs, the reporting warehouse
 docker/             containerized Spark + Delta, matching CI
 ```
 
@@ -301,6 +302,14 @@ make check      # ruff + mypy --strict + pytest
 make test-all   # includes Spark tests
 make dbt        # fixtures -> Silver, then the Gold layer through the runner that builds the session first
 make fixtures   # rebuild committed fixtures from the live archive
+```
+
+The cloud side is brought up and taken down by one command each, and both
+refuse any plan that reaches past the window they were asked for:
+
+```bash
+make window-up      # the reporting SQL warehouse, and nothing else
+make window-down    # gone, confirmed from state rather than from an exit code
 ```
 
 Tests run offline against committed fixtures. Anything touching the

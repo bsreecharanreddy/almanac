@@ -63,6 +63,52 @@ wheel first. A Databricks Asset Bundle would derive the wheel and deps from
 `pyproject.toml`; Terraform still carries the job definition as this
 project's IaC of record.
 
+## The Phase 7 reporting window — one command up, one command down
+
+`reporting.tf` declares a serverless SQL warehouse for §7's dashboards. It is
+the only billable resource Phase 7 provisions, and design doc §4.7 narrows the
+phase's cloud window to it alone.
+
+```bash
+uv run python -m almanac.infra.window up     # plan + guard, applies nothing
+make window-up                               # the same plan, then applied
+# ... capture the evidence, before anything irreversible ...
+make window-down
+```
+
+`make window-up` never runs a bare `terraform apply`. Measured 2026-09-07: a
+bare plan in this directory reads **6 to add**, five of which are Phase 5's and
+Phase 6's deliberately destroyed stacks — the Lakebase instance ($12.06/day
+idle), the Vector Search endpoint ($6.72/day, no scale-to-zero), its index, the
+streaming job and its volume. Roughly **$19/day** of silence.
+
+### Phase 6's four teardown traps, as checks rather than as warnings
+
+The traps below are documented in
+[`../terraform-lakebase/README.md`](../terraform-lakebase/README.md), where they
+were first paid for. `almanac.infra.window` refuses to proceed on each, and
+`tests/unit/test_infra_window.py` proves each refusal fires:
+
+| Trap | The check |
+|---|---|
+| `terraform output` goes blank once a referenced resource is destroyed, and the next Databricks call fails as an **auth** error | Identity is read from `terraform show -json` state. `workspace_url` raises a message that says *"this is not an authentication failure"* when the workspace is missing |
+| An external location refuses to delete, citing dependents already gone | The teardown re-reads state afterwards and refuses to report success while any target is **still in state**. A zero exit code is not proof |
+| `force_destroy = true` in config is inert until an `apply` writes it to state | A plain `terraform plan` over the targets must be a **no-op** before the destroy plan is even made. Any pending update aborts with the targeted-apply command to run first |
+| A bare `apply` plans to **recreate** destroyed resources | Every plan is targeted, then parsed: a bring-up that would change anything outside the window is refused by address, and a destroy plan containing a single `create` is refused outright |
+
+Two properties that are easy to lose and hard to notice:
+
+- **The apply runs the saved plan file**, not `apply -target=…`. The latter
+  re-plans, so what executes is not what was guarded.
+- **A targeted destroy is checked for cascade.** Phase 5's pulled in
+  `databricks_job.pr_similarity` as a dependent, and deleting a job deletes its
+  run history — which was the evidence for four real runs.
+
+The warehouse carries no `output`, on purpose: an output is dropped from state
+the moment its resource is destroyed. This repo's own state shows it — 14 of the
+17 declared outputs are present, and the three missing ones are exactly those
+reading Phase 6's torn-down streaming resources.
+
 ## Why premium tier
 
 Unity Catalog requires it. Premium doubles the Jobs Compute DBU rate

@@ -489,3 +489,29 @@ variable "streaming_publish_pip_dependencies" {
   description = "The feature-engineering client, needed only by the publish task."
   default     = ["databricks-feature-engineering>=0.17.1"]
 }
+
+# Phase 7 (§4.7): the reporting warehouse. Its whole life is a short attended
+# window, so both knobs below are set against a default that assumes otherwise.
+
+variable "reporting_warehouse_size" {
+  type = string
+  # 2X-Small, the smallest the API offers, against a UI default of X-Large.
+  # The Phase 7 dashboards read Gold and the serving log, not Bronze's 341M
+  # rows, so latency is not the binding constraint -- and raising it is a
+  # one-line change, the same knob shape as similarity_sample_size.
+  description = "Cluster size for the reporting warehouse (§7's dashboards)."
+  default     = "2X-Small"
+}
+
+variable "reporting_auto_stop_mins" {
+  type = number
+  # The Terraform provider's own default is 120: two hours of idle DBUs and
+  # cloud instance charges after the last query, which is the exact shape of
+  # bill this project's cost rules exist to prevent. Azure Databricks documents
+  # the serverless floor as 5 minutes in the UI and as low as 1 via the SQL
+  # warehouses API, which is what Terraform drives (Microsoft Learn, "Create a
+  # SQL warehouse", updated 2026-08-20). 5 rather than 1 so that reading a
+  # dashboard between screenshots does not restart the warehouse per panel.
+  description = "Idle minutes before the reporting warehouse stops. Provider default is 120."
+  default     = 5
+}

@@ -1,4 +1,5 @@
-.PHONY: test test-fast test-all lint fmt typecheck check check-fast fixtures dbt
+.PHONY: test test-fast test-all lint fmt typecheck check check-fast fixtures dbt \
+	silver-fixture lineage window-up window-down
 
 # -n 4: four xdist workers, each with its own SparkSession. Tuned for a
 # local 8-core / 16 GB machine -- four Spark JVMs fit, eight would thrash.
@@ -71,3 +72,15 @@ lineage:
 	DATABRICKS_HOST=$${DATABRICKS_HOST:?set DATABRICKS_HOST} \
 	uv run python -m almanac.governance.lineage_runner \
 		--warehouse-id $${DATABRICKS_WAREHOUSE_ID:?set DATABRICKS_WAREHOUSE_ID}
+
+# The one billable thing Phase 7 provisions (design doc §4.7): a serverless SQL
+# warehouse for the dashboards, up for an attended window and then gone. Never
+# a bare `terraform apply` -- that plans to recreate Phase 5's and Phase 6's
+# deliberately destroyed stacks (~$19/day idle, measured 2026-09-07). Both
+# targets read the plan and refuse anything reaching past the window; drop
+# `--apply` to see that plan without running it.
+window-up:
+	uv run python -m almanac.infra.window up --apply
+
+window-down:
+	uv run python -m almanac.infra.window down --apply
