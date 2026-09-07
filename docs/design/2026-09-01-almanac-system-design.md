@@ -533,6 +533,160 @@ end**, embeddings included, rather than being a historical artifact. It
 is also a genuinely common production shape: a high-volume lossy stream
 for coverage, a lower-volume authoritative API for enrichment.
 
+### 4.6 Phase 6 concretized — live streaming ingest and the online store (2026-09-06)
+
+Recorded before any code, same shape as §4.4a and §8.3a. Two live probes
+drove the decisions; both are labelled with their `n`, and neither is a
+design premise until Task 1 widens it.
+
+**The live Events API is in the reduced era too — measured, not assumed.**
+One unauthenticated poll of `api.github.com/events` on 2026-09-06 returned
+99 events, of which **29 were `PullRequestEvent`**. Every one carried a
+`payload.pull_request` of exactly **5 keys**: `merged`, `draft`, `user`,
+`title`, `body` and `additions` were all absent. This is the same
+`REDUCED_V3` cut §12 found in the archive, and it confirms §4.5a's claim
+("only the Events firehose was reduced") from the live side.
+
+The consequence is structural and it constrains the whole phase: **live
+events cannot produce §5.1's label or any text-derived feature.** The
+label needs `user` (first response from a *non-author*) and merge
+outcome; embeddings need `title`/`body`. So "online feature freshness" in
+§9's Phase 6 gate means freshness of the features reduced-era events
+*can* support — event counts, arrival rates, inter-event timing, actor
+activity — not the champion model's full vector. Phase 6 serves fresh
+features and demonstrates the path; it does not re-serve the Phase 4
+champion on live data, and claiming otherwise would be the leakage-adjacent
+overclaim this project exists to avoid.
+
+**It is a lossy tail, not a firehose.** Measured from the same response's
+headers: `x-poll-interval: 60`, `x-ratelimit-limit: 60`/hour
+unauthenticated, and a `Link` header terminating at `page=3` — so roughly
+**300 events are retrievable at any moment**. Against the archive's own
+measured 2026 volume of **~155–162K events/hour** (§12's corrected figure,
+itself a Gate 1 correction of an earlier `n=1` claim), a 60-second poll
+surfaces on the order of **11%** of the stream.
+
+> **Superseded 2026-09-06 by Task 1's `n=30` measurement: the real figure
+> is ~7.1–7.4%, not ~11%.** Authenticated polling for 30 consecutive
+> intervals returned **zero id overlap between consecutive polls, on all
+> 30** — the window turns over completely inside 60 seconds — at a mean
+> 192.2 events/poll, i.e. ~11,500/hour. Two further results changed the
+> plan rather than confirming it: the **rate limit is not the binding
+> constraint** (~180 requests/hour used of 5,000, so the 7% ceiling comes
+> from honouring `x-poll-interval`, a courtesy, not a technical limit),
+> and the feed carries a stable **305-second lag**, which is a floor on
+> end-to-end freshness that no pipeline work can beat.
+> `docs/findings/2026-09-06-events-api-and-online-store-rates.md`.
+
+Two things follow. First, **authentication is mandatory, not an
+optimization**: three pages per poll at 60 polls/hour is 180 requests/hour
+against an unauthenticated ceiling of 60. Second, and more important, the
+**replay harness stops being a nicety.** §11 already required "Live Events
+API *and* a replay harness"; this measurement is why. The live feed cannot
+demonstrate completeness, late arrival, duplication or out-of-order
+delivery, because it is a sampled tail — replay of real GH Archive hours
+through the identical streaming path is the only way to force those cases
+on demand. The live feed proves the ingest is real; replay proves it is
+correct.
+
+**Ingest architecture.** A poller lands raw event JSON to cloud storage;
+Structured Streaming reads that landing zone. The streaming layer dedups
+on `event_id` inside a watermark — the *same* key Silver's batch dedup
+already uses (§4.2), so the streaming and batch paths agree by
+construction rather than by coincidence. Exactly-once is Delta's, via
+checkpointing plus an idempotent merge, not a hand-rolled ledger. Note
+§4.1a's trap applies here as it does everywhere: the legacy era has no
+`event_id`, but the live feed is `REDUCED_V3` only, so streaming never
+meets that case — recorded so the omission is deliberate rather than
+overlooked.
+
+**Online store technology — decided by Gate 2, and the answer changed.**
+Databricks **legacy online tables are deprecated and cannot be created or
+accessed after 2026-01-15**, which is already past. New online stores are
+**Lakebase Autoscaling** projects created via
+`fe.create_online_store(name, capacity=…)` and populated with
+`fe.publish_table(...)`, from `databricks-feature-engineering>=0.13.0` on
+DBR 16.4 LTS ML or serverless. Publish modes are `TRIGGERED` (default),
+`CONTINUOUS` (streaming) and `SNAPSHOT`. Checked live 2026-09-06 against
+Microsoft Learn's own page (last updated 2026-08-28), not from training
+data — an online-tables design would have been dead on arrival.
+
+**The cost shape is the Vector Search trap again, and it is documented
+this time.** Databricks states plainly that **"Lakebase scale-to-zero is
+not supported"**, alongside "online stores continuously incur costs;
+delete online stores that are no longer needed." That is the same failure
+mode `2026-09-06-vector-search-live-state-and-teardown.md` measured the
+hard way at a flat 4 DBU/hour idle. So the online store is provisioned as
+a **bounded window with teardown in the same plan that creates it**,
+sized at the smallest capacity unit that works (`CU_1`/`CU_2` of
+`CU_1|CU_2|CU_4|CU_8`), and its real idle rate is measured and published
+the way the Vector Search rate was. Phase 5's lesson is applied here
+*before* the spend, which is the only useful time to apply it.
+
+**Two prerequisite gaps, found by checking rather than assuming.**
+`publish_table` requires a primary-key constraint, non-nullable key
+columns, and Change Data Feed on the source table:
+
+| Prerequisite | State today | Action |
+|---|---|---|
+| PK with `TIMESERIES` designation | **Already present** — `features/registration.py` emits it | none |
+| `delta.enableChangeDataFeed` | **Missing on feature tables** — set only in `embed/pipeline.py` | Phase 6 task |
+| PK columns `NOT NULL` | **Not enforced** | Phase 6 task |
+
+The first row is an unearned win worth naming: §4.4a added the
+`TIMESERIES` primary key "for governance/lineage only, not correctness",
+explicitly *not* for an online store. It turns out to be the exact
+prerequisite `publish_table` demands.
+
+**Scheduling.** §9 placed Phase 6 at Nov 2–8, after the credit expiry. The
+project is running ~8 weeks ahead of that schedule, so the cloud window is
+**pulled forward**, on the same reasoning §8.3a used for Phase 5 and §5.2
+before it. Streaming plus a non-scale-to-zero online store is the most
+expensive shape this project has run, which makes the bounded-window
+discipline above load-bearing rather than procedural.
+
+**Amended 2026-09-06, after Task 1 measured what was actually left.** The
+original wording made the pull-forward a race against the 2026-09-24
+expiry. It is not one: §11 now records that **credit expiry is a budget,
+not a wall** — modest paid spend afterwards is acceptable provided
+resources come down when idle. The window is pulled forward because the
+work is ready, not to beat a deadline, and Phase 6 is **not** scoped down
+to fit a balance.
+
+What Task 1 did change is the arithmetic everything was being planned
+against, and it was wrong in a way worth recording. The project's cost
+figures track Databricks DBUs; measured against Azure's own Cost
+Management API, **DBUs were only 53% of real spend** — $65.19 of $122.40
+between 2026-09-01 and 09-06. Virtual Machines ($30.65), NAT Gateway
+($14.97) and Storage ($11.05) made up the rest and appear in no findings
+doc. So remaining credit was **~$61.60, not the ~$118** a DBU-only reading
+implies. NAT and Storage also bill partly per-transaction rather than
+flat, so they rise with activity — an early "standing cost" estimate of
+$4.43/day was activity-inflated and the real idle rate is ~$2.30/day. Full
+method and numbers in
+`docs/findings/2026-09-06-events-api-and-online-store-rates.md`.
+
+**Measured by Task 1, 2026-09-06** (this paragraph previously listed all
+three as unmeasured):
+`docs/findings/2026-09-06-events-api-and-online-store-rates.md`.
+
+- **Events API throughput** — resolved at `n=30`, see the correction above.
+- **Remaining credit** — resolved, and it moved the number the whole phase
+  was being planned against. Databricks DBUs are **only 53% of real Azure
+  spend** ($65.19 of $122.40 across 09-01→09-06; VMs, NAT Gateway and
+  Storage are the rest and appear in no prior findings doc), so remaining
+  credit was **~$61.60, not ~$118**. Every earlier cost figure in this
+  repo is DBU-only and understates real spend by ~47%.
+- **The Lakebase CU rate** — **still unresolved, and named as such.**
+  `system.billing.list_prices` returns zero rows for `LAKEBASE` /
+  `POSTGRES` / `ONLINE` / `OLTP`, the *second* occurrence of the gap Phase
+  5 hit for `VECTOR`/`SEARCH`. Azure's Retail Prices API lists "Premium
+  Database Serverless Compute" at $0.26/DBU-hour in `westus3`, which is
+  the **probable** meter by naming but an inference, not a confirmed
+  mapping — Vector Search's real SKU was only confirmed by provisioning
+  it. Task 9 confirms this one the same way. Bounded estimate: **~$6/day
+  at 1 DBU/hour, ~$25/day if it behaves like Vector Search at 4.**
+
 ## 5. The model
 
 **Primary: PR review-SLA risk.** Given an open PR, predict whether it
@@ -1318,7 +1472,7 @@ turning Sep 24 from a cliff into a planning input.
 | **3 — Feature platform** | Sep 21 – Oct 4 | Point-in-time-correct offline store, as-of joins, feature specs, leakage test suite. | The `as_of` demo works; leakage suite green |
 | **4 — Model + MLflow** | Oct 5–18 | Measured baseline first, then the SLA-risk model. MLflow tracking + registry. Batch scoring, then a serving endpoint. Drift and training/serving skew monitoring. **Live serving window on bounded paid spend (§8.1)**, measuring cold start. | Model beats baseline by a measured margin, or the null result is documented |
 | **5 — Embeddings + vector index** | Oct 19 – Nov 1 | Incremental embedding pipeline, ANN index, similarity features, measured downstream lift. **Index choice decided by §8.3's rule, on measured vector count.** | Measured lift, or an honest documented null result |
-| **6 — Streaming** | Nov 2–8 | Live Events API ingest, watermarks, late-arrival and exactly-once handling, online feature freshness. | Live events land and update online features |
+| **6 — Streaming** | ~~Nov 2–8~~ → **pulled forward to before Sep 24 (§4.6, 2026-09-06)** | Live Events API ingest, watermarks, late-arrival and exactly-once handling, online feature freshness. **Scope confirmed to include the online store**, deferred since §4.4a. | Live events land and update online features |
 | **7 — Governance, BI, docs** | Nov 9–22 | OpenLineage, contracts enforced in CI, 3 Power BI pages, ADRs, limitations, decision memo, postmortem. Second bounded paid window for the final live demo. | A stranger clones and runs locally in <15 min |
 | **8 — Ship** | Nov 23 | Tag `v1.0`. Stop. | — |
 
@@ -1389,6 +1543,8 @@ an open choice with a defensible alternative.
 | ML platform is the deliverable | Pure data platform, no models | Without a model there is no feature store, and without a feature store there is no point-in-time story — which is the whole reason to build this |
 | Azure spend front-loaded to weeks 3–4 | Cloud work late, as a final phase | Free credits expire 2026-09-24; a late cloud phase wastes them entirely |
 | Free credits fund the data-platform proof; ML serving paid for later | Split evenly, or save credits for serving | Spark backfill at volume is the expensive operation; training and serving are cheap |
+| **Credit expiry is a budget, not a wall** (2026-09-06) | Scope phases down to fit the remaining balance | Broadens the row above. Modest real spend after 2026-09-24 is acceptable *provided* it is spent judiciously and **resources are torn down when not in use** — the point of provisioning is to learn, build and document, not to keep anything online. Future demos bring infrastructure up on demand. Scoping a phase down to fit a balance would have traded architecture quality for a constraint that was never real |
+| **Teardown ships with provisioning** (2026-09-06) | Tear down as a follow-up task | Two incidents: Vector Search billed a flat 4 DBU/hour idle because nothing scaled to zero, and Lakebase documents the same property up front. A delete path written after the fact is written under time pressure, or not at all |
 | 3 Power BI pages | 4+ pages | Beyond three, page count stops carrying signal and starts costing hours |
 | dbt included, scoped to Gold only | No dbt, or dbt through Silver | Market-demanded and cheap at Gold; rewriting Silver in dbt would discard the Spark work that is the point |
 | Streaming built in Phase 6 | Deferred to a future project | Most-probed interview topic, and a deferred project may never happen |

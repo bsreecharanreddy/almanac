@@ -59,17 +59,24 @@ a year later.**
 
 ## Current status
 
-**Phase 0 and Phase 1 complete and merged to `main`; Phase 2 at 9 of 9
-tasks with the Azure burn done, on branch `phase-2-gold` (PR #9).** The full
-medallion has run on Q3 2025 — 341,060,851 rows for $11.96, then Gold over
-that quarter for $0.78 — and the Photon A/B is published with its Bronze leg
-withheld as indeterminate. What remains before the phase closes is the exit
-gate's `terraform destroy`, per-layer DBUs, and §13's open items.
-`docs/STATUS.md` holds it at
-task granularity — deliberately not duplicated here, because two places
-recording the same thing means one of them is wrong, and this section
-proved that the hard way: it read *"implementation not started"* through
-all of Phase 0.
+**Phases 0–5 complete and merged to `main`; Phase 6 at 10 of 10 tasks on
+branch `phase-6-streaming`, not yet pushed.** The full medallion has run on
+Q3 2025 — 341,060,851 rows for $11.96, then Gold over that quarter for $0.78.
+Phase 6 made the platform live: a poller against GitHub's public Events API,
+streaming Silver, two online feature tables published to a Lakebase store and
+served from Postgres. Its exit gate was demonstrated across two live windows
+(84 served feature values changed, 684 added, none lost) and the billable
+stack was torn down at a measured idle rate of $12.06/day — read the day
+after, since `system.billing.usage` lags and cannot be queried during the
+window it measures. **Every exit-gate row is `[x]`.**
+
+`docs/STATUS.md` holds it at task granularity — deliberately not duplicated
+here, because two places recording the same thing means one of them is wrong.
+This section has proved that twice now: it read *"implementation not
+started"* through all of Phase 0, and then sat on *"Phase 2 … on branch
+`phase-2-gold`"* through Phases 3, 4, 5 and most of 6. Neither was ever
+*wrong* when written, which is exactly why the "don't let it go stale" rule
+does not catch it — see the positive-check rule in Conventions below.
 
 ## Phase plan
 
@@ -83,7 +90,7 @@ See §9 of the design doc for the full table and its gates. At a glance:
 | 3 | Wk 5–6 | Feature platform, as-of joins, leakage suite |
 | 4 | Wk 7–8 | Baseline, model, MLflow, serving, drift + skew |
 | 5 | Wk 9–10 | Embeddings, vector index as feature infrastructure |
-| 6 | Wk 10–11 | Streaming: watermarks, late arrival, exactly-once |
+| 6 | Wk 10–11 | Streaming: live poller, late arrival, exactly-once, online store |
 | 7 | Wk 12–13 | Governance, lineage, contracts in CI, BI, docs |
 | 8 | Wk 13 | Tag `v1.0`. Stop. |
 

@@ -1,14 +1,19 @@
 """Shared assertions and builders for the Spark test modules."""
 
+import json
 import math
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pyspark.sql import Column, DataFrame, Row, SparkSession
 from pyspark.sql import functions as F
 
 from almanac.features.similarity import Neighbor
 from almanac.pipeline.bronze import add_ingestion_metadata, write_bronze
+
+if TYPE_CHECKING:
+    from pyspark.sql.streaming.query import StreamingQuery
 
 
 def one(df: DataFrame) -> Row:
@@ -88,6 +93,30 @@ def raw(spark: SparkSession, *rows: RawRow) -> DataFrame:
     for name, default in _parsed_defaults().items():
         df = df.withColumn(name, default)
     return df
+
+
+def land_poll(landing: Path, events: list[dict[str, object]], *, polled_at: str, name: str) -> Path:
+    """One poller landing file -- the same envelope ``stream.poller._write_poll`` produces.
+
+    ``event`` is JSON-encoded as a string, not embedded as a nested object:
+    a nested object would force the landing zone's read schema to type it
+    via ``payloads.EVENT_SCHEMA``, which omits ``actor`` on purpose, silently
+    dropping it before ``parse_events`` ever sees the event.
+    """
+    path = landing / f"{name}.jsonl"
+    lines = (json.dumps({"polled_at": polled_at, "event": json.dumps(e)}) for e in events)
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def run_streaming_query(query: "StreamingQuery", *, timeout: int = 60) -> None:
+    """``awaitTermination`` bounded, failing loudly rather than hanging the suite
+    if a streaming test's query never stops on its own (e.g. ``availableNow``
+    finding nothing to do is instant; a genuine hang is a real bug to see)."""
+    finished = query.awaitTermination(timeout)
+    if not finished:
+        query.stop()
+        raise AssertionError(f"streaming query did not terminate within {timeout}s")
 
 
 class FakeSimilarityIndex:

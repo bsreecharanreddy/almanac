@@ -369,3 +369,113 @@ variable "similarity_sample_size" {
   description = "Spine rows to query against the real index, bounded by measured per-query latency (§8.3a)."
   default     = "10000"
 }
+
+variable "streaming_python_file" {
+  type        = string
+  description = "Workspace path of scripts/streaming.py, the job entrypoint for almanac.stream.runner."
+  default     = "/Workspace/Shared/almanac/scripts/streaming.py"
+}
+
+variable "event_stream_config_workspace_path" {
+  type = string
+  # Same reason as source_config_workspace_path above: almanac.stream.runner
+  # defaults --config to the relative conf/sources/github_events.yml, which
+  # resolves against the repo root for `make`/CI and not for a job task's
+  # working directory. Passed explicitly rather than trusting the CWD.
+  description = "Workspace path of the synced conf/sources/github_events.yml, passed explicitly."
+  default     = "/Workspace/Shared/almanac/conf/sources/github_events.yml"
+}
+
+variable "streaming_workers" {
+  type = number
+  # One worker, not backfill_workers: the ingest stage drains a landing zone
+  # holding ~30 polls x ~192 events (measured 2026-09-06, n=30) -- a few
+  # thousand rows. Sizing this like the 341M-row backfill would bill four
+  # idle nodes to do nothing.
+  description = "Workers on the streaming job cluster; the live feed is a sample, not the archive."
+  default     = 1
+}
+
+variable "streaming_max_polls" {
+  type = string
+  # A string, not a number: databricks_job task parameters are strings.
+  # 30 polls at the server's advertised 60s interval is a ~30-minute window,
+  # the same n the Task 1 capture measurement used.
+  description = "Poll count for the bounded live window (§4.6)."
+  default     = "30"
+}
+
+variable "streaming_secret_scope" {
+  type = string
+  # The GitHub token never enters this repo, a job parameter, or a log line
+  # -- it is resolved from a secret scope into GITHUB_TOKEN at cluster start,
+  # which is the name conf/sources/github_events.yml's auth.token_env reads.
+  description = "Databricks secret scope holding the GitHub token for the poller."
+  default     = "almanac"
+}
+
+variable "streaming_secret_key" {
+  type        = string
+  description = "Key within streaming_secret_scope holding the GitHub token."
+  default     = "github_token"
+}
+
+variable "online_store_capacity" {
+  type = string
+  # CU_1, the smallest of CU_1|CU_2|CU_4|CU_8. Databricks' docs suggest CU_2
+  # for testing; this is a bounded window against a finite credit, and
+  # capacity is the one field raisable in place afterwards. The real DBU rate
+  # is still unmeasured -- system.billing.list_prices returns nothing for
+  # LAKEBASE/POSTGRES/OLTP, the second time this project has hit that gap --
+  # so Task 9 confirms it the way Vector Search's was confirmed, by running it.
+  description = "Lakebase compute units for the online store (§4.6)."
+  default     = "CU_1"
+}
+
+variable "online_store_stopped" {
+  type = bool
+  # Exposed, not relied on. The provider offers an explicit stop, which is
+  # not the same thing as the automatic scale-to-zero §4.6 recorded as
+  # unsupported -- and whether a stopped instance stops billing compute is
+  # UNVERIFIED. Deletion is the teardown known to work; Task 9 measures this
+  # one before any claim is made about it.
+  description = "Stop the online store instead of deleting it. Billing impact unverified until Task 9."
+  default     = false
+}
+
+variable "streaming_feature_schema" {
+  type = string
+  # Fully qualified (catalog.schema), not a bare name: register_feature_table
+  # emits "{schema}.{table}", which is a valid Unity Catalog three-part name
+  # only if the catalog is already in it.
+  description = "UC catalog.schema the streaming feature tables register into."
+  default     = "almanac_dbx.features"
+}
+
+variable "streaming_online_schema" {
+  type = string
+  # Deliberately separate from streaming_feature_schema rather than derived:
+  # Databricks documents that an online table's *catalog* name must equal its
+  # backing Postgres database name, which the source catalog has no reason to
+  # satisfy. Task 9 confirms what this actually has to be; publishing into the
+  # source catalog is the thing that would fail quietly at serving time.
+  description = "UC catalog.schema the published online tables land in (§4.6)."
+  default     = "almanac_online.features"
+}
+
+variable "streaming_publish_mode" {
+  type = string
+  # TRIGGERED for a first run: CONTINUOUS provisions a streaming sync pipeline
+  # that keeps running -- and therefore keeps billing -- until it is torn down,
+  # which is the exact shape Phase 5 got wrong with Vector Search. Task 9's
+  # gate needs CONTINUOUS to show a live event moving a served value, so it is
+  # switched on deliberately for that step, not left on by default.
+  description = "publish_table mode: TRIGGERED or CONTINUOUS."
+  default     = "TRIGGERED"
+}
+
+variable "streaming_publish_pip_dependencies" {
+  type        = list(string)
+  description = "The feature-engineering client, needed only by the publish task."
+  default     = ["databricks-feature-engineering>=0.17.1"]
+}

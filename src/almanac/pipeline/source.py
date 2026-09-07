@@ -84,3 +84,32 @@ class RestSourceConfig(BaseModel):
     @classmethod
     def load(cls, path: Path) -> Self:
         return cls.model_validate(yaml.safe_load(path.read_text()))
+
+
+# The third source, and a third shape. §4.6: a polled event stream is
+# neither a templated-per-entity REST call (RestSourceConfig) nor a file
+# mirror (SourceConfig) -- it has one fixed URL, polled repeatedly, capped
+# at a measured page count. `auth`/`rate_limit` are reused as-is: both are
+# the same GitHub headers regardless of which endpoint they're read from.
+
+
+class EventStreamConfig(BaseModel):
+    """A polled event stream. One fixed URL, unlike RestSourceConfig's per-entity template."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1)
+    kind: Literal["event_stream"]
+    url: str = Field(min_length=1)
+    auth: AuthConfig
+    rate_limit: RateLimitConfig
+    # GitHub's own Link header terminates here regardless of per_page --
+    # measured directly, not assumed (docs/findings/2026-09-06-events-api-
+    # and-online-store-rates.md).
+    pages_per_poll: int = Field(default=3, gt=0)
+    poll_interval_header: str = "X-Poll-Interval"
+    max_attempts: int = Field(default=3, gt=0)
+
+    @classmethod
+    def load(cls, path: Path) -> Self:
+        return cls.model_validate(yaml.safe_load(path.read_text()))
