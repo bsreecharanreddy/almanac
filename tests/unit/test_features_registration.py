@@ -54,7 +54,7 @@ def test_a_non_temporal_table_gets_a_plain_composite_primary_key() -> None:
 
 def test_timeseries_pk_unchanged() -> None:
     """Regression guard: primary_key_sql and not_null_key_sql now share
-    _key_columns. §4.4a's constraint DDL is already correct against real
+    key_columns. §4.4a's constraint DDL is already correct against real
     UC -- routing it through the shared helper must not have shifted it.
     """
     drop_sql, add_sql = primary_key_sql(

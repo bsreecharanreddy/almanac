@@ -17,7 +17,7 @@ def register_feature_table(
     spark.sql(f"CREATE TABLE IF NOT EXISTS {schema}.{table} USING DELTA LOCATION '{location}'")
 
 
-def _key_columns(entity_cols: list[str], event_time_col: str | None) -> list[str]:
+def key_columns(entity_cols: list[str], event_time_col: str | None) -> list[str]:
     """The primary key's columns: the entity keys, then the event-time key
     if the table is temporal. primary_key_sql and not_null_key_sql share
     this so the two cannot disagree about what the key is."""
@@ -36,7 +36,7 @@ def primary_key_sql(
     CONSTRAINT would collide with the first run's still-live constraint.
     """
     constraint = f"{table}_pk"
-    keys = _key_columns(entity_cols, event_time_col)
+    keys = key_columns(entity_cols, event_time_col)
     if event_time_col is not None:
         keys[-1] = f"{event_time_col} TIMESERIES"
     drop_sql = f"ALTER TABLE {schema}.{table} DROP CONSTRAINT IF EXISTS {constraint}"
@@ -71,5 +71,5 @@ def not_null_key_sql(
     """
     return [
         f"ALTER TABLE {schema}.{table} ALTER COLUMN {col} SET NOT NULL"
-        for col in _key_columns(entity_cols, event_time_col)
+        for col in key_columns(entity_cols, event_time_col)
     ]
