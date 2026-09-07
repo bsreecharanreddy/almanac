@@ -181,6 +181,38 @@ reprocessed and inserts nothing, because every row matches on `event_id`.
 interrupted run against an uninterrupted one — so it still tests the real
 contract, and both cases pass unchanged.
 
+### Verified against the real failing conditions, not only in tests
+
+The unit tests run on local Spark against fixtures. The loss above happened
+on **ADLS-backed Delta with a restored cloud checkpoint**, so the fix was
+re-run there, replaying the same 35 poll files that produced it:
+
+| Phase | Input | Checkpoint | Rows in Silver |
+|---|---|---|---|
+| 1 | 30 files | fresh | **6,801** |
+| 2 | +5 files | **resumed** | **8,007** |
+
+Phase 2 is the whole point. It is the case the old code failed — a restored
+watermark had advanced past the incoming events — and 6,801 + 1,206 = 8,007
+means **all 1,206 late events landed**, where the watermark path lost 161
+repos' worth. `observe()` reported 217 late events in phase 2, matching the
+client-side count exactly, as it did during the original run. Distinct
+`event_id` = 8,007 against 8,007 rows, so nothing was double-inserted either:
+the MERGE suppresses genuine duplicates while keeping late first sightings.
+
+**Two harness bugs, both mine, and only the second was interesting.** The
+first was writing a function call from memory instead of reading its
+signature. The second matters: the run "failed" on `distinct repo_id 5771 !=
+5770` — but **Spark counts `NULL` as a distinct value**, and 2 of the 8,007
+events carry no repo object at all. The pipeline was right and the assertion
+was wrong. It now counts non-null repos and asserts `repoless_rows == 2`
+explicitly, which is a stronger check than the one that "failed": those two
+rows carry valid `event_id`s and must land.
+
+Run on an ephemeral job cluster against the existing westus3 workspace — no
+Terraform, no Lakebase, no online store. Verifying the write path did not
+require re-provisioning the serving path.
+
 ## Finding 3 — `publish_table` does not create its catalog (fixed)
 
 With ingest fixed, `features` succeeded and `publish` failed:
@@ -253,20 +285,73 @@ a revision of Task 1.
 6,801 rows. This extends Task 1's "zero overlap between consecutive polls"
 from adjacent pairs to a whole 30-poll window.
 
-### Cost
+### Cost — measured after the fact, as designed
 
-The Lakebase instance ran ~3.5 hours at CU_1 (created 01:55 UTC, stopped
-02:49–03:19 during a test run, destroyed ~05:5x).
+The Lakebase instance ran ~3.2 hours at CU_1 (created 01:55 UTC, stopped
+02:49–03:19 during a test run, destroyed ~05:1x).
 
-**The DBU rate itself is still unmeasured**, for a reason worth recording:
-`system.billing.usage` is *empty* in a newly created metastore — 0 rows
-total, not merely 0 for this workspace — and in the main westus3 metastore it
-lags roughly a day (latest `usage_date` was 2026-09-06 while this ran on
-09-07). So the measurement cannot be taken during the window it measures.
-It is deferred rather than lost: usage records survive resource deletion, and
-`workspace_id = 7405616381250124` was captured before teardown so the rows
-remain attributable. This is the third time this project has hit a gap in
-Databricks' own price/usage surfaces.
+**The rate could not be read during the window it measures**, which is why
+it was deferred rather than skipped: `system.billing.usage` is *empty* in a
+newly created metastore — 0 rows total, not merely 0 for this workspace —
+and in the main westus3 metastore it lags roughly a day. Capturing
+`workspace_id = 7405616381250124` before teardown is what made the rows
+attributable afterwards. The rows landed overnight and the measurement was
+taken on 2026-09-07:
+
+```sql
+SELECT date_format(usage_start_time,'MM-dd HH:mm'), usage_quantity
+FROM system.billing.usage
+WHERE sku_name = 'PREMIUM_DATABASE_SERVERLESS_COMPUTE_US_CENTRAL'
+ORDER BY usage_start_time
+```
+
+**Billing lands in 10-minute buckets, and the idle draw is flat to four
+decimal places.** `n = 14` consecutive full buckets (02:00–02:40 and
+03:20–05:00), every one of them **0.1420 DBU**, zero variance:
+
+| Quantity | Value |
+|---|---|
+| Idle draw, CU_1 | **0.852 DBU/hour** (0.1420 × 6) |
+| SKU | `PREMIUM_DATABASE_SERVERLESS_COMPUTE_US_CENTRAL` |
+| List price | **$0.59 / DBU-hour** |
+| **Idle cost** | **$0.503/hour → $12.06/day** |
+| Total for the instance's whole life | 2.1357 DBU = **$1.26** |
+
+**Stopping the instance stops the meter completely.** The 02:50 → 03:10
+gap contains **no usage rows at all** — not reduced rows, none — which is
+the direct evidence that the stop-before-publish decision was worth making
+rather than merely prudent. A stopped Lakebase instance bills nothing for
+compute.
+
+**The store was the cheap part.** Across the whole centralus workspace,
+DBU spend at list price was **$3.69**, of which the online store was $1.26;
+the largest single line was $1.62 of serverless SQL warehouse — the ad-hoc
+queries run to *verify* the store, not the store itself.
+
+**All-in, and §2's ratio holds.** Azure Cost Management reports **$2.71**
+across the two `almanac-lb-*` resource groups over 09-06 → 09-07:
+
+| Service | Cost | Share |
+|---|---|---|
+| Azure Databricks | $1.32 | 49% |
+| Virtual Machines | $0.83 | 31% |
+| Storage | $0.28 | 10% |
+| NAT Gateway | $0.25 | 9% |
+| Virtual Network + Bandwidth | $0.03 | 1% |
+
+I first wrote that this stack was "entirely serverless, so §2's 53% ratio
+does not transfer" — **wrong, and checking took one query.** The publish job
+ran on a classic job cluster (`PREMIUM_JOBS_COMPUTE`, 2.25 DBU), which means
+real VMs behind a NAT gateway. Databricks is 49% of the bill here against
+§2's 53%: the ratio transfers almost exactly, and the general rule
+(**a DBU figure is roughly half the true cost**) survives a second,
+independently provisioned stack.
+
+The $1.32 Azure figure and the $3.69 Databricks figure are **not reconciled**
+and are not presented as if they were. Two candidate causes, neither verified:
+09-07 is a partial, still-ingesting day in Cost Management, and
+`list_prices` is list price while Cost Management reports actual billed cost.
+Naming them beats implying agreement that was not demonstrated.
 
 ## Method
 
@@ -289,3 +374,27 @@ treated as one sample, not as constants.
 - `infra/terraform-lakebase/README.md` told the reader to
   `export DATABRICKS_HOST="https://$(terraform output -raw workspace_url)"`;
   the output already carries the scheme. Fixed.
+- **"The Lakebase rate is not in Databricks' price catalog"**
+  (`2026-09-06-events-api-and-online-store-rates.md` §3) — **wrong, and it
+  was wrong the first time too.** `system.billing.list_prices` has carried
+  `PREMIUM_DATABASE_SERVERLESS_COMPUTE_*` for every region since
+  `price_start_time = 2025-06-11`, ~15 months before this ran. The search
+  terms were `LAKEBASE`, `POSTGRES`, `ONLINE`, `OLTP` — none of which appear
+  in the SKU name, because **Databricks SKU names are meter names, not
+  product names.** Checking Phase 5's identical claim shows the same failure:
+  `PREMIUM_SERVERLESS_REAL_TIME_INFERENCE_US_WEST_3` has been priced since
+  2013-01-01. So the "pattern" §3 asserted — newer serverless products are
+  unresolvable before provisioning — was never a pattern; it was the same
+  search mistake twice, generalized from `n=2` where both samples were the
+  same error. Corrected in place at both sites.
+- **The $0.26/DBU-hour retail-catalog rate was off by 2×.** Databricks' own
+  catalog prices `..._US_WEST_3` at **$0.52**, and the region actually used,
+  `..._US_CENTRAL`, at **$0.59**. The product-name inference ("Premium
+  Database Serverless Compute is the Lakebase meter") was right; the rate
+  taken from Azure's Retail Prices API was not. **Prefer
+  `system.billing.list_prices` over the retail API** — it is the meter that
+  actually bills, and it was queryable all along.
+- The predicted range was $6.24–$25/day. Measured **$12.06/day**, inside it,
+  but for compensating reasons rather than a good prediction: the DBU draw is
+  *below* the assumed 1 DBU/hour (0.852) while the price is *above* the
+  assumed $0.26 (0.59).

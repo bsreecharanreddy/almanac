@@ -79,6 +79,19 @@ speculated might be plausible.
 
 ## What could not be confirmed, and why
 
+> **Correction, 2026-09-07 (Phase 6 Task 9): the table did have something
+> to show; the query was looking for the wrong thing.** The meter is
+> `PREMIUM_SERVERLESS_REAL_TIME_INFERENCE_US_WEST_3`, priced in
+> `list_prices` since `price_start_time = 2013-01-01` — it contains neither
+> `VECTOR` nor `SEARCH` because **Databricks SKU names are meter names, not
+> product names.** The Marketplace-metering hypothesis below is therefore
+> unnecessary, and the "first time the table itself has had nothing to show"
+> claim is wrong. Phase 6 repeated the identical mistake searching
+> `LAKEBASE`/`POSTGRES`/`ONLINE`/`OLTP` and built an `n=2` "pattern" on the
+> two of them; both are corrected in
+> `2026-09-07-live-feed-era-and-watermark.md`. Search the meter family
+> (`COMPUTE`, `INFERENCE`, `DATABASE`), not the product brand.
+
 **`system.billing.list_prices` returns zero rows for any SKU containing
 `VECTOR` or `SEARCH`**, despite the region and account both confirming
 access above. Every other DBU rate this project has needed (Premium Jobs

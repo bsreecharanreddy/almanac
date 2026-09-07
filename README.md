@@ -161,9 +161,11 @@ review queue. The domain is incidental, and that is the point.
 > restore. That last one is fixed — dedup moved to an insert-only Delta
 > `MERGE` on `event_id`, leaving the stream stateless — and the others are
 > corrected in place with the runs that disproved them.
-> The ephemeral Lakebase stack was **torn down**; its idle DBU rate is the
-> one number still unmeasured, because `system.billing.usage` lags a day
-> and cannot be read during the window that generates it.
+> The ephemeral Lakebase stack was **torn down** at a measured idle rate of
+> **0.852 DBU/hour — $12.06/day** — read the day after, since
+> `system.billing.usage` lags and cannot be queried during the window it
+> measures. The whole experiment cost $3.69 in DBUs, and a stopped instance
+> was confirmed to bill **nothing**, not merely less.
 > [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
 > in the same commit as the work it describes.
 

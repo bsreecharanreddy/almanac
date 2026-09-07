@@ -162,6 +162,24 @@ unaffordable when it is merely constrained.
 
 ## 3. The Lakebase rate is not in Databricks' price catalog
 
+> **Correction, 2026-09-07 (Task 9): this section's premise is wrong, and
+> so is the "pattern" it generalizes to.** The rate *was* in the catalog the
+> whole time. `system.billing.list_prices` has carried
+> `PREMIUM_DATABASE_SERVERLESS_COMPUTE_<region>` since
+> `price_start_time = 2025-06-11`; the region actually used prices at
+> **$0.59/DBU-hour**, and `..._US_WEST_3` at **$0.52** — not the $0.26 this
+> section inferred below. The four search terms simply do not appear in the
+> SKU name, because **Databricks SKU names are meter names, not product
+> names**. Phase 5's identical claim fails the same check
+> (`PREMIUM_SERVERLESS_REAL_TIME_INFERENCE_US_WEST_3`, priced since
+> 2013-01-01), so both samples of the alleged pattern are the same search
+> mistake — an `n=2` generalization where the two samples were not
+> independent. The reasoning below is left intact because its *method* (find
+> the meter empirically, confirm by provisioning) is what produced the
+> correction, and because the Vector Search cross-validation it performs is
+> still exactly right. Measured result:
+> `2026-09-07-live-feed-era-and-watermark.md` § Cost.
+
 `system.billing.list_prices` returns **zero rows** for any SKU matching
 `LAKEBASE`, `POSTGRES`, `ONLINE` or `OLTP`. This is the **second**
 occurrence of the same gap — Phase 5 found the same for `VECTOR`/`SEARCH`
@@ -212,3 +230,7 @@ Vector Search at 4 DBU/hour, **~$25/day**. Task 9 measures which.
    Future cost claims state whether they are DBU-only or all-in.
 6. **The online store's rate is unconfirmed until provisioned**, with a
    measured range of ~$6–25/day and a method for settling it.
+   *Settled 2026-09-07:* **0.852 DBU/hour → $12.06/day** idle at CU_1, on
+   `PREMIUM_DATABASE_SERVERLESS_COMPUTE_US_CENTRAL` at $0.59/DBU-hour. Inside
+   the predicted range, but see §3's correction — the rate was in
+   `list_prices` all along, and the $0.26 retail figure was 2× off.
