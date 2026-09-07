@@ -442,3 +442,40 @@ variable "online_store_stopped" {
   description = "Stop the online store instead of deleting it. Billing impact unverified until Task 9."
   default     = false
 }
+
+variable "streaming_feature_schema" {
+  type = string
+  # Fully qualified (catalog.schema), not a bare name: register_feature_table
+  # emits "{schema}.{table}", which is a valid Unity Catalog three-part name
+  # only if the catalog is already in it.
+  description = "UC catalog.schema the streaming feature tables register into."
+  default     = "almanac_dbx.features"
+}
+
+variable "streaming_online_schema" {
+  type = string
+  # Deliberately separate from streaming_feature_schema rather than derived:
+  # Databricks documents that an online table's *catalog* name must equal its
+  # backing Postgres database name, which the source catalog has no reason to
+  # satisfy. Task 9 confirms what this actually has to be; publishing into the
+  # source catalog is the thing that would fail quietly at serving time.
+  description = "UC catalog.schema the published online tables land in (§4.6)."
+  default     = "almanac_online.features"
+}
+
+variable "streaming_publish_mode" {
+  type = string
+  # TRIGGERED for a first run: CONTINUOUS provisions a streaming sync pipeline
+  # that keeps running -- and therefore keeps billing -- until it is torn down,
+  # which is the exact shape Phase 5 got wrong with Vector Search. Task 9's
+  # gate needs CONTINUOUS to show a live event moving a served value, so it is
+  # switched on deliberately for that step, not left on by default.
+  description = "publish_table mode: TRIGGERED or CONTINUOUS."
+  default     = "TRIGGERED"
+}
+
+variable "streaming_publish_pip_dependencies" {
+  type        = list(string)
+  description = "The feature-engineering client, needed only by the publish task."
+  default     = ["databricks-feature-engineering>=0.17.1"]
+}

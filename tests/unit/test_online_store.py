@@ -20,6 +20,7 @@ from almanac.stream.online_store import (
     create_store,
     delete_store,
     publish_feature_table,
+    require_store,
 )
 
 
@@ -39,6 +40,11 @@ class _FakeClient:
         self.created.append((name, capacity))
         self._live.add(name)
         return {"name": name, "capacity": capacity}
+
+    def get_online_store(self, *, name: str) -> Any:
+        # Returns None for an absent store rather than raising -- the opposite
+        # of delete_online_store below, and the real client's own behaviour.
+        return {"name": name} if name in self._live else None
 
     def publish_table(
         self,
@@ -94,6 +100,7 @@ def test_the_real_client_still_matches_the_protocol() -> None:
             "online_table_name",
             "publish_mode",
         },
+        "get_online_store": {"name"},
         "delete_online_store": {"name"},
     }
 
@@ -101,6 +108,25 @@ def test_the_real_client_still_matches_the_protocol() -> None:
         params = inspect.signature(getattr(FeatureEngineeringClient, method)).parameters
         keyword_only = {n for n, p in params.items() if p.kind is p.KEYWORD_ONLY}
         assert keywords <= keyword_only, f"{method} dropped {keywords - keyword_only}"
+
+
+def test_require_store_refuses_to_invent_a_store_that_does_not_exist() -> None:
+    """Terraform owns the instance's lifecycle. A wrapper that quietly created
+    one on a name typo would bill for it -- Lakebase does not scale to zero.
+    """
+    client = _FakeClient()
+
+    with pytest.raises(ValueError, match="does not exist"):
+        require_store(client, name="almanac-online")
+
+    assert client.created == []
+
+
+def test_require_store_returns_the_store_once_it_exists() -> None:
+    client = _FakeClient()
+    create_store(client, name="almanac-online")
+
+    assert require_store(client, name="almanac-online") == {"name": "almanac-online"}
 
 
 def test_capacity_defaults_to_smallest() -> None:

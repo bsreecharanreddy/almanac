@@ -117,6 +117,11 @@ max-complexity = 10
 # is clearer than one taking a config object -- the explicit keywords are
 # what make the call site readable at a glance.
 "tests/**/*.py" = ["PLR2004", "PLR0913"]
+# write_and_register takes the session, the spec and the frame it cannot
+# derive, plus one keyword per independently-set output knob (path, whether
+# to register, target schema) -- shared verbatim by the batch and streaming
+# feature paths (Phase 6).
+"src/almanac/features/runner.py" = ["PLR0913"]
 # Same PLR0913 reasoning, one layer in: build_training_frame and the model
 # runner take one keyword-only argument per independently-pinnable Delta
 # source (three paths, three versions, the session), and the explicit
