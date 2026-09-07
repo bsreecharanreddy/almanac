@@ -10,6 +10,17 @@ TABLE_LINEAGE = "system.access.table_lineage"
 # either a managed table (tier comes from its UC schema) or foreign.
 LAKE_TIERS = ("bronze", "silver", "gold", "features")
 
+# Schemas of this catalog are tiers in their own right -- `embeddings`,
+# `models`, `serving_logs` are as real as `gold`. Only *this* catalog, though:
+# a three-part name from anywhere else is genuinely foreign.
+PLATFORM_CATALOG = "almanac_dbx"
+
+# Raw files before Bronze. Both the GH Archive hourly download and the live
+# poll land in UC volumes, and lineage records them as 2,256+ distinct paths;
+# without this they fall into `external` and the graph's single largest edge
+# reads as "2,256 unknown tables", which is worse than useless.
+LANDING = "landing"
+
 
 def read_lineage(spark: SparkSession, table: str = COLUMN_LINEAGE) -> DataFrame:
     """Raw lineage rows. The one I/O function here."""
@@ -39,17 +50,22 @@ def _container(node: Column) -> Column:
     return F.regexp_extract(node, r"^abfss://([^@]+)@", 1)
 
 
-def _schema_of(node: Column) -> Column:
-    """The middle part of `catalog.schema.table`, or '' if this is not a three-part name."""
-    return F.regexp_extract(node, r"^[^.:/]+\.([^.:/]+)\.[^.:/]+$", 1)
+def _part_of_name(node: Column, group: int) -> Column:
+    """Catalog (1) or schema (2) of `catalog.schema.table`; '' if not a three-part name."""
+    return F.regexp_extract(node, r"^([^.:/]+)\.([^.:/]+)\.[^.:/]+$", group)
 
 
 def tier_of(node: Column) -> Column:
-    """Medallion tier of a node: its UC schema, else its lake container, else 'external'."""
-    schema, container = _schema_of(node), _container(node)
+    """Tier of a node: its schema in this catalog, its lake container, a volume, else external."""
+    catalog = _part_of_name(node, 1)
+    schema = _part_of_name(node, 2)
+    volume_path = F.regexp_extract(node, r"^/Volumes/[^/]+/[^/]+/", 0)
     return (
-        F.when(schema.isin(*LAKE_TIERS), schema)
-        .when(container.isin(*LAKE_TIERS), container)
+        # A registered table in this catalog is tiered by its own schema, so
+        # `embeddings` and `serving_logs` are named rather than lumped together.
+        F.when(catalog == PLATFORM_CATALOG, schema)
+        .when(_container(node).isin(*LAKE_TIERS), _container(node))
+        .when(volume_path != "", F.lit(LANDING))
         .otherwise(F.lit("external"))
     )
 

@@ -79,13 +79,26 @@ def test_a_self_edge_is_not_an_edge(spark: SparkSession) -> None:
     assert column_edges(edges, _locations(spark)).count() == 0
 
 
-def test_an_unknown_node_is_external_not_silently_tiered(spark: SparkSession) -> None:
-    assert (
-        spark.range(1)
-        .select(tier_of(F.lit("some_catalog.other.table")).alias("t"))
-        .collect()[0]["t"]
-        == "external"
-    )
+@pytest.mark.parametrize(
+    ("node", "expected"),
+    [
+        ("some_catalog.other.table", "external"),
+        ("almanac_dbx.embeddings.pr_issue_embeddings", "embeddings"),
+        ("almanac_dbx.serving_logs.pr_review_sla_risk_payload", "serving_logs"),
+        ("/Volumes/almanac_dbx/burn/gharchive/2025-07-01-0.json.gz", "landing"),
+        (BRONZE, "bronze"),
+    ],
+)
+def test_a_node_is_tiered_by_what_it_actually_is(
+    spark: SparkSession, node: str, expected: str
+) -> None:
+    """A foreign catalog is external; this catalog's own schemas are tiers of their own.
+
+    Before this, everything but the four lake containers fell into `external`,
+    which made the graph's largest edge read as "2,256 unknown tables" -- the
+    2,256 hourly archive files landing in a UC volume.
+    """
+    assert spark.range(1).select(tier_of(F.lit(node)).alias("t")).collect()[0]["t"] == expected
 
 
 def test_tier_edges_count_the_columns_supporting_each_tier_hop(spark: SparkSession) -> None:
