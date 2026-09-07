@@ -5,9 +5,17 @@ which carries the six decisions this plan wires into code and the measured
 state each was taken against. Same register as
 `docs/plans/2026-09-06-phase-6-streaming-plan.md`: interfaces and test
 intent, not full inline code, since there is no separate review pass
-between writing this and implementing it. TDD discipline, `make check`
-(lint → typecheck → test) green before every commit, one STATUS.md
+between writing this and implementing it. TDD discipline, one STATUS.md
 verification-log row per task, one commit per task, unchanged.
+
+**The gate is `make check-fast` per task and `make check` before the push** —
+what the Makefile and CLAUDE.md already prescribe. This plan's first draft
+said "`make check` green before every commit", stricter than either, and
+expensive enough to matter: the full suite is ~20 minutes, so that would have
+spent roughly four hours across 14 tasks re-running a Spark suite that a docs
+or Terraform change cannot affect. Corrected 2026-09-07, once the cost became
+visible. The full suite still runs before the push, unchanged — that is where
+the cross-phase regressions this project keeps producing actually surface.
 
 **This phase is different from every phase before it in one way worth
 naming.** Phases 1–6 each built a new capability. Phase 7 mostly makes
