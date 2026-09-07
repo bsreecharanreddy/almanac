@@ -422,6 +422,45 @@ streaming query, plus the online-store resource.
   mirror-image note; the reasoning is recorded at the resource, not in a
   commit message that nobody will find.
 
+**As built, and the Files list was short by three.** The job needs an
+entrypoint, and there wasn't one: no `stream` module had a CLI and there
+was no `scripts/streaming.py`, while every other `databricks_job` in this
+repo points at one through `spark_python_task`. Same shape as Task 4's
+missing reduced-era fixture — a prerequisite the plan assumed rather than
+checked. Added `src/almanac/stream/runner.py` (stages `poll` and
+`ingest`, `choices=` on one positional, no subparsers), the
+`scripts/streaming.py` shim matching `scripts/features.py`, and
+`tests/unit/test_stream_runner_cli.py`. **Two stages, not one fused
+process and not two threads**: the poller is network-bound and needs no
+SparkSession, the ingest is a Spark query and needs no token, so a
+failure stays attributable to one of them.
+
+**Three findings from checking the provider registry live** rather than
+assuming a Python-only path:
+
+- **`databricks_database_instance` exists** (Public Preview) and is the
+  online store. The lock file already pinned provider **1.130.0**, which
+  carries it, so no constraint change.
+- **`databricks_database_synced_database_table` is Private Preview and is
+  deliberately not used.** Task 7's `publish_feature_table` owns the
+  publish, because Databricks' own docs warn that deleting a synced table
+  by any path other than the feature-engineering API leaves the
+  underlying Postgres storage behind. One owner per object.
+- **The instance exposes an explicit `stopped` flag**, which is *not* the
+  automatic scale-to-zero §4.6 recorded as unsupported. Exposed as a
+  variable and explicitly marked **unverified** — whether a stopped
+  instance stops billing compute is a Task 9 measurement, not a claim to
+  make now. Deletion remains the teardown known to work.
+
+Two traps carried from prior incidents rather than rediscovered: the
+landing zone is a **UC Volume, not `abfss://`** (the poller writes with
+pathlib — the exact `FILE_NOT_EXIST` failure of 2026-09-02), and
+`--config` is passed **explicitly** rather than trusting the script's
+relative default (a job task's working directory is not the repo root —
+the `FileNotFoundError` of the same day). The GitHub token reaches the
+poller as `spark_env_vars` resolved from a secret scope, never a job
+parameter, so it stays out of every run's visible parameter list.
+
 **Done when:** `terraform fmt -check` and `terraform validate` clean, and
 `terraform plan` shows the expected resources to add and nothing else to
 change.
