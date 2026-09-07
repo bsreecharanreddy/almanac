@@ -687,6 +687,112 @@ three as unmeasured):
   it. Task 9 confirms this one the same way. Bounded estimate: **~$6/day
   at 1 DBU/hour, ~$25/day if it behaves like Vector Search at 4.**
 
+  > **Settled 2026-09-07, and the premise above was wrong.** Measured:
+  > **0.852 DBU/hour → $12.06/day** on
+  > `PREMIUM_DATABASE_SERVERLESS_COMPUTE_US_CENTRAL` at $0.59/DBU-hour,
+  > flat across `n = 14` consecutive 10-minute billing buckets. The rate
+  > was in `list_prices` **all along** — priced since 2025-06-11 — and so
+  > was Phase 5's; both "gaps" were the same search mistake, looking for
+  > product names in a namespace that holds meter names. The `n=2`
+  > pattern claimed above was therefore one error counted twice. Full
+  > correction: `docs/findings/2026-09-07-live-feed-era-and-watermark.md`.
+
+### 4.7 Phase 7 concretized — governance, reporting, and reproducibility (2026-09-07)
+
+Recorded before any code, same shape as §4.4a, §4.6 and §8.3a. Four of
+the six decisions below **supersede text written earlier in this doc**;
+each says which, because a phase that silently drifts from its own design
+doc is the drift §9's own correction note exists to prevent.
+
+**Reporting splits across two tools, because Power BI Desktop cannot run
+on the machine this is built on.** Verified 2026-09-07: Power BI Desktop
+is Windows-only, with no Mac version and none planned — Microsoft
+restated this as recently as September 2025. **This supersedes §7's
+"three Power BI pages" and §9's Phase 7 row.** Pages 1–2 (Review SLA
+Risk; Model & Platform Health) become Databricks AI/BI dashboards;
+page 3 (Developer Engagement) stays Power BI, authored in the browser
+Service.
+
+The split is not a workaround, it is the better arrangement on its
+merits. `databricks_dashboard` accepts a `file_path` to dashboard JSON,
+so pages 1–2 are **version-controlled in the repo and provisioned and
+destroyed by Terraform like every other resource here** — where a `.pbix`
+is a binary blob no CI can diff or check. Page 3 is import-mode over
+`agg_repo_daily`, which is the shape Power BI is genuinely for, and it
+keeps §7's non-negotiable limitations panel. The cost of the decision,
+stated plainly: two BI surfaces to maintain for one phase, in exchange
+for keeping the Power BI signal without letting it dictate the
+architecture.
+
+**Lineage is Unity Catalog's own, not OpenLineage. This supersedes §9's
+Phase 7 row**, and it is a decision made against measured state rather
+than a preference:
+
+- `system.access.column_lineage` is **already enabled and already
+  populated** — 18,102 rows spanning 2026-09-02 → 09-07, which is Phases
+  2 through 6 captured with **zero instrumentation work ever done**.
+- OpenLineage's value is a common language across heterogeneous
+  execution environments. Almanac has one. Instrumenting a Spark listener
+  to re-emit what UC already recorded would be ceremony bought at the
+  price of real machinery.
+- **The trap that shapes the task, measured before writing it:** of
+  Almanac's **4,778** column-lineage rows across **29** distinct sources,
+  **4,133 — 86.5% — carry only `source_path`, never
+  `source_table_full_name`**, because Bronze, Silver and the feature tier
+  are external Delta paths rather than registered tables. This is
+  documented behavior, not a defect. A lineage query written the obvious
+  way, filtering on table name, would return **13.5% of the graph and
+  report no error.**
+
+What UC cannot see is stated in the artifact rather than hidden by it:
+**local Spark runs are invisible** (which is the entire test suite), and
+the system tables keep a **rolling 1-year window** — Catalog Explorer and
+the lineage API retain indefinitely for lineage captured after
+2024-09-01. Accepting UC means accepting no vendor-neutral lineage
+export. That is the trade, and it is worth it here.
+
+**Contracts are extended, not rebuilt — §10's item is already largely
+met.** `dbt/models/gold/schema.yml` carries `contract: enforced: true` on
+both consumer models, and `tests/integration/test_gold_contracts.py`
+proves the build fails on a breach. Recorded here specifically so Phase 7
+does not re-derive work Phase 2 already shipped: the remaining gap is the
+surfaces carrying **no** contract (the feature tier, streaming Silver)
+plus §10's *Documentation* item, a published contract + SLA, which does
+not exist in any form.
+
+**The cloud window is narrow, and re-provisioning is itself the
+deliverable.** Only the SQL warehouse comes up, only long enough to prove
+the dashboards against real Gold, then down. **This supersedes §9's
+"second bounded paid window for the final live demo"** for this phase:
+the full-stack demo moves to Phase 8. What Phase 7 ships instead is a
+documented one-command up/down path, proven by actually being used for
+this window rather than asserted — which is what makes Phase 8's demo
+cheap enough to run more than once.
+
+**Inference capture must be enabled now. Deferring it does not delay a
+panel; it destroys the data.** Measured 2026-09-07:
+`almanac-pr-review-sla-risk` is **`READY`**, `scale_to_zero = true`,
+serving `almanac_dbx.models.pr_review_sla_risk` v1 — **it was never torn
+down**, and it drew **zero inference DBUs on 09-07**, confirming Phase
+4's scale-to-zero finding a second time. But `auto_capture_config` is
+`null`, so not one request has ever been logged, and the only traffic
+that can ever be captured is traffic occurring **after** capture is
+switched on.
+
+Two documented one-way constraints make this a decision rather than a
+setting: **payload logging cannot be re-enabled once disabled**, and the
+**catalog, schema and table prefix cannot be changed after initial
+setup**. So the target is chosen deliberately, set once, and never
+turned off.
+
+**Phase 6 has no console evidence and cannot acquire any in this phase.**
+Its stack was destroyed at Task 9's close. `2026-09-06-console-evidence.md`
+covers Phases 2, 4 and 5 only. Named here so the gap reads as a
+consequence of a recorded teardown decision rather than an oversight, and
+so Phase 8's full-stack window is understood as the only remaining
+opportunity — against a *fresh* instance, not the one that produced the
+measurements.
+
 ## 5. The model
 
 **Primary: PR review-SLA risk.** Given an open PR, predict whether it
