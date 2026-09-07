@@ -166,6 +166,80 @@ resource "databricks_job" "streaming" {
       }
     }
   }
+
+  task {
+    task_key        = "features"
+    job_cluster_key = "streaming"
+
+    depends_on {
+      task_key = "ingest"
+    }
+
+    spark_python_task {
+      python_file = var.streaming_python_file
+      source      = "WORKSPACE"
+      parameters = [
+        "features",
+        "--silver-path", "${local.lake.silver}/events_stream",
+        "--features-path", "${local.lake.features}/events_stream",
+        "--schema", var.streaming_feature_schema,
+        # --register is what makes these tables publishable at all: it emits
+        # the TIMESERIES primary key, the NOT NULL keys and the Change Data
+        # Feed property publish_table requires (§4.6, features/registration.py).
+        "--register",
+      ]
+    }
+
+    library {
+      whl = var.almanac_wheel
+    }
+
+    dynamic "library" {
+      for_each = var.backfill_pip_dependencies
+      content {
+        pypi {
+          package = library.value
+        }
+      }
+    }
+  }
+
+  task {
+    task_key        = "publish"
+    job_cluster_key = "streaming"
+
+    depends_on {
+      task_key = "features"
+    }
+
+    spark_python_task {
+      python_file = var.streaming_python_file
+      source      = "WORKSPACE"
+      parameters = [
+        "publish",
+        # Looked up by name, never created here -- the resource above owns it.
+        "--store-name", databricks_database_instance.online_store.name,
+        "--schema", var.streaming_feature_schema,
+        "--online-schema", var.streaming_online_schema,
+        "--publish-mode", var.streaming_publish_mode,
+      ]
+    }
+
+    library {
+      whl = var.almanac_wheel
+    }
+
+    # The only task that needs the feature-engineering client; the poll and
+    # ingest stages never import it.
+    dynamic "library" {
+      for_each = concat(var.backfill_pip_dependencies, var.streaming_publish_pip_dependencies)
+      content {
+        pypi {
+          package = library.value
+        }
+      }
+    }
+  }
 }
 
 output "streaming_job_url" {

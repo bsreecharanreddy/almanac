@@ -36,6 +36,11 @@ class OnlineStoreClient(Protocol):
 
     def create_online_store(self, *, name: str, capacity: str) -> OnlineStore: ...
 
+    # Returns None rather than raising when the store is absent (0.17.1, read
+    # from its source) -- the opposite of delete_online_store below, so the
+    # two cannot share one error convention.
+    def get_online_store(self, *, name: str) -> OnlineStore | None: ...
+
     def publish_table(
         self,
         *,
@@ -102,6 +107,19 @@ def publish_feature_table(
         online_table_name=online,
         publish_mode=mode,
     )
+
+
+def require_store(client: OnlineStoreClient, *, name: str) -> OnlineStore:
+    """The store Terraform created, or a clear failure naming it.
+
+    Look up, never create: `databricks_database_instance` in
+    infra/terraform/streaming.tf owns this object's lifecycle, and a wrapper
+    that quietly created a second one on a name typo would bill for it.
+    """
+    store = client.get_online_store(name=name)
+    if store is None:
+        raise ValueError(f"online store {name!r} does not exist; terraform apply creates it")
+    return store
 
 
 def delete_store(client: OnlineStoreClient, *, name: str) -> None:

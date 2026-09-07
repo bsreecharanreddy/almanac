@@ -466,6 +466,70 @@ parameter, so it stays out of every run's visible parameter list.
 change.
 **Commit:** `infra: Terraform for the streaming job and online store`
 
+## Task 8b: Close Task 9's runnable gaps (added 2026-09-06, not in the original plan)
+
+**Found by tracing Task 9's gate end to end before spending anything**, which
+is the only reason it was found before rather than after provisioning a
+store that bills by the hour. The gate — *"a live event demonstrably updates
+a served online feature value"* — needs a chain of six links. Tasks 2–8 built
+the first two and the last one's wrapper; **three links did not exist**:
+
+| Link | Before this task |
+|---|---|
+| live event → poll | ✅ Task 2, wired in Task 8 |
+| poll → Silver | ✅ Task 3, wired in Task 8 |
+| Silver → **stream feature table** | ❌ `compute_*_stream_features` was called by nothing but tests |
+| → **PK + CDF + NOT NULL** | ❌ no streaming equivalent of `--register` |
+| → **publish** | ⚠️ Task 7's wrapper existed but nothing could invoke it on a cluster |
+| → served value | deferred, see below |
+
+The plan treated Task 9 as pure operations. It is not: it needed code.
+
+**Files:**
+- Modify: `src/almanac/features/runner.py` — extract `write_and_register`
+- Modify: `src/almanac/stream/runner.py` — `features` and `publish` stages
+- Modify: `src/almanac/stream/online_store.py` — `get_online_store`, `require_store`
+- Modify: `infra/terraform/streaming.tf`, `variables.tf`
+- Test: extend `tests/unit/test_stream_runner_cli.py`, `tests/unit/test_online_store.py`
+
+**Reuse, not a second copy.** The registration sequence (CDF → NOT NULL →
+PK) is one fact about what "a publishable feature table" means, so it moved
+into `write_and_register`, shared verbatim by the batch and streaming paths
+rather than restated in each — the same rule that put `RAW_SCHEMA` in
+`tests/helpers.py`. `STREAM_FEATURE_TABLES` reuses `FeatureTableSpec`
+unchanged.
+
+**Three corrections the work itself forced:**
+
+- **`--schema` must be fully qualified** (`almanac_dbx.features`, not
+  `features`). `register_feature_table` emits `{schema}.{table}`, which is a
+  valid Unity Catalog three-part name only if the catalog is already in it —
+  latent since §4.4a because `--register` had never run against real UC.
+- **The online schema is a separate parameter, not derived from the source
+  schema.** Databricks documents that an online table's *catalog* name must
+  equal its backing Postgres database name, which the source catalog has no
+  reason to satisfy.
+- **`require_store` looks up and never creates.** Terraform owns the
+  instance; a wrapper that quietly created one on a name typo would bill for
+  it, and Lakebase does not scale to zero.
+
+Adding `get_online_store` to the Protocol immediately failed `mypy` on the
+existing `_FakeClient` — the Protocol catching a real drift the moment it
+was introduced, which is the argument for having written it.
+
+**Deliberately not done**, and recorded rather than silently skipped:
+`databricks_job.build_features` still does not pass `--register`, so the
+*batch* feature tables remain unregistered. Task 9's gate runs entirely
+through the streaming path, and mutating an existing job would add a
+`1 to change` to the plan for no gate benefit. The served-value read is also
+left to a hand-run query in Task 9 rather than a helper, since whether Unity
+Catalog exposes the synced table to Spark is exactly what the real run
+settles.
+
+**Done when:** `make check` green; `terraform fmt -check`/`validate` clean;
+`terraform plan` unchanged at 5 to add, 0 to change, 0 to destroy.
+**Commit:** `feat(stream): stream feature and publish stages, closing Task 9's gaps`
+
 ## Task 9: The real cloud run, then teardown
 
 The only task that spends money, and the only one that can close §9's

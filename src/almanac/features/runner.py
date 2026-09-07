@@ -42,6 +42,48 @@ FEATURE_TABLES: list[FeatureTableSpec] = [
 ]
 
 
+def write_and_register(
+    spark: SparkSession,
+    spec: FeatureTableSpec,
+    events: DataFrame,
+    *,
+    features_path: str,
+    register: bool,
+    schema: str,
+) -> str:
+    """Overwrite one feature table and, when asked, make it publishable.
+
+    Shared with the streaming path (``almanac.stream.runner``), which builds
+    different features from a different source but needs this exact sequence
+    -- one statement of what "a registered feature table" means, rather than
+    two that drift.
+    """
+    path = f"{features_path}/{spec.name}"
+    spec.compute(events).write.format("delta").mode("overwrite").save(path)
+    if register:
+        register_feature_table(spark, table=spec.name, path=path, schema=schema)
+        # Online-publish prerequisites, in dependency order: NOT NULL keys
+        # before the PRIMARY KEY that needs them, CDF anytime (design §4.6).
+        # Verified against real UC in Phase 6's cloud burn.
+        spark.sql(change_data_feed_sql(schema=schema, table=spec.name))
+        for stmt in not_null_key_sql(
+            schema=schema,
+            table=spec.name,
+            entity_cols=spec.entity_cols,
+            event_time_col=spec.event_time_col,
+        ):
+            spark.sql(stmt)
+        drop_sql, add_sql = primary_key_sql(
+            schema=schema,
+            table=spec.name,
+            entity_cols=spec.entity_cols,
+            event_time_col=spec.event_time_col,
+        )
+        spark.sql(drop_sql)
+        spark.sql(add_sql)
+    return path
+
+
 def run_features(
     spark: SparkSession,
     *,
@@ -61,29 +103,9 @@ def run_features(
     """
     events = spark.read.format("delta").load(f"{silver_path}/clean")
     for spec in FEATURE_TABLES:
-        path = f"{features_path}/{spec.name}"
-        spec.compute(events).write.format("delta").mode("overwrite").save(path)
-        if register:
-            register_feature_table(spark, table=spec.name, path=path, schema=schema)
-            # Online-publish prerequisites, in dependency order: NOT NULL
-            # keys before the PRIMARY KEY that needs them, CDF anytime
-            # (design §4.6). Verified against real UC in Phase 6's cloud burn.
-            spark.sql(change_data_feed_sql(schema=schema, table=spec.name))
-            for stmt in not_null_key_sql(
-                schema=schema,
-                table=spec.name,
-                entity_cols=spec.entity_cols,
-                event_time_col=spec.event_time_col,
-            ):
-                spark.sql(stmt)
-            drop_sql, add_sql = primary_key_sql(
-                schema=schema,
-                table=spec.name,
-                entity_cols=spec.entity_cols,
-                event_time_col=spec.event_time_col,
-            )
-            spark.sql(drop_sql)
-            spark.sql(add_sql)
+        write_and_register(
+            spark, spec, events, features_path=features_path, register=register, schema=schema
+        )
 
 
 def _build_parser() -> argparse.ArgumentParser:
