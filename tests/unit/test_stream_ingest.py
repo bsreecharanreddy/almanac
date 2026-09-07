@@ -1,4 +1,6 @@
-"""Streaming ingest: watermark, dedup, and the era assertion. No network."""
+"""Streaming ingest: lateness reporting, MERGE dedup, and the id assertion.
+
+No network."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -39,19 +41,19 @@ def _event(event_id: str, created_at: str) -> dict[str, object]:
 
 
 def _ingest(
-    spark: SparkSession, landing: Path, dest: Path, checkpoint: Path, *, watermark: timedelta
+    spark: SparkSession, landing: Path, dest: Path, checkpoint: Path, *, late_after: timedelta
 ) -> StreamingQuery:
     """One bounded pass over whatever the landing dir currently holds."""
-    stream = stream_events(spark, str(landing), watermark=watermark)
+    stream = stream_events(spark, str(landing), late_after=late_after)
     query = write_stream_silver(stream, str(dest), str(checkpoint), available_now=True)
     run_streaming_query(query)
     return query
 
 
-# --- dedup: the same key Silver's batch dedup uses, within the watermark ---
+# --- dedup: the same key Silver's batch dedup uses ---
 
 
-def test_dedups_on_event_id_within_watermark(spark: SparkSession, tmp_path: Path) -> None:
+def test_dedups_on_event_id_within_one_batch(spark: SparkSession, tmp_path: Path) -> None:
     landing, dest, checkpoint = tmp_path / "landing", tmp_path / "dest", tmp_path / "checkpoint"
     landing.mkdir()
     land_poll(
@@ -61,7 +63,7 @@ def test_dedups_on_event_id_within_watermark(spark: SparkSession, tmp_path: Path
         name="poll_0",
     )
 
-    _ingest(spark, landing, dest, checkpoint, watermark=timedelta(minutes=10))
+    _ingest(spark, landing, dest, checkpoint, late_after=timedelta(minutes=10))
 
     assert spark.read.format("delta").load(str(dest)).count() == 1
 
@@ -76,7 +78,7 @@ def test_distinct_events_are_both_kept(spark: SparkSession, tmp_path: Path) -> N
         name="poll_0",
     )
 
-    _ingest(spark, landing, dest, checkpoint, watermark=timedelta(minutes=10))
+    _ingest(spark, landing, dest, checkpoint, late_after=timedelta(minutes=10))
 
     assert spark.read.format("delta").load(str(dest)).count() == 2
 
@@ -94,7 +96,7 @@ def test_event_id_and_schema_era_match_the_batch_paths_own_computation(
         name="poll_0",
     )
 
-    _ingest(spark, landing, dest, checkpoint, watermark=timedelta(minutes=10))
+    _ingest(spark, landing, dest, checkpoint, late_after=timedelta(minutes=10))
 
     row = one(spark.read.format("delta").load(str(dest)))
     assert row["event_id"] == "abc123"
@@ -116,14 +118,12 @@ def test_actor_login_survives_the_landing_zone_round_trip(
         name="poll_0",
     )
 
-    _ingest(spark, landing, dest, checkpoint, watermark=timedelta(minutes=10))
+    _ingest(spark, landing, dest, checkpoint, late_after=timedelta(minutes=10))
 
     assert one(spark.read.format("delta").load(str(dest)))["actor_login"] == "alice"
 
 
-# --- lateness: reported via observe(), because a row this old is dropped
-# by dropDuplicatesWithinWatermark before it ever reaches a foreachBatch
-# write -- verified directly, 2026-09-06 ---
+# --- lateness: reported via observe(), never a reason to discard a row ---
 
 
 def test_a_prompt_event_is_not_flagged_late(spark: SparkSession, tmp_path: Path) -> None:
@@ -134,58 +134,54 @@ def test_a_prompt_event_is_not_flagged_late(spark: SparkSession, tmp_path: Path)
         [_event("1", "2026-09-06T12:00:00Z")],
         polled_at="2026-09-06T12:00:05Z",
         name="poll_0",
-    )  # 5s delay, well under the watermark
+    )  # 5s delay, well under `late_after`
 
-    query = _ingest(spark, landing, dest, checkpoint, watermark=timedelta(seconds=60))
+    query = _ingest(spark, landing, dest, checkpoint, late_after=timedelta(seconds=60))
 
     assert late_event_count(query) == 0
     assert one(spark.read.format("delta").load(str(dest)))["is_late"] is False
 
 
-def test_a_row_older_than_the_watermark_is_counted_even_though_it_is_dropped(
+def test_a_very_late_duplicate_is_suppressed_and_still_counted(
     spark: SparkSession, tmp_path: Path
 ) -> None:
-    """The failure mode this exists to catch: a duplicate (or any row)
-    arriving after the watermark has moved past it is not written -- and
-    without `observe()`, not reported anywhere either."""
+    """A redelivery arbitrarily far behind the newest event time must not
+    land twice. Under the old watermark this passed for the wrong reason --
+    the row was discarded for being late, and would have been discarded
+    identically had it been new. Now it is suppressed for being a duplicate,
+    which is the only reason that should suppress it."""
     landing, dest, checkpoint = tmp_path / "landing", tmp_path / "dest", tmp_path / "checkpoint"
     landing.mkdir()
-    watermark = timedelta(seconds=60)
+    late_after = timedelta(seconds=60)
 
-    # Poll 1: event id=1 at T0, on time -- establishes state.
     land_poll(
         landing,
         [_event("1", "2026-01-01T00:00:00Z")],
         polled_at="2026-01-01T00:00:00Z",
         name="poll_0",
     )
-    _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+    _ingest(spark, landing, dest, checkpoint, late_after=late_after)
 
-    # Poll 2: a NEW event 2 minutes later in event time -- advances the
-    # watermark well past T0 + 60s, evicting id=1's dedup state.
     land_poll(
         landing,
         [_event("2", "2026-01-01T00:02:00Z")],
         polled_at="2026-01-01T00:02:00Z",
         name="poll_1",
     )
-    _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+    _ingest(spark, landing, dest, checkpoint, late_after=late_after)
 
-    # Poll 3: id=1 again, same created_at as before (now older than the
-    # watermark) -- dropDuplicatesWithinWatermark can no longer help.
+    # id=1 again, its original created_at, redelivered well past `late_after`.
     land_poll(
         landing,
         [_event("1", "2026-01-01T00:00:00Z")],
         polled_at="2026-01-01T00:03:20Z",
         name="poll_2",
     )
-    query = _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+    query = _ingest(spark, landing, dest, checkpoint, late_after=late_after)
 
-    assert spark.read.format("delta").load(str(dest)).count() == 2, (
-        "poll 3's row is too late to land -- correct here, since it is a "
-        "genuine duplicate of poll 1's row, not data loss"
-    )
-    assert late_event_count(query) >= 1, "the dropped row must be counted, not silently absorbed"
+    ids = sorted(r["event_id"] for r in spark.read.format("delta").load(str(dest)).collect())
+    assert ids == ["1", "2"], "the redelivery is a duplicate and must not land twice"
+    assert late_event_count(query) >= 1, "and it must still be reported as late"
 
 
 # --- the id assertion: an event dedup cannot deduplicate is a real anomaly ---
@@ -218,7 +214,7 @@ def test_an_old_era_row_is_ingested_rather_than_rejected(
         name="poll_0",
     )
 
-    query = _ingest(spark, landing, dest, checkpoint, watermark=timedelta(minutes=10))
+    query = _ingest(spark, landing, dest, checkpoint, late_after=timedelta(minutes=10))
 
     written = spark.read.format("delta").load(str(dest)).collect()
     eras = {r["event_id"]: r["schema_era"] for r in written}
@@ -226,37 +222,37 @@ def test_an_old_era_row_is_ingested_rather_than_rejected(
     assert non_reduced_count(query) == 1, "the rate must be reported, not assumed"
 
 
-def test_a_distinct_late_event_is_dropped_not_just_deduplicated(
-    spark: SparkSession, tmp_path: Path
-) -> None:
-    """The neighbouring test covers a late *duplicate*, where dropping costs
-    nothing. This is the case that does cost: a never-before-seen event whose
-    event time is already behind the watermark is silently absent from Silver.
-    On the live feed that is not exotic -- 16.4% of a 30-poll window carried an
-    event time over a day old (2026-09-07)."""
+def test_a_distinct_late_event_is_kept(spark: SparkSession, tmp_path: Path) -> None:
+    """The regression test for the whole change, and it asserted the opposite
+    a commit ago. A never-before-seen event whose event time is far behind the
+    newest one must land: under `dropDuplicatesWithinWatermark` it did not,
+    which cost **161 repos** in a real window on 2026-09-07. On this feed that
+    case is not exotic -- 16.4% of a 30-poll window carried an event time over
+    a day old, and they are first sightings, not redeliveries."""
     landing, dest, checkpoint = tmp_path / "landing", tmp_path / "dest", tmp_path / "checkpoint"
     landing.mkdir()
-    watermark = timedelta(seconds=60)
+    late_after = timedelta(seconds=60)
 
     land_poll(
         landing, [_event("1", "2026-01-01T00:00:00Z")], polled_at="2026-01-01T00:00:00Z", name="p0"
     )
-    _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+    _ingest(spark, landing, dest, checkpoint, late_after=late_after)
 
-    # Advances the watermark well past T0 + 60s.
+    # Would have advanced the watermark well past T0 + 60s.
     land_poll(
         landing, [_event("2", "2026-01-01T00:02:00Z")], polled_at="2026-01-01T00:02:00Z", name="p1"
     )
-    _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+    _ingest(spark, landing, dest, checkpoint, late_after=late_after)
 
+    # Brand-new id, event time over six months older than anything seen.
     land_poll(
         landing,
         [_event("999", "2025-06-09T15:12:47Z")],
         polled_at="2026-01-01T00:03:20Z",
         name="p2",
     )
-    query = _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+    query = _ingest(spark, landing, dest, checkpoint, late_after=late_after)
 
     ids = {r["event_id"] for r in spark.read.format("delta").load(str(dest)).collect()}
-    assert ids == {"1", "2"}, "event 999 is new, not a duplicate -- its absence is data loss"
-    assert late_event_count(query) >= 1, "at least it is counted"
+    assert ids == {"1", "2", "999"}, "a new event is data, however late it arrives"
+    assert late_event_count(query) >= 1, "still reported as late -- reporting is not discarding"

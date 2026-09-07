@@ -28,13 +28,18 @@ def _rows(spark: SparkSession, dest: Path) -> set[tuple[object, ...]]:
     }
 
 
-def test_forces_event_after_watermark_passed(
+def test_forces_a_very_late_redelivery(
     spark: SparkSession, tmp_path: Path, reduced_events_path: Path
 ) -> None:
     """After two natural cycles deliver every event on time, a trailing
     cycle redelivers all of them again, an hour late -- comfortably past the
-    default 10-minute watermark. Every redelivered row is counted, and none
-    of them duplicate what natural delivery already wrote."""
+    default 10-minute `late_after`. Every redelivered row is counted, and none
+    of them duplicate what natural delivery already wrote.
+
+    Unchanged by the 2026-09-07 move off `dropDuplicatesWithinWatermark`, and
+    that is the point: these rows are suppressed because they are duplicates,
+    which is still true, rather than because they were late, which is no
+    longer a reason to suppress anything."""
     dest = tmp_path / "dest"
     stats = replay_hours(
         spark, ["a", "b"], str(dest), source=reduced_events_path, lateness=timedelta(hours=1)
@@ -65,8 +70,10 @@ def test_forces_out_of_order_within_batch(
     spark: SparkSession, tmp_path: Path, reduced_events_path: Path
 ) -> None:
     """Shuffling the order events are written to one poll file must not
-    change the result -- the watermark is computed over a batch's max event
-    time, not its arrival order."""
+    change the result. This guarded against an order-dependent watermark
+    until 2026-09-07; with dedup keyed on `event_id` and no watermark left,
+    it now guards the stronger property that ingest is order-independent
+    outright."""
     ordered = tmp_path / "ordered"
     shuffled = tmp_path / "shuffled"
     replay_hours(spark, ["only"], str(ordered), source=reduced_events_path, shuffle=False)

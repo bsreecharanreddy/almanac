@@ -25,7 +25,7 @@ def _event(event_id: str, created_at: str) -> dict[str, object]:
 
 
 def _run(spark: SparkSession, landing: Path, dest: Path, checkpoint: Path) -> None:
-    stream = stream_events(spark, str(landing), watermark=timedelta(minutes=10))
+    stream = stream_events(spark, str(landing), late_after=timedelta(minutes=10))
     query = write_stream_silver(stream, str(dest), str(checkpoint), available_now=True)
     run_streaming_query(query)
 
@@ -88,9 +88,16 @@ def test_exactly_once_across_a_restart_from_checkpoint(spark: SparkSession, tmp_
 def test_a_restarted_query_does_not_reprocess_an_already_committed_batch(
     spark: SparkSession, tmp_path: Path
 ) -> None:
-    """Directly exercises the idempotent-write path: re-running against a
-    checkpoint with NO new files must add nothing, proving the second
-    `.start()` genuinely resumed rather than reprocessing batch 0."""
+    """Re-running against a checkpoint with NO new files must add nothing.
+
+    The guarantee survived a change of mechanism on 2026-09-07 and the
+    distinction is worth keeping straight: it used to rest on Delta's
+    `txnAppId`/`txnVersion`, which made Delta *skip* an already-committed
+    batch outright. Those are `DataFrameWriter` options and do not apply to
+    the insert-only MERGE that replaced the append, so a replayed batch is
+    now genuinely reprocessed -- and inserts nothing, because every row it
+    carries already matches on `event_id`. Same contract, verified the same
+    way, reached differently."""
     landing = tmp_path / "landing"
     dest = tmp_path / "dest"
     checkpoint = tmp_path / "checkpoint"

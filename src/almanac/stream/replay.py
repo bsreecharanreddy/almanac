@@ -49,8 +49,7 @@ def _created_at(event: dict[str, object]) -> datetime:
 def _partition(events: list[dict[str, object]], cycles: int) -> list[list[dict[str, object]]]:
     """`events` (already sorted by `created_at`) split into `cycles`
     chronologically contiguous slices -- cycle i's events are never earlier
-    than cycle i-1's, so delivering cycles in order advances the watermark
-    smoothly instead of spuriously dropping a later cycle's own events.
+    than cycle i-1's, mirroring how the real feed arrives.
     `cycles == 1` is the identity split, which the batch-equality gate needs.
     """
     base, extra = divmod(len(events), cycles)
@@ -96,24 +95,29 @@ def replay_hours(
 ) -> ReplayStats:
     """Replay one real archive hour as `len(hours)` poll cycles against `dest`,
     through the exact `stream_events`/`write_stream_silver` path, delivered in
-    chronological order so nothing is spuriously watermark-dropped by
-    construction.
+    chronological order.
+
+    Chronological delivery used to be load-bearing -- out-of-order cycles
+    would advance the watermark and get themselves dropped. Since 2026-09-07
+    dedup is an insert-only MERGE keyed on `event_id` and no watermark
+    remains, so order no longer changes the outcome. It is kept because a
+    replay that mimics the real feed's order is the more faithful harness,
+    not because correctness now depends on it.
 
     `duplicate_rate` carries that fraction of each cycle's own *latest*
-    events forward into the next cycle's landing file too -- close enough to
-    the watermark boundary to survive it, so what gets exercised is
-    cross-batch dedup, the case `dropDuplicatesWithinWatermark`'s state
-    exists for, not an incidental watermark drop.
+    events forward into the next cycle's landing file too, exercising
+    cross-batch dedup -- the case a single batch's `dropDuplicates` cannot
+    catch and the MERGE exists for.
 
     `lateness`, when set, redelivers every event once more in a final
-    trailing cycle, each `lateness` after its own `created_at`. By then every
-    natural cycle has already advanced the watermark past the whole replay,
-    so the redelivery is genuinely late on both axes: dropped by
-    `dropDuplicatesWithinWatermark` (`created_at` is behind the watermark)
-    and counted by `late_event_count` (`ingested_at - created_at` exceeds it)
-    -- the two, otherwise-independent mechanisms `stream_events` computes
-    (§ingest.py) only agree here because this is what the trailing cycle is
-    built to force.
+    trailing cycle, each `lateness` after its own `created_at`. The expected
+    outcome is unchanged from the watermark design, but the reason is
+    different and worth stating: those rows are absent from Silver because
+    they are *duplicates by `event_id`*, not because they were late. The
+    distinction is the whole point of the change -- a redelivered event is
+    correctly suppressed, while a genuinely new event arriving equally late
+    is now kept, where the watermark discarded both alike. `late_event_count`
+    still counts them, since `ingested_at - created_at` exceeds `late_after`.
 
     `seed` is not decoration: Phase 5's Bug 3 was a nondeterministic `rand`
     sample read twice, and an unseeded shuffle here would be the same defect
