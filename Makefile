@@ -3,8 +3,12 @@
 # -n 4: four xdist workers, each with its own SparkSession. Tuned for a
 # local 8-core / 16 GB machine -- four Spark JVMs fit, eight would thrash.
 # CI keeps the plain serial `pytest` (2-core runner) in .github/workflows.
+# --durations=25: the suite is heavily back-loaded (the dbt/Gold Spark tests
+# all land last), so percent-complete predicts nothing and "it feels slow" was
+# never checkable. Reported on every run so a real slowdown is visible for
+# free, rather than needing a dedicated instrumented run to find.
 test:
-	uv run pytest -m "not network" -n 4
+	uv run pytest -m "not network" -n 4 --durations=25
 
 # The ~195 tests that need no SparkSession -- seconds, not half an hour.
 # The inner-loop counterpart to `test`; `check` still runs everything.
@@ -58,3 +62,12 @@ silver-fixture:
 # has to exist, with Delta and a persistent metastore, before dbt asks for one.
 dbt: silver-fixture
 	uv run python -m almanac.gold.runner --silver-path data/gold_fixture/silver build
+
+# Needs a workspace: system.access.column_lineage is a Databricks system table,
+# so CI cannot regenerate this. The artifact is committed, and
+# tests/unit/test_governance_lineage_artifact.py guards it against silently
+# losing a tier -- which is what a broken extraction looks like.
+lineage:
+	DATABRICKS_HOST=$${DATABRICKS_HOST:?set DATABRICKS_HOST} \
+	uv run python -m almanac.governance.lineage_runner \
+		--warehouse-id $${DATABRICKS_WAREHOUSE_ID:?set DATABRICKS_WAREHOUSE_ID}
