@@ -226,6 +226,24 @@ delay is a promise the system cannot keep.
 **Done when:** every number in it cites the finding that measured it.
 **Commit:** `docs: the data contract and SLA, with every number sourced`
 
+**As built — `docs/data-contract.md`.** The freshness section came out as
+planned: 561 s end to end with the 302 s upstream floor stated beside it, and
+the note that only 121 s of Almanac's own 260 s is pipeline work at all.
+
+Two things the plan did not anticipate. **The document needed a section on
+what it does *not* promise**, because a contract listing only guarantees reads
+as though the gaps are absent — so no availability SLA, no completeness
+against GitHub (~7–9% of the firehose), no freshness guarantee on batch
+surfaces, and no lineage from local runs are stated as plainly as the
+guarantees. And **`n=1` had to be marked inline rather than only in the cited
+findings**: the freshness distribution rests on one window, so p95 688 s is
+labelled as not-a-percentile where a reader will see it, not only where a
+reader might follow a link.
+
+One correction while writing: `agg_repo_daily`'s date column is
+`activity_date`, not `event_date`. Checked against `dbt/models/gold/schema.yml`
+rather than written from memory, which is the whole point of the exercise.
+
 ## Task 6: One command up, one command down
 
 **The deliverable the user added to §9's scope**, and the thing that makes
