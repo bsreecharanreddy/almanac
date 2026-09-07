@@ -779,11 +779,40 @@ down**, and it drew **zero inference DBUs on 09-07**, confirming Phase
 that can ever be captured is traffic occurring **after** capture is
 switched on.
 
-Two documented one-way constraints make this a decision rather than a
-setting: **payload logging cannot be re-enabled once disabled**, and the
-**catalog, schema and table prefix cannot be changed after initial
-setup**. So the target is chosen deliberately, set once, and never
-turned off.
+**The mechanism is `ai_gateway.inference_table_config`, not
+`auto_capture_config`** — corrected during Task 1, before anything was
+applied. The Databricks Terraform provider still documents
+`auto_capture_config` **with no deprecation marker**, but the product
+documentation for that mechanism is formally retired ("no longer
+supported") and directs to AI Gateway. The provider trails the product,
+so the **provider's silence is not evidence** — the same shape as Phase
+5's finding that the PyPI rename ran ahead of the CLI surface, in the
+opposite direction. This is the second time a gate-2 check has caught a
+load-bearing API as superseded before design hardened around it.
+
+That correction also **replaced the one-way constraint recorded here.**
+The rules first written down — payload logging cannot be re-enabled once
+disabled, and catalog/schema/prefix cannot change after setup — belong to
+the **legacy** mechanism. The real constraint runs the other way: once AI
+Gateway inference tables are enabled, **the endpoint cannot switch back
+to legacy tables**. Enabling on an existing endpoint that has no
+inference table configured is explicitly supported, which is exactly this
+endpoint's case. Less irreversible than first stated, and the corrected
+version is the one that governs.
+
+What is genuinely irreversible is the data: **the log begins at the
+moment capture is switched on and no earlier**, which is the whole reason
+this is Task 1.
+
+The table lands in its **own schema**, not alongside the registered
+model. Databricks also creates an internal
+`<payload table ID>_checkpoints` volume beside it, and deleting that
+volume corrupts the table; mixing that machinery into the schema holding
+the champion model makes both harder to grant on and to reason about.
+The schema carries `force_destroy = false` for the same reason the model
+registry schema does, and it binds harder here: a prediction log is the
+one artifact in this project that **cannot be re-derived at any price**,
+because re-provisioning replays no history.
 
 **Phase 6 has no console evidence and cannot acquire any in this phase.**
 Its stack was destroyed at Task 9's close. `2026-09-06-console-evidence.md`
