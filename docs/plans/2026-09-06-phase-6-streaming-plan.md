@@ -645,6 +645,15 @@ asserts on outcome, so it still tests the real contract; both cases pass.
 the event is **kept** — it asserted the opposite one commit earlier.
 **Commit:** `fix(stream): dedup on write so late events are kept, not dropped`
 
+**Verified live afterwards, because the tests could not reach the failing
+conditions.** The loss happened on ADLS-backed Delta with a *restored cloud
+checkpoint*; local fixtures cannot reproduce that. Replaying the same 35 poll
+files on a job cluster: 30 files cold → **6,801 rows**, then +5 files on the
+**resumed** checkpoint → **8,007 rows** (= 6,801 + all 1,206 late events),
+8,007 distinct `event_id`, where the watermark path lost 161 repos at that
+exact step. No Terraform and no Lakebase were needed — verifying the write
+path does not require re-provisioning the serving path.
+
 ---
 
 ## Exit gate
@@ -654,7 +663,7 @@ the event is **kept** — it asserted the opposite one commit earlier.
 - [x] Late, duplicate and out-of-order events are each forced and handled
 - [x] A live event demonstrably updates a served online feature value
 - [x] Streaming features pass the leakage suite's point-in-time assertions
-- [~] Online store torn down; real idle rate measured and published
+- [x] Online store torn down; real idle rate measured and published
 - [x] Every measured claim states its `n`
 
 Late-event handling was `[~]` when Task 9 closed and is `[x]` after Task 10.
@@ -666,11 +675,20 @@ Delta `MERGE`, so late events now land and only genuine duplicates are
 suppressed. Order-independence became a stronger property in the process:
 with no watermark left, arrival order cannot affect the result at all.
 
-**The one remaining `[~]` is not closeable by effort.**
+The idle rate was `[~]` for one day for a reason worth keeping:
 `system.billing.usage` holds 0 rows in a new metastore and lags ~a day in the
-established one, so the idle rate cannot be read during the window that
-generates it. Deferred with `workspace_id = 7405616381250124` captured before
-teardown, not abandoned.
+established one, so it **cannot be read during the window that generates it**.
+Capturing `workspace_id = 7405616381250124` before teardown is what let the
+rows be attributed once they landed. Measured 2026-09-07: **0.852 DBU/hour →
+$12.06/day** idle at CU_1, flat across `n = 14` consecutive 10-minute billing
+buckets, and **zero rows during the stopped window** — a stopped instance
+bills nothing. The whole experiment cost $3.69 in DBUs, $1.26 of it the store.
+
+That measurement also **overturned a claim this project had recorded twice**:
+the rate was in `system.billing.list_prices` all along (since 2025-06-11), and
+Phase 5's identical "not in the catalog" finding fails the same check. Both
+are corrected in place; the lesson is that Databricks SKU names are meter
+names, not product names.
 
 ## Deferred out of Phase 6, on purpose
 

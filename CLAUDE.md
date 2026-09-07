@@ -66,9 +66,9 @@ Phase 6 made the platform live: a poller against GitHub's public Events API,
 streaming Silver, two online feature tables published to a Lakebase store and
 served from Postgres. Its exit gate was demonstrated across two live windows
 (84 served feature values changed, 684 added, none lost) and the billable
-stack was torn down. One exit-gate item stays open and is not closeable by
-effort: the online store's idle DBU rate, because `system.billing.usage` lags
-about a day and cannot be read during the window that generates it.
+stack was torn down at a measured idle rate of $12.06/day — read the day
+after, since `system.billing.usage` lags and cannot be queried during the
+window it measures. **Every exit-gate row is `[x]`.**
 
 `docs/STATUS.md` holds it at task granularity — deliberately not duplicated
 here, because two places recording the same thing means one of them is wrong.
