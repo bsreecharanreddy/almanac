@@ -9,8 +9,9 @@ from pyspark.sql.streaming.query import StreamingQuery
 
 from almanac.explore.schema import SchemaEra
 from almanac.stream.ingest import (
-    _reject_non_reduced_era,
+    _reject_id_less_event,
     late_event_count,
+    non_reduced_count,
     stream_events,
     write_stream_silver,
 )
@@ -187,15 +188,75 @@ def test_a_row_older_than_the_watermark_is_counted_even_though_it_is_dropped(
     assert late_event_count(query) >= 1, "the dropped row must be counted, not silently absorbed"
 
 
-# --- the era assertion: the live feed cannot produce a non-REDUCED_V3 row ---
+# --- the id assertion: an event dedup cannot deduplicate is a real anomaly ---
 
 
-def test_reject_non_reduced_era_raises_on_a_legacy_row(spark: SparkSession) -> None:
-    df = spark.createDataFrame([("legacy_v1",)], "schema_era string")
-    with pytest.raises(ValueError, match="REDUCED_V3"):
-        _reject_non_reduced_era(df)
+def test_reject_id_less_event_raises_when_event_id_is_null(spark: SparkSession) -> None:
+    df = spark.createDataFrame([(None,)], "event_id string")
+    with pytest.raises(ValueError, match="no event_id"):
+        _reject_id_less_event(df)
 
 
-def test_reject_non_reduced_era_passes_reduced_rows(spark: SparkSession) -> None:
-    df = spark.createDataFrame([("reduced_v3",), ("reduced_v3",)], "schema_era string")
-    _reject_non_reduced_era(df)  # must not raise
+def test_reject_id_less_event_passes_rows_that_carry_an_id(spark: SparkSession) -> None:
+    df = spark.createDataFrame([("a",), ("b",)], "event_id string")
+    _reject_id_less_event(df)  # must not raise
+
+
+def test_an_old_era_row_is_ingested_rather_than_rejected(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    """The live feed really does deliver them: 3 of 6801 events in a 30-poll
+    window on 2026-09-07 were `modern_v2`, one created 2021-07-30. They carry
+    valid ids, and `pipeline.eras` already handles every era, so rejecting
+    them lost real data for no invariant."""
+    landing, dest, checkpoint = tmp_path / "landing", tmp_path / "dest", tmp_path / "checkpoint"
+    landing.mkdir()
+    land_poll(
+        landing,
+        [_event("1", "2021-07-30T18:12:32Z"), _event("2", "2026-09-06T12:00:00Z")],
+        polled_at="2026-09-06T12:00:05Z",
+        name="poll_0",
+    )
+
+    query = _ingest(spark, landing, dest, checkpoint, watermark=timedelta(minutes=10))
+
+    written = spark.read.format("delta").load(str(dest)).collect()
+    eras = {r["event_id"]: r["schema_era"] for r in written}
+    assert eras == {"1": SchemaEra.MODERN_V2.value, "2": SchemaEra.REDUCED_V3.value}
+    assert non_reduced_count(query) == 1, "the rate must be reported, not assumed"
+
+
+def test_a_distinct_late_event_is_dropped_not_just_deduplicated(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    """The neighbouring test covers a late *duplicate*, where dropping costs
+    nothing. This is the case that does cost: a never-before-seen event whose
+    event time is already behind the watermark is silently absent from Silver.
+    On the live feed that is not exotic -- 16.4% of a 30-poll window carried an
+    event time over a day old (2026-09-07)."""
+    landing, dest, checkpoint = tmp_path / "landing", tmp_path / "dest", tmp_path / "checkpoint"
+    landing.mkdir()
+    watermark = timedelta(seconds=60)
+
+    land_poll(
+        landing, [_event("1", "2026-01-01T00:00:00Z")], polled_at="2026-01-01T00:00:00Z", name="p0"
+    )
+    _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+
+    # Advances the watermark well past T0 + 60s.
+    land_poll(
+        landing, [_event("2", "2026-01-01T00:02:00Z")], polled_at="2026-01-01T00:02:00Z", name="p1"
+    )
+    _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+
+    land_poll(
+        landing,
+        [_event("999", "2025-06-09T15:12:47Z")],
+        polled_at="2026-01-01T00:03:20Z",
+        name="p2",
+    )
+    query = _ingest(spark, landing, dest, checkpoint, watermark=watermark)
+
+    ids = {r["event_id"] for r in spark.read.format("delta").load(str(dest)).collect()}
+    assert ids == {"1", "2"}, "event 999 is new, not a duplicate -- its absence is data loss"
+    assert late_event_count(query) >= 1, "at least it is counted"
