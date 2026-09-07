@@ -70,6 +70,12 @@ ml = [
     # `publish_table`, `get_online_store` and `delete_online_store`, all
     # keyword-only.
     "databricks-feature-engineering>=0.17.1",
+    # Phase 7 Task 2/3 (design doc §4.7): reading `system.access.column_lineage`
+    # to generate the lineage artifact. Already present transitively via the two
+    # clients above, but a transitive pin is not a declaration -- the artifact's
+    # regeneration would break silently if either dropped it. 0.136.0 is the
+    # current release, checked against pypi.org's JSON API.
+    "databricks-sdk>=0.136.0",
 ]
 
 [build-system]
