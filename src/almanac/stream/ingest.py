@@ -99,6 +99,12 @@ def stream_events(
         _LATE_METRIC,
         F.sum(F.col("is_late").cast("long")).alias("late_count"),
         F.count("*").alias("total"),
+        # Measured, not assumed: the era mix was previously asserted to be
+        # REDUCED_V3-only, and live data falsified that (see
+        # _reject_id_less_event). A counter reports the real rate instead.
+        F.sum((F.col("schema_era") != SchemaEra.REDUCED_V3.value).cast("long")).alias(
+            "non_reduced_count"
+        ),
     )
 
     watermark_duration = f"{int(watermark.total_seconds())} seconds"
@@ -107,33 +113,53 @@ def stream_events(
     )
 
 
-def late_event_count(query: StreamingQuery) -> int:
-    """Total rows seen with a processing delay beyond the watermark, across
-    every micro-batch run so far. Summed from Spark's own ``observe()``
-    progress (``recentProgress``, bounded by Spark's own retention) rather
-    than from written output, for the reason ``stream_events`` documents.
+def _observed_sum(query: StreamingQuery, field: str) -> int:
+    """Sum one ``observe()`` field across every micro-batch run so far.
+
+    Read from Spark's own progress (``recentProgress``, bounded by Spark's
+    own retention) rather than from written output, for the reason
+    ``stream_events`` documents: a row counted here may never be written.
     """
     total = 0
     for progress in query.recentProgress:
         metrics = progress.get("observedMetrics", {}).get(_LATE_METRIC)
-        if metrics is not None and metrics["late_count"] is not None:
-            total += metrics["late_count"]
+        if metrics is not None and metrics[field] is not None:
+            total += metrics[field]
     return total
 
 
-def _reject_non_reduced_era(batch: DataFrame) -> None:
-    """The live feed is REDUCED_V3-only (measured 2026-09-06). The legacy
-    era's id-less-event handling in ``pipeline.dedup`` exists for batch
-    archive data spanning three eras -- a case this path cannot receive.
-    Assert that boundary rather than defensively reimplementing a branch
-    for data that cannot occur here; a real violation is a bug worth
-    stopping the stream for, not one to silently paper over.
+def late_event_count(query: StreamingQuery) -> int:
+    """Rows seen with a processing delay beyond the watermark."""
+    return _observed_sum(query, "late_count")
+
+
+def non_reduced_count(query: StreamingQuery) -> int:
+    """Rows whose ``schema_era`` is not REDUCED_V3 -- rare but real on the
+    live feed (3 of 6801 in a 30-poll window, 2026-09-07)."""
+    return _observed_sum(query, "non_reduced_count")
+
+
+def _reject_id_less_event(batch: DataFrame) -> None:
+    """Stop the stream on an event with no usable ``event_id``.
+
+    Corrects a narrower-than-intended guard. This previously asserted the
+    feed was REDUCED_V3-only, on a 2026-09-06 measurement; a 30-poll live
+    window on 2026-09-07 falsified that -- 3 of 6801 events were
+    ``modern_v2``, including a PullRequestEvent created 2021-07-30. GitHub
+    stamps event ids on delivery, not on occurrence, so an arbitrarily old
+    ``created_at`` can arrive at any time.
+
+    The era was never the real hazard: ``pipeline.eras`` already handles all
+    three eras, and those rows carried valid ids. The hazard is an event
+    ``pipeline.dedup`` cannot deduplicate, because it passes null
+    ``event_id`` rows straight through -- so duplicates would accumulate
+    unnoticed. That is what this asserts, and the era mix is now reported by
+    the ``non_reduced_count`` metric rather than assumed.
     """
-    non_reduced = batch.filter(F.col("schema_era") != SchemaEra.REDUCED_V3.value)
-    if non_reduced.limit(1).count():
+    if batch.filter(F.col("event_id").isNull()).limit(1).count():
         raise ValueError(
-            "streaming ingest received a non-REDUCED_V3 event; "
-            "the live feed cannot produce one, so this is a real anomaly"
+            "streaming ingest received an event with no event_id; "
+            "pipeline.dedup cannot deduplicate it, so this is a real anomaly"
         )
 
 
@@ -173,7 +199,7 @@ def write_stream_silver(
         # that's one shuffle-free read, not two.
         batch.cache()
         try:
-            _reject_non_reduced_era(batch)
+            _reject_id_less_event(batch)
             (
                 batch.write.format("delta")
                 .option("txnVersion", batch_id)

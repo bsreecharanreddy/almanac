@@ -69,7 +69,8 @@ secret scopes and workspace files are per-workspace, so nothing carries over
 from westus3:
 
 ```bash
-export DATABRICKS_HOST="https://$(terraform output -raw workspace_url)"
+# The output already carries the scheme -- do not prefix it again.
+export DATABRICKS_HOST="$(terraform output -raw workspace_url)"
 
 uv build
 databricks workspace mkdirs /Workspace/Shared/almanac/dist
