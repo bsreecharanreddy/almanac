@@ -15,11 +15,12 @@ feature value, which is Phase 6's exit gate.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 
 import httpx
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
 
 from almanac.cli import run_cli
 from almanac.config import Settings
@@ -46,16 +47,55 @@ INGEST = "ingest"
 FEATURES = "features"
 PUBLISH = "publish"
 
+# Both tables are `stream.features._stream_features` under a different entity,
+# so their contract is one statement parameterised by that entity rather than
+# two that could drift apart.
+_STREAM_CHECKS = {
+    # No history is unknown, not quiet: `_stream_features`' `when_seen` gates
+    # all four on the same "has this entity been seen before" test, so they are
+    # null together or present together. A lone null is a computation bug.
+    "history_known_together": (
+        "(events_prior_1h IS NULL) = (events_prior_24h IS NULL) "
+        "AND (events_prior_1h IS NULL) = (secs_since_last_event IS NULL) "
+        "AND (events_prior_1h IS NULL) = (arrival_per_hour_24h IS NULL)"
+    ),
+    "counts_never_negative": "events_prior_1h IS NULL OR events_prior_1h >= 0",
+    "hour_window_within_day": "events_prior_1h IS NULL OR events_prior_1h <= events_prior_24h",
+    # Point-in-time discipline as an enforced rule: a prior event is never in
+    # the future of the event that looks back at it.
+    "elapsed_never_negative": "secs_since_last_event IS NULL OR secs_since_last_event >= 0",
+}
+
+
+def _stream_spec(
+    name: str,
+    compute: Callable[[DataFrame], DataFrame],
+    entity: str,
+    entity_type: str,
+) -> FeatureTableSpec:
+    return FeatureTableSpec(
+        name,
+        compute,
+        [entity],
+        "event_time",
+        columns={
+            entity: entity_type,
+            "event_time": "timestamp",
+            "events_prior_1h": "bigint",
+            "events_prior_24h": "bigint",
+            "secs_since_last_event": "double",
+            "arrival_per_hour_24h": "double",
+        },
+        checks=_STREAM_CHECKS,
+    )
+
+
 # The reduced-era payload supports entity activity and nothing else (§4.6),
 # so these are the two entities the live feed can key on. Same spec shape as
 # features/runner.py's FEATURE_TABLES, so both go through write_and_register.
 STREAM_FEATURE_TABLES: list[FeatureTableSpec] = [
-    FeatureTableSpec(
-        "repo_stream_activity", compute_repo_stream_features, ["repo_id"], "event_time"
-    ),
-    FeatureTableSpec(
-        "actor_stream_activity", compute_actor_stream_features, ["actor_login"], "event_time"
-    ),
+    _stream_spec("repo_stream_activity", compute_repo_stream_features, "repo_id", "bigint"),
+    _stream_spec("actor_stream_activity", compute_actor_stream_features, "actor_login", "string"),
 ]
 
 

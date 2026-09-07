@@ -760,6 +760,33 @@ surfaces carrying **no** contract (the feature tier, streaming Silver)
 plus §10's *Documentation* item, a published contract + SLA, which does
 not exist in any form.
 
+**Those surfaces are PySpark writing Delta by path, so the mechanism is
+Delta's own CHECK constraints plus a shape check before the write — not a
+second dbt-shaped thing.** Settled 2026-09-07 by measurement
+(`docs/findings/2026-09-07-delta-contract-enforcement.md`), and the split
+is not arbitrary. Delta already rejects a *widened* type on overwrite, so
+that half needs nothing; it **accepts an overwrite missing a column**, keeps
+the column in the schema and nulls every row, which is the one failure a
+downstream reader cannot distinguish from real absent data — so the shape is
+checked in `contracts.enforce` before anything lands. Row-local invariants
+go on the table itself as CHECK constraints applied *by path*, which needs
+no metastore and therefore runs identically local and on Databricks, unlike
+the UC primary key and CDF statements gated behind `--register`. That also
+closes a gap §4.6 recorded and left open: open-source Delta refuses
+`ALTER COLUMN ... SET NOT NULL` on a populated table, so nothing outside
+Databricks enforced non-null keys — but it accepts `CHECK (key IS NOT NULL)`,
+which does. Uniqueness stays a test assertion, since it is not row-local and
+no constraint can express it.
+
+**The first thing the contract did was find a defect, which is the
+argument for it.** `repo_activity` had two rows under one
+`(repo_id, event_time)` — its declared Unity Catalog primary key — on 2 of
+3,997 fixture rows, because two events for one repo at the same instant get
+different running totals from a ROWS frame. `as_of_join` reads that key and
+the online store serves the latest row per key, so both were choosing
+between two rows arbitrarily. Fixed by keeping the row whose totals include
+every event at that instant, which is what "to date" means.
+
 **The cloud window is narrow, and re-provisioning is itself the
 deliverable.** Only the SQL warehouse comes up, only long enough to prove
 the dashboards against real Gold, then down. **This supersedes §9's

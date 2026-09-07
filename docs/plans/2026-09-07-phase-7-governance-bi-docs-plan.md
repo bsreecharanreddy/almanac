@@ -184,6 +184,33 @@ the reason that test is trustworthy.
 **Done when:** a deliberate breach fails CI, demonstrated, not asserted.
 **Commit:** `feat(contracts): enforce the feature and streaming surfaces, proven by a breach`
 
+**As built — the mechanism was chosen by measurement, and the breach that
+matters is the one Delta *accepts*.** Full detail in
+`docs/findings/2026-09-07-delta-contract-enforcement.md`; three things worth
+carrying here.
+
+The plan's own example breaches turned out not to be equivalent. Delta
+**rejects** a widened type on overwrite by itself, so that half needed
+nothing. It **accepts** an overwrite missing a column — keeping the column
+in the schema and nulling every row — which is the one failure a reader
+cannot tell from genuine absent data, and `features/runner.py` overwrites
+every table on every run. So the shape check is not belt-and-braces over
+Delta's; it covers the case Delta does not.
+
+Semantic rules go on the table as CHECK constraints applied **by path**, so
+the local suite exercises the real mechanism rather than a stand-in — and
+that turned out to close a gap §4.6 had left open, since Delta accepts
+`CHECK (key IS NOT NULL)` where it refuses `ALTER COLUMN ... SET NOT NULL`.
+Uniqueness cannot be a constraint at all (not row-local), so it is asserted
+per surface in the test.
+
+**The contract found a real defect on first contact**, which is the whole
+argument for the task: `repo_activity` carried two rows under its own
+declared UC primary key. Fixed in `features/groups.py`. One adjacent
+nondeterminism in `stream/features.py` is **recorded and deliberately not
+changed** — it satisfies the contract, so folding it in would be scope
+creep on Phase 6 code.
+
 ## Task 5: The data contract + SLA document
 
 §10's *Documentation* list names this and **nothing in the repo provides

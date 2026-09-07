@@ -22,6 +22,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
+from almanac.contracts import Contract, apply_constraints, enforce
 from almanac.explore.schema import SchemaEra
 from almanac.pipeline.eras import normalize_events
 from almanac.pipeline.payloads import parse_events
@@ -46,6 +47,46 @@ _LANDING_SCHEMA = StructType(
 )
 
 _LATE_METRIC = "late_events"
+
+# Silver's column *names* live in `eras.SILVER_COLUMNS`; nothing until now
+# stated its types, so this is the first statement of them rather than a second
+# copy -- `test_contracts.py` holds the two name lists together.
+_SILVER_TYPES = {
+    "event_id": "string",
+    "event_id_source": "string",
+    "actor_login": "string",
+    "created_at": "timestamp",
+    "repo_id": "bigint",
+    "repo_name": "string",
+    "event_type": "string",
+    "event_action": "string",
+    "schema_era": "string",
+    "ingested_at": "timestamp",
+    "event_date": "string",
+    "event_hour": "int",
+    "pr_number": "bigint",
+    "pr_merged": "boolean",
+    "pr_draft": "boolean",
+    "is_pr_comment": "boolean",
+    "push_size": "bigint",
+    "push_distinct_size": "bigint",
+}
+
+STREAM_SILVER_CONTRACT = Contract(
+    surface="stream_silver",
+    # `is_late` is the one column the live table carries and batch Silver does
+    # not: it is a report about arrival, not a property of the event (§4.6).
+    columns={**_SILVER_TYPES, "is_late": "boolean"},
+    keys=("event_id",),
+    checks={
+        # Both derived from `created_at`, so a violation means the partition
+        # columns and the event time have come apart.
+        "event_hour_in_range": "event_hour IS NULL OR event_hour BETWEEN 0 AND 23",
+        "event_date_is_a_date": (
+            "event_date IS NULL OR event_date RLIKE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'"
+        ),
+    },
+)
 
 
 def stream_events(
@@ -262,9 +303,18 @@ def write_stream_silver(
                     .mode("append")
                     .save(dest)
                 )
+            # After the write, not before: on a first batch there is no table
+            # to constrain yet. A breach therefore lands once and then fails
+            # the ADD (which validates existing rows), rather than being
+            # rejected outright -- loud either way, and every later batch is
+            # rejected outright.
+            apply_constraints(spark, dest, STREAM_SILVER_CONTRACT)
         finally:
             batch.unpersist()
 
+    # The streaming frame's schema is known before the query starts, so a
+    # shape breach fails here rather than after a checkpoint directory exists.
+    enforce(df, STREAM_SILVER_CONTRACT)
     writer = df.writeStream.foreachBatch(_write_batch).option("checkpointLocation", checkpoint)
     if available_now:
         writer = writer.trigger(availableNow=True)
