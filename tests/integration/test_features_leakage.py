@@ -21,6 +21,7 @@ from pyspark.sql import Row, SparkSession
 from almanac.features.groups import compute_repo_activity
 from almanac.features.join import as_of_join
 from almanac.features.similarity import Neighbor, compute_pr_similarity
+from almanac.stream.features import compute_repo_stream_features
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -86,6 +87,60 @@ def test_pinning_the_delta_version_reproduces_the_original_result_after_a_late_a
     # why the version gets pinned at build time, not re-derived from
     # "current".
     assert live[0]["events_total_to_date"] == 2
+    assert live != original
+
+
+_STREAM_SCHEMA = "event_id string, repo_id long, actor_login string, created_at timestamp"
+
+
+def _stream_event(
+    event_id: str, repo_id: int, created_at: datetime
+) -> tuple[str, int, str, datetime]:
+    return (event_id, repo_id, "alice", created_at)
+
+
+def test_streaming_features_are_leak_free_and_reproducible_only_when_version_pinned(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    """Same invariant as the repo_activity test above, for the online
+    feature groups: a late-arriving event with event_time < T is leak-free
+    to include (event time governs, not arrival), but it changes a live
+    re-read -- so a build pins the Silver version, exactly as offline does.
+    The streaming path does not get an exemption (§features.py).
+    """
+    events_path = tmp_path / "stream_events"
+    t = datetime(2025, 11, 3, 15, tzinfo=UTC)
+
+    spark.createDataFrame(
+        [
+            _stream_event("a", 1, datetime(2025, 11, 3, 14, 0, tzinfo=UTC)),
+            _stream_event("b", 1, datetime(2025, 11, 3, 14, 30, tzinfo=UTC)),
+        ],
+        _STREAM_SCHEMA,
+    ).write.format("delta").save(str(events_path))
+    v1 = _latest_version(spark, events_path)
+
+    spine = spark.createDataFrame([(1, t)], "repo_id long, as_of_timestamp timestamp")
+
+    def as_of_result(version: int) -> list[Row]:
+        events = spark.read.format("delta").option("versionAsOf", version).load(str(events_path))
+        features = compute_repo_stream_features(events)
+        return as_of_join(spine, features, on=["repo_id"]).collect()
+
+    original = as_of_result(v1)
+    assert original[0]["events_prior_24h"] == 1  # the feature row at b sees only a
+
+    # A late arrival: its created_at is before t and before b, appended as a
+    # real later Delta version, not backdated.
+    spark.createDataFrame(
+        [_stream_event("c", 1, datetime(2025, 11, 3, 14, 15, tzinfo=UTC))],
+        _STREAM_SCHEMA,
+    ).write.format("delta").mode("append").save(str(events_path))
+    v2 = _latest_version(spark, events_path)
+
+    assert as_of_result(v1) == original, "the pinned version is untouched by the append"
+    live = as_of_result(v2)
+    assert live[0]["events_prior_24h"] == 2, "b's feature row now sees a and the late c"
     assert live != original
 
 

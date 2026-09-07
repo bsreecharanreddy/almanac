@@ -20,6 +20,11 @@ MAX_FIXTURE_MB = 5.0
 SAMPLES: list[tuple[str, date, int]] = [
     ("modern", date(2025, 8, 13), 14),
     ("legacy", date(2014, 6, 12), 14),
+    # Post-2025-10-15 payload reduction (SchemaEra.REDUCED_V3) -- Task 4's
+    # replay harness needs real reduced-era data, and neither prior sample
+    # predates the boundary far enough: this one is the only committed
+    # fixture streaming's own era guard can accept.
+    ("reduced", date(2025, 11, 3), 14),
 ]
 
 
