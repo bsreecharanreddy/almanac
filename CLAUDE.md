@@ -59,8 +59,12 @@ a year later.**
 
 ## Current status
 
-**Phases 0–5 complete and merged to `main`; Phase 6 at 10 of 10 tasks on
-branch `phase-6-streaming`, not yet pushed.** The full medallion has run on
+**Phases 0–6 complete and merged to `main`** (Phase 6 via PR #13,
+`1cff101`). **Phase 7 (governance, reporting, reproducibility) is planned,
+not started** — design doc §4.7 and a 14-task plan, on branch
+`phase-7-governance`. Its Task 1 is time-critical: inference capture is
+off, and only traffic occurring after it is enabled can ever be logged.
+The full medallion has run on
 Q3 2025 — 341,060,851 rows for $11.96, then Gold over that quarter for $0.78.
 Phase 6 made the platform live: a poller against GitHub's public Events API,
 streaming Silver, two online feature tables published to a Lakebase store and
@@ -214,6 +218,15 @@ after closing out a debugging saga or making a real decision:
 
 ## Conventions
 
+- **One branch per phase, named for the phase's subject, carrying the
+  whole phase** — its plan doc *and* every task — pushed once at the end
+  as a single PR. `phase-6-streaming` is the model: 18 commits, one push,
+  PR #13. **Never commit phase work to `main` directly.** Written down
+  2026-09-07 after both halves went wrong in one go: Phase 7's branch was
+  first named `phase-7-plan`, copying the older split-branch habit from
+  PRs #11–12 that Phase 6 had already superseded, and its planning commit
+  landed on `main` before being moved. Neither was recoverable from this
+  file, because neither was in it.
 - **One commit per completed task**, not one bundled commit per phase.
   Each carries its own code, its own tests, and its own green suite.
 - **`docs/STATUS.md` updates in the same commit as the work.**
