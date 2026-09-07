@@ -45,6 +45,17 @@ resource "databricks_external_location" "stream" {
   url             = local.stream_root
   credential_name = databricks_storage_credential.lake.id
   comment         = "Streaming Silver and feature tables for the bounded Lakebase window."
+
+  # Required to tear this stack down. Deleting the catalogs does NOT decrement
+  # this location's dependent-object counts: after both catalogs were gone and
+  # verified gone, UC still reported "4 dependent managed tables, 1 dependent
+  # managed volume" and refused the delete -- identically on a retry minutes
+  # later, so orphaned metadata rather than a race (2026-09-07).
+  #
+  # The warning it comes with ("managed storage data cannot be purged by Unity
+  # Catalog anymore") costs nothing here: the storage account itself is
+  # destroyed in this same run, so the data goes with it either way.
+  force_destroy = true
 }
 
 # An explicit storage_root rather than the metastore default: the
@@ -97,6 +108,36 @@ resource "databricks_database_instance" "online_store" {
     # here would block the teardown that is the whole cost-control story.
     prevent_destroy = false
   }
+}
+
+# A *standard* catalog, and both halves of that were learned the hard way on
+# 2026-09-07. It must exist (`publish_table` failed with `NotFound: Catalog
+# 'almanac_lb_online' does not exist`), and it must NOT be a Database Catalog
+# -- creating one of those got `BadRequest: Publishing table to a
+# MANAGED_ONLINE_CATALOG is not currently supported. Please use a standard
+# catalog for the online table`. Microsoft Learn's Limitations section agrees:
+# a managed online catalog is named there as an explicitly unsupported target.
+#
+# Separate from `databricks_catalog.this` because an online table's catalog
+# name must equal its backing Postgres database name, which the source catalog
+# has no reason to satisfy.
+resource "databricks_catalog" "online" {
+  name          = var.prefix_online_catalog
+  storage_root  = local.stream_root
+  comment       = "Phase 6 Task 9 online tables -- ephemeral, destroyed with this stack."
+  force_destroy = true
+
+  depends_on = [databricks_external_location.stream]
+}
+
+# publish_table creates the online *table* if absent -- the docs say so
+# explicitly -- but says nothing about the schema, and a fresh catalog holds
+# only `information_schema`. Pre-created rather than discovered by a fourth
+# failed publish.
+resource "databricks_schema" "online_features" {
+  catalog_name  = databricks_catalog.online.name
+  name          = var.schema
+  force_destroy = true
 }
 
 resource "databricks_job" "streaming" {
@@ -242,8 +283,10 @@ resource "databricks_job" "streaming" {
         "--schema", local.feature_schema,
         # A catalog of its own: Databricks requires an online table's catalog
         # name to equal its backing Postgres database name, which the source
-        # catalog has no reason to satisfy. publish_table creates it.
-        "--online-schema", "${var.prefix_online_catalog}.${var.schema}",
+        # catalog has no reason to satisfy. Referenced through the resource,
+        # not the variable, so the catalog is provably created before the task
+        # that publishes into it.
+        "--online-schema", "${databricks_schema.online_features.catalog_name}.${databricks_schema.online_features.name}",
         "--publish-mode", "TRIGGERED",
       ]
     }

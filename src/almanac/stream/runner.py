@@ -27,7 +27,12 @@ from almanac.features.runner import FeatureTableSpec, write_and_register
 from almanac.pipeline.source import EventStreamConfig
 from almanac.spark import active_or_local_session
 from almanac.stream.features import compute_actor_stream_features, compute_repo_stream_features
-from almanac.stream.ingest import late_event_count, stream_events, write_stream_silver
+from almanac.stream.ingest import (
+    late_event_count,
+    non_reduced_count,
+    stream_events,
+    write_stream_silver,
+)
 from almanac.stream.online_store import (
     PublishMode,
     load_client,
@@ -82,7 +87,15 @@ def run_ingest_stage(
     events = stream_events(spark, landing, watermark=timedelta(minutes=watermark_minutes))
     query = write_stream_silver(events, silver_path, checkpoint, available_now=True)
     query.awaitTermination()
-    print(f"[stream] stage=ingest late_events={late_event_count(query)}")
+    # `late_events` counts rows *entering* the pipeline, before the watermark
+    # operator; rows behind the watermark are dropped, so `rows` is what
+    # actually landed. Reporting only the first made a 161-row loss invisible
+    # in the 2026-09-07 window until it was reconstructed from raw JSONL.
+    print(
+        f"[stream] stage=ingest late_events={late_event_count(query)} "
+        f"non_reduced={non_reduced_count(query)} "
+        f"rows={spark.read.format('delta').load(silver_path).count()}"
+    )
 
 
 def run_features_stage(
@@ -91,16 +104,20 @@ def run_features_stage(
     """Build the online feature tables from the live Silver table.
 
     Reads `silver_path` directly, not `silver_path/clean`: the batch pipeline
-    quarantines into a sibling directory, but `write_stream_silver` rejects a
-    non-reduced-era batch outright rather than landing it, so there is no
-    quarantine tier here to read past.
+    quarantines into a sibling directory, but this path has no quarantine tier
+    to read past -- `write_stream_silver` lands every era it receives, and only
+    refuses a row it could not deduplicate at all.
     """
     events = spark.read.format("delta").load(silver_path)
     for spec in STREAM_FEATURE_TABLES:
         path = write_and_register(
             spark, spec, events, features_path=features_path, register=register, schema=schema
         )
-        print(f"[stream] stage=features table={spec.name} path={path} registered={register}")
+        rows = spark.read.format("delta").load(path).count()
+        print(
+            f"[stream] stage=features table={spec.name} rows={rows} "
+            f"path={path} registered={register}"
+        )
 
 
 def run_publish_stage(
@@ -114,8 +131,10 @@ def run_publish_stage(
     `online_schema` is separate from `schema` rather than derived from it:
     Databricks documents that an online table's *catalog* name must equal its
     backing Postgres database name, which the source catalog has no reason to
-    satisfy. Whether that forces a particular catalog here is settled by the
-    real run, not guessed at now.
+    satisfy. Settled by the 2026-09-07 run: that catalog must already exist and
+    must be a **standard** catalog -- a Database Catalog is rejected outright
+    ("Publishing table to a MANAGED_ONLINE_CATALOG is not currently
+    supported"), and its schema is not created for you either.
     """
     client = load_client()
     store = require_store(client, name=store_name)

@@ -562,17 +562,75 @@ count** before applying it here.
 and `terraform plan` shows the store gone.
 **Commit:** `feat(stream): live streaming window measured, online store torn down`
 
+**As built, and the sequence above was wrong in four places — every one of
+them a claim written from an API's shape rather than from a run.**
+
+- **Step 1 could not run at all in the main workspace.** Lakebase is not
+  offered in `westus3`, and a Lakebase project inherits its workspace's
+  region irrevocably. That forced an entire second root module
+  (`infra/terraform-lakebase/`, centralus), and the obvious fallback
+  (westus2) fails a *second* constraint — the node SKU is
+  `NotAvailableForSubscription` there.
+- **Step 4 used `TRIGGERED`, not `CONTINUOUS`.** `TRIGGERED` is the API
+  default and needs no always-on sync pipeline, which suits a bounded
+  window that gets destroyed.
+- **The publish target needed three prerequisites the plan assumed away**:
+  the online catalog is not created by `publish_table`; it must be a
+  **standard** catalog (a Database Catalog is refused outright); and its
+  schema is not created either. Each cost a ~5-minute cluster start to
+  learn, and `terraform validate` passed all three.
+- **The gate needed two windows, not one.** "Changes a served feature
+  value" is unprovable from a single publish — one publish shows only that
+  a value *exists*. A second 5-poll window supplied the before/after: 84
+  changed, 684 added, 0 lost.
+
+**Step 5 is complete except the DBU rate**, which is not deferrable by
+choice: `system.billing.usage` holds 0 rows in a newly created metastore
+and lags ~a day in the established one, so it cannot be read during the
+window it measures. `workspace_id` was captured before teardown to keep the
+rows attributable afterwards.
+
+**The "capture before the irreversible step" rule earned its place**, and
+needs one addition: capture what is needed *after* teardown too — the
+workspace id, without which the billing rows cannot be attributed to this
+stack at all.
+
+**The teardown-order trap check was worth running and found nothing** (16
+resources, all `almanac-lb-*`), but teardown then hit four *different*
+traps, now written into the module README: `terraform output` silently
+returns empty once a referenced resource is destroyed, and presents as an
+**auth** failure; the external location refuses deletion citing dependents
+that no longer exist; `force_destroy` in config is inert until an `apply`
+writes it into state; and a bare `apply` at that point plans to **recreate**
+the Lakebase instance.
+
 ---
 
 ## Exit gate
 
-- [ ] Replayed streaming output equals batch Silver output over the same hours
-- [ ] Exactly-once holds across a mid-stream restart from checkpoint
-- [ ] Late, duplicate and out-of-order events are each forced and handled
-- [ ] A live event demonstrably updates a served online feature value
-- [ ] Streaming features pass the leakage suite's point-in-time assertions
-- [ ] Online store torn down; real idle rate measured and published
-- [ ] Every measured claim states its `n`
+- [x] Replayed streaming output equals batch Silver output over the same hours
+- [x] Exactly-once holds across a mid-stream restart from checkpoint
+- [~] Late, duplicate and out-of-order events are each forced and handled
+- [x] A live event demonstrably updates a served online feature value
+- [x] Streaming features pass the leakage suite's point-in-time assertions
+- [~] Online store torn down; real idle rate measured and published
+- [x] Every measured claim states its `n`
+
+Two are marked `[~]`, not `[x]`, and neither should be quietly rounded up:
+
+- **Late events are detected and counted, but "handled" turned out to mean
+  "silently dropped."** A distinct, never-before-seen event whose event time
+  is behind the watermark never reaches Silver — measured, not theorised: 161
+  repos lost in the second live window, 0 in the first, the difference being
+  whether the checkpoint had a watermark to restore. Duplicates and
+  out-of-order events *are* genuinely handled. Closing this properly is a
+  design decision (widen the watermark, or dedup on write with a Delta
+  `MERGE` on `event_id` as the batch path already does), deliberately not
+  taken under Task 9's own gate.
+- **The store is torn down; the idle rate is not published.**
+  `system.billing.usage` holds 0 rows in a new metastore and lags ~a day in
+  the established one, so the number cannot be read during the window that
+  generates it. Deferred with `workspace_id` captured, not abandoned.
 
 ## Deferred out of Phase 6, on purpose
 
