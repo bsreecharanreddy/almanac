@@ -75,7 +75,7 @@ def run_poll_stage(config: EventStreamConfig, landing: Path, *, max_polls: int) 
 
 
 def run_ingest_stage(
-    spark: SparkSession, *, landing: str, silver_path: str, checkpoint: str, watermark_minutes: int
+    spark: SparkSession, *, landing: str, silver_path: str, checkpoint: str, late_after_minutes: int
 ) -> None:
     """Drain whatever the landing zone holds, then stop.
 
@@ -84,13 +84,13 @@ def run_ingest_stage(
     terminates would hold the cluster until the job timeout for nothing. The
     continuous trigger stays available for a genuinely concurrent window.
     """
-    events = stream_events(spark, landing, watermark=timedelta(minutes=watermark_minutes))
+    events = stream_events(spark, landing, late_after=timedelta(minutes=late_after_minutes))
     query = write_stream_silver(events, silver_path, checkpoint, available_now=True)
     query.awaitTermination()
-    # `late_events` counts rows *entering* the pipeline, before the watermark
-    # operator; rows behind the watermark are dropped, so `rows` is what
-    # actually landed. Reporting only the first made a 161-row loss invisible
-    # in the 2026-09-07 window until it was reconstructed from raw JSONL.
+    # `late_events` is now a report, not a loss: since 2026-09-07 dedup is an
+    # insert-only MERGE and nothing is dropped for being late, so `rows` should
+    # account for every event polled. Reporting only `late_events` is what made
+    # a 161-row loss invisible until it was reconstructed from raw JSONL.
     print(
         f"[stream] stage=ingest late_events={late_event_count(query)} "
         f"non_reduced={non_reduced_count(query)} "
@@ -170,7 +170,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-polls", type=int, default=30)
     parser.add_argument("--silver-path")
     parser.add_argument("--checkpoint")
-    parser.add_argument("--watermark-minutes", type=int, default=10)
+    # Reporting threshold only: nothing is dropped for exceeding it.
+    parser.add_argument("--late-after-minutes", type=int, default=10)
     parser.add_argument("--features-path")
     # Fully qualified (catalog.schema): register_feature_table emits
     # "{schema}.{table}", which is only a valid Unity Catalog name if the
@@ -208,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
             landing=args.landing,
             silver_path=args.silver_path,
             checkpoint=args.checkpoint,
-            watermark_minutes=args.watermark_minutes,
+            late_after_minutes=args.late_after_minutes,
         )
     elif args.stage == FEATURES:
         run_features_stage(

@@ -14,10 +14,10 @@ that decides it.
 
 from __future__ import annotations
 
-import hashlib
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, StructField, StructType
@@ -49,9 +49,9 @@ _LATE_METRIC = "late_events"
 
 
 def stream_events(
-    spark: SparkSession, landing: str, *, watermark: timedelta = timedelta(minutes=10)
+    spark: SparkSession, landing: str, *, late_after: timedelta = timedelta(minutes=10)
 ) -> DataFrame:
-    """A watermarked, deduplicated streaming read of the poller's landing zone.
+    """A streaming read of the poller's landing zone, annotated with lateness.
 
     Reuses ``parse_events``/``normalize_events`` verbatim, so ``event_id``
     and ``schema_era`` are computed identically to the batch path (§4.2) --
@@ -65,16 +65,17 @@ def stream_events(
     ``ingested_at`` carries the poller's own ``polled_at`` -- the streaming
     equivalent of Bronze's wall-clock landing stamp, and, compared against
     ``created_at``, the exact divergence ``stream.poller`` was built to
-    expose (measured 2026-09-06: a stable ~305s feed lag, comfortably under
-    this function's default watermark).
+    expose (measured 2026-09-06: a stable ~305s feed lag).
 
-    A row whose delay exceeds the watermark is marked ``is_late`` and
-    counted by the ``late_events`` observation *before* the watermark step,
-    not after: verified directly (2026-09-06) that a row old enough for
-    ``dropDuplicatesWithinWatermark`` to discard it never reaches anything
-    downstream, including a ``foreachBatch`` write -- counting from there
-    would silently miss exactly the rows this exists to report. Read the
-    total with ``late_event_count(query)``.
+    ``late_after`` no longer discards anything, and the rename is the point.
+    It was a Spark watermark feeding ``dropDuplicatesWithinWatermark`` until
+    2026-09-07, when a live window showed what that cost: **161 repos never
+    reached the online store**, because a distinct, never-before-seen event
+    whose event time is behind the watermark is dropped, not merely
+    deduplicated. Cross-batch dedup moved to an insert-only Delta ``MERGE``
+    in ``write_stream_silver``, which bounds nothing by event time, so this
+    is now purely the threshold at which a row is *reported* ``is_late``.
+    Read the total with ``late_event_count(query)``.
     """
     raw = spark.readStream.schema(_LANDING_SCHEMA).json(landing)
     as_raw_json = raw.select(
@@ -94,7 +95,7 @@ def stream_events(
     normalized = normalize_events(with_partition_cols)
 
     delay_seconds = F.unix_timestamp("ingested_at") - F.unix_timestamp("created_at")
-    annotated = normalized.withColumn("is_late", delay_seconds > F.lit(watermark.total_seconds()))
+    annotated = normalized.withColumn("is_late", delay_seconds > F.lit(late_after.total_seconds()))
     observed = annotated.observe(
         _LATE_METRIC,
         F.sum(F.col("is_late").cast("long")).alias("late_count"),
@@ -107,10 +108,14 @@ def stream_events(
         ),
     )
 
-    watermark_duration = f"{int(watermark.total_seconds())} seconds"
-    return observed.withWatermark("created_at", watermark_duration).dropDuplicatesWithinWatermark(
-        ["event_id"]
-    )
+    # No `withWatermark`/`dropDuplicatesWithinWatermark` here on purpose: both
+    # were removed 2026-09-07 because they discard late rows outright, and the
+    # live feed's late rows are overwhelmingly *distinct* events rather than
+    # duplicates (18.0% of a window arrive behind a 10-minute watermark; 16.4%
+    # carry an event time over a day old). Dedup is now `write_stream_silver`'s
+    # insert-only MERGE, which is bounded by storage layout rather than by
+    # event time -- so the stream is stateless and nothing is dropped.
+    return observed
 
 
 def _observed_sum(query: StreamingQuery, field: str) -> int:
@@ -129,7 +134,8 @@ def _observed_sum(query: StreamingQuery, field: str) -> int:
 
 
 def late_event_count(query: StreamingQuery) -> int:
-    """Rows seen with a processing delay beyond the watermark."""
+    """Rows seen with a processing delay beyond ``late_after``. Reported,
+    not dropped -- see ``write_stream_silver``."""
     return _observed_sum(query, "late_count")
 
 
@@ -163,28 +169,56 @@ def _reject_id_less_event(batch: DataFrame) -> None:
         )
 
 
-def _app_id(checkpoint: str) -> str:
-    """Stable per checkpoint, so a restart from the SAME checkpoint reuses it.
+def _batch_date_span(batch: DataFrame) -> tuple[str, str] | None:
+    """The batch's own ``[min, max]`` ``event_date``, or ``None`` if empty.
 
-    Delta's idempotent-write contract requires this: a fresh id on every
-    run would silently disable duplicate-write protection on every
-    restart, the opposite of what it exists for (checked live against
-    Delta's own docs, 2026-09-06).
+    This bounds the MERGE's target-side scan. Databricks' documented example
+    bounds it by wall clock instead (``current_date() - INTERVAL 7 DAYS``),
+    which is a *heuristic*: it assumes duplicates arrive within days of the
+    original, and silently stops deduplicating anything older. The batch's own
+    span is **exact** -- ``event_date`` is derived from ``created_at``, so a
+    duplicate necessarily carries the same one and cannot fall outside this
+    range -- and it prunes at least as hard, since a poll cycle spans minutes.
+    It also removes a wall-clock dependency that made replaying archive data
+    behave differently from a live window.
     """
-    return f"almanac-stream-{hashlib.sha256(checkpoint.encode()).hexdigest()[:16]}"
+    row = batch.agg(F.min("event_date"), F.max("event_date")).first()
+    if row is None or row[0] is None:
+        return None
+    return str(row[0]), str(row[1])
 
 
 def write_stream_silver(
     df: DataFrame, dest: str, checkpoint: str, *, available_now: bool = False
 ) -> StreamingQuery:
-    """Append each micro-batch to the live Silver table, idempotently.
+    """Write each micro-batch to the live Silver table, deduplicating on
+    ``event_id`` without discarding late events.
 
-    Exactly-once across a restart is Delta's own mechanism -- ``txnAppId``/
-    ``txnVersion`` keyed on the checkpoint and the batch id -- not a
-    hand-rolled ledger: a batch already committed under this checkpoint is
-    skipped on replay, verified directly (a stopped-and-restarted query
-    against the same checkpoint reproduces an uninterrupted run row for
-    row, 2026-09-06).
+    An **insert-only MERGE**, which is Databricks' own documented pattern for
+    deduplicating a stream into Delta (checked live 2026-09-07). It replaced
+    ``dropDuplicatesWithinWatermark``, which deduplicated correctly and lost
+    data doing it: a distinct event whose event time is behind the watermark
+    is dropped, and on this feed those are the common case, not the exotic one
+    -- a real window lost **161 repos** that way.
+
+    Two departures from the documented example, both deliberate:
+
+    - The docs also bound the *source* side
+      (``WHEN NOT MATCHED AND s.date > current_date() - 7 DAYS``). Copying
+      that would reintroduce exactly the bug being fixed, since it refuses to
+      insert old events at all. Only the **target** side is bounded here, so
+      dedup stays cheap and every row still lands.
+    - That bound is the batch's own ``event_date`` span rather than the docs'
+      wall-clock window -- see ``_batch_date_span`` for why it is exact where
+      the heuristic is approximate. Caught by a test, not by review: the
+      wall-clock form silently stopped deduplicating fixture data dated
+      months earlier, which is also how it would behave on any replay.
+
+    ``txnAppId``/``txnVersion`` are gone with the append: they are
+    ``DataFrameWriter`` options and do not apply to MERGE. Exactly-once is not
+    weakened by that, it is restated -- an insert-only merge keyed on
+    ``event_id`` is idempotent by construction, so a replayed batch matches
+    every row it already wrote and inserts nothing.
 
     ``available_now=True`` processes whatever the landing zone holds right
     now and then stops -- a bounded, deterministic run for tests and for
@@ -192,22 +226,42 @@ def write_stream_silver(
     Task 9's real shape: a live poller keeps producing new files for the
     whole window, so the query must not stop on its own.
     """
-    app_id = _app_id(checkpoint)
 
     def _write_batch(batch: DataFrame, batch_id: int) -> None:
-        # Scanned twice below (the era check, then the write); cached so
-        # that's one shuffle-free read, not two.
+        # Scanned more than once below (the id check, then the write); cached
+        # so that is one shuffle-free read. Databricks documents the same
+        # caching for MERGE specifically, which reads its source repeatedly.
         batch.cache()
         try:
             _reject_id_less_event(batch)
-            (
-                batch.write.format("delta")
-                .option("txnVersion", batch_id)
-                .option("txnAppId", app_id)
-                .partitionBy("event_date", "event_hour")
-                .mode("append")
-                .save(dest)
-            )
+            # MERGE dedups source against target, never source against itself
+            # -- the docs are explicit -- so intra-batch duplicates must go
+            # first or they land as duplicates.
+            deduped = batch.dropDuplicates(["event_id"])
+            spark = batch.sparkSession
+            span = _batch_date_span(deduped)
+            if span is not None and DeltaTable.isDeltaTable(spark, dest):
+                first_date, last_date = span
+                (
+                    DeltaTable.forPath(spark, dest)
+                    .alias("t")
+                    .merge(
+                        deduped.alias("s"),
+                        (F.col("t.event_id") == F.col("s.event_id"))
+                        & F.col("t.event_date").between(first_date, last_date),
+                    )
+                    .whenNotMatchedInsertAll()
+                    .execute()
+                )
+            else:
+                # Nothing to merge into yet. Partitioning is established here
+                # and inherited by every later MERGE.
+                (
+                    deduped.write.format("delta")
+                    .partitionBy("event_date", "event_hour")
+                    .mode("append")
+                    .save(dest)
+                )
         finally:
             batch.unpersist()
 

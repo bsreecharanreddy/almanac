@@ -17,7 +17,7 @@ def test_poll_is_bounded_by_default() -> None:
 
     assert args.stage == "poll"
     assert args.max_polls == 30
-    assert args.watermark_minutes == 10
+    assert args.late_after_minutes == 10
 
 
 def test_stage_must_be_one_of_the_known_stages() -> None:

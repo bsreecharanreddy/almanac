@@ -606,31 +606,71 @@ the Lakebase instance.
 
 ---
 
+## Task 10: Dedup on write, so late events stop being discarded (added 2026-09-07, not in the original plan)
+
+**Forced by Task 9's own measurements**, not by review. The plan assumed
+`dropDuplicatesWithinWatermark` handled late events; the live window showed
+it handled them by throwing them away, losing 161 repos in the run whose
+checkpoint had a watermark to restore.
+
+**The change:** `stream_events` no longer applies a watermark at all — the
+stream is stateless — and `write_stream_silver` deduplicates with an
+insert-only Delta `MERGE` on `event_id`. `watermark` is renamed `late_after`
+throughout, because a parameter that no longer watermarks anything is exactly
+the misleading name the code-style checklist warns about; the CLI flag
+follows (`--late-after-minutes`).
+
+**Validated against the primary source before implementing** (gate 2):
+Microsoft Learn documents this precise pattern for stream deduplication into
+Delta. Two deviations from its example are deliberate and are argued in
+`ingest.py` rather than left implicit — not bounding the *source* side (which
+would reintroduce the bug), and bounding the target by the batch's own
+`event_date` span instead of a wall clock (exact rather than heuristic, and
+replay-safe).
+
+**A test caught the design error, not review.** The first implementation
+copied the docs' `current_date() - 30 days` bound and silently stopped
+deduplicating anything older, which fixture data dated months earlier
+exposed immediately.
+
+**Exactly-once changed mechanism and was re-verified rather than assumed:**
+`txnAppId`/`txnVersion` do not apply to MERGE, so a replayed batch is now
+reprocessed and inserts nothing instead of being skipped outright. The test
+asserts on outcome, so it still tests the real contract; both cases pass.
+
+**Files:** `src/almanac/stream/{ingest,runner,replay,poller}.py`,
+`tests/unit/test_stream_ingest.py`, `tests/unit/test_stream_runner_cli.py`,
+`tests/integration/test_stream_{exactly_once,replay}.py`.
+**Done when:** `make check` green and the distinct-late-event test asserts
+the event is **kept** — it asserted the opposite one commit earlier.
+**Commit:** `fix(stream): dedup on write so late events are kept, not dropped`
+
+---
+
 ## Exit gate
 
 - [x] Replayed streaming output equals batch Silver output over the same hours
 - [x] Exactly-once holds across a mid-stream restart from checkpoint
-- [~] Late, duplicate and out-of-order events are each forced and handled
+- [x] Late, duplicate and out-of-order events are each forced and handled
 - [x] A live event demonstrably updates a served online feature value
 - [x] Streaming features pass the leakage suite's point-in-time assertions
 - [~] Online store torn down; real idle rate measured and published
 - [x] Every measured claim states its `n`
 
-Two are marked `[~]`, not `[x]`, and neither should be quietly rounded up:
+Late-event handling was `[~]` when Task 9 closed and is `[x]` after Task 10.
+It is worth recording why it was not rounded up at the time: "handled" had
+turned out to mean "silently dropped" — a distinct, never-before-seen event
+whose event time was behind the watermark never reached Silver, costing 161
+repos in a real window. Task 10 replaced watermark dedup with an insert-only
+Delta `MERGE`, so late events now land and only genuine duplicates are
+suppressed. Order-independence became a stronger property in the process:
+with no watermark left, arrival order cannot affect the result at all.
 
-- **Late events are detected and counted, but "handled" turned out to mean
-  "silently dropped."** A distinct, never-before-seen event whose event time
-  is behind the watermark never reaches Silver — measured, not theorised: 161
-  repos lost in the second live window, 0 in the first, the difference being
-  whether the checkpoint had a watermark to restore. Duplicates and
-  out-of-order events *are* genuinely handled. Closing this properly is a
-  design decision (widen the watermark, or dedup on write with a Delta
-  `MERGE` on `event_id` as the batch path already does), deliberately not
-  taken under Task 9's own gate.
-- **The store is torn down; the idle rate is not published.**
-  `system.billing.usage` holds 0 rows in a new metastore and lags ~a day in
-  the established one, so the number cannot be read during the window that
-  generates it. Deferred with `workspace_id` captured, not abandoned.
+**The one remaining `[~]` is not closeable by effort.**
+`system.billing.usage` holds 0 rows in a new metastore and lags ~a day in the
+established one, so the idle rate cannot be read during the window that
+generates it. Deferred with `workspace_id = 7405616381250124` captured before
+teardown, not abandoned.
 
 ## Deferred out of Phase 6, on purpose
 

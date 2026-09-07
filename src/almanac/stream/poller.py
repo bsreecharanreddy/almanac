@@ -182,9 +182,9 @@ def _write_poll(
     convention ``extract.archive.fetch_hour`` uses).
 
     Each line wraps the raw event with the poll's own timestamp, kept
-    separate from the event's own ``created_at`` -- Task 3's watermark
-    measures exactly this divergence, and conflating the two would erase
-    the thing being measured. ``poll_index`` disambiguates the filename
+    separate from the event's own ``created_at`` -- ``stream.ingest``'s
+    ``is_late`` measures exactly this divergence, and conflating the two
+    would erase the thing being measured. ``poll_index`` disambiguates the filename
     when ``now`` repeats (a fixed clock in a test, or Task 4's replay
     harness) -- without it, ``Path.replace`` would silently overwrite an
     earlier poll's file, an unsignalled data-loss bug on a live clock this

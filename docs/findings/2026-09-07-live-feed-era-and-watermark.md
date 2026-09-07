@@ -131,19 +131,55 @@ the mechanism and too optimistic about the consequence.
 the raw JSONL gives 217 of 1,206 (18.0%). For cycle A, `observe()` gave
 1,206 of 6,801 (17.7%) against 18.0% client-side on a 439-event subsample.
 
-### Options, not yet decided
+### Decided (Task 10): dedup on write, not on event time
+
+Three options were open:
 
 1. **Widen the watermark** past the observed tail. Simple, but the tail
-   reaches 9+ days, so dedup state retention becomes the cost.
-2. **Drop `dropDuplicatesWithinWatermark`** and dedup on write (Delta
-   `MERGE` on `event_id`) — unbounded dedup without unbounded Spark state,
-   at the cost of a merge per batch.
+   reaches 9+ days, so dedup state retention becomes the cost — trading a
+   correctness bug for a memory one.
+2. **Drop `dropDuplicatesWithinWatermark`** and dedup on write with an
+   insert-only Delta `MERGE` on `event_id`.
 3. **Accept the loss and document it**, since capture is already best-effort
    against a firehose with no completeness guarantee.
 
-Option 2 matches what the batch path already does and is the current
-recommendation, but it is a design change and is not being made under Task
-9's own gate.
+**Option 2, implemented in Task 10.** It is Databricks' own documented
+pattern for this exact problem (*"Handle deduplication during stream
+processing… an insert-only merge query in `foreachBatch`… with automatic
+deduplication"*, Microsoft Learn, page dated 2026-08-24, read 2026-09-07),
+and it matches what the batch path already does. The stream becomes
+stateless: no watermark, no state store, nothing dropped for arriving late.
+
+**One departure from the documented example is deliberate and necessary.**
+The docs bound *both* sides of the merge:
+
+```sql
+ON logs.uniqueId = new.uniqueId AND logs.date > current_date() - INTERVAL 7 DAYS
+WHEN NOT MATCHED AND new.date > current_date() - INTERVAL 7 DAYS THEN INSERT *
+```
+
+Copying that verbatim would have reintroduced the very bug being fixed — the
+*source*-side bound refuses to insert old events at all. Only the target side
+is bounded here.
+
+**And the docs' wall-clock bound was itself wrong for this pipeline**, which a
+test caught rather than review. `current_date() - 30 days` excluded fixture
+data dated months earlier from the match, so duplicates sailed through and
+`test_a_very_late_duplicate_is_suppressed_and_still_counted` failed with
+`['1', '1', '2']`. The bound is now the **batch's own `event_date` span**,
+which is exact rather than heuristic: `event_date` is derived from
+`created_at`, so a duplicate necessarily carries the same one and cannot fall
+outside the range. It prunes at least as hard (a poll cycle spans minutes)
+and removes a wall-clock dependency that would have made replaying archive
+data behave differently from a live window.
+
+**Exactly-once changed mechanism and was re-verified, not assumed.**
+`txnAppId`/`txnVersion` are `DataFrameWriter` options and do not apply to
+MERGE, so Delta no longer skips an already-committed batch; the batch is
+reprocessed and inserts nothing, because every row matches on `event_id`.
+`test_stream_exactly_once.py` asserts on outcome — row sets from an
+interrupted run against an uninterrupted one — so it still tests the real
+contract, and both cases pass unchanged.
 
 ## Finding 3 — `publish_table` does not create its catalog (fixed)
 
