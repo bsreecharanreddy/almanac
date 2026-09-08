@@ -179,6 +179,35 @@ and online serving — not about producing fresh labels.
 Open defects and gaps, each found and recorded rather than discovered by
 a reader.
 
+**The train/test split is random, not temporal — and this project's own
+design document calls that a leakage bug.** §4.5 states "Train/test must
+be split **temporally**; a random split is itself a leakage bug", and
+§5.1 adds that temporal splits must fall on whole-week boundaries because
+weekday and weekend review latency differ sharply. `train_classifier`
+uses `train_test_split(frame, test_size=0.3, random_state=42)`. Neither
+requirement is implemented, and the frame already carries
+`as_of_timestamp`, so the column needed to fix it is present.
+
+**Be precise about what this does and does not mean.** The *features* are
+point-in-time correct: `as_of_join` guarantees every row's features come
+from events strictly before that row's own `as_of_timestamp`, and the
+leakage suite tests exactly that. **No feature sees its own future**, and
+that property is not in question. What is wrong is the *evaluation*: a
+random split scores the model on pull requests opened earlier than ones
+it trained on, which is not a situation it will ever face. The largest
+channel is entity autocorrelation — the same repos and authors appear on
+both sides with overlapping feature histories, and those features are
+strongly autocorrelated over 92 days.
+
+**Consequence:** the reported PR-AUC of **0.612 is an optimistic estimate
+of deployment performance, by an unmeasured margin.** The *relative*
+claim survives better than the absolute one, because the baseline was fit
+on the same split and enjoys the same advantage — "beats the baseline by
+2.15×" is far more robust than "achieves 0.612". Unfixed. The
+re-measurement costs ≈$1 and one job run, and it is the highest-value
+measurement remaining; `docs/decision-memo.md` treats it as the blocking
+item for any deployment decision.
+
 **The served endpoint returns a class, not a probability.** `train.py`
 logs the champion with a signature inferred from `model.predict()`, so
 every row in the inference table is a boolean. Ranking an intervention
