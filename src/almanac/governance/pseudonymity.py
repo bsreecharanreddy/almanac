@@ -28,6 +28,15 @@ PUBLISHED_GLOBS: tuple[str, ...] = (
 # hostname like "m1" would match half the prose in docs/.
 _MIN_IDENTIFIER_LEN = 3
 
+# A build agent's login names a machine, not a person, and `runner` is also an
+# ordinary word here -- job runner, features runner, `runner.py`. Reading it as
+# an identity failed 6 published files on the first CI run this check ever saw
+# (2026-09-08), on a repo with nothing leaked in it. Same reasoning as
+# _NOT_AN_EMAIL below: a check that cries wolf is a check people learn to skip.
+_SERVICE_ACCOUNTS = frozenset(
+    {"runner", "runneradmin", "root", "admin", "ubuntu", "vsts", "jenkins", "circleci"}
+)
+
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
 # `abfss://bronze@account.dfs.core.windows.net` is a storage URI that happens to
@@ -55,7 +64,7 @@ class Finding:
         return f"{self.path}:{self.line} [{self.rule}] {self.match}"
 
 
-def local_identifiers() -> list[str]:
+def local_identifiers(*, hostname: str | None = None, login: str | None = None) -> list[str]:
     """Identity strings belonging to the machine this runs on.
 
     Derived, never committed. A denylist of personal identifiers would have to
@@ -64,12 +73,21 @@ def local_identifiers() -> list[str]:
     126-commit history rewrite when `REDACTED-HOSTNAME` reached a commit
     trailer) and the OS login.
 
+    `hostname` / `login` are injected by tests only, so the exclusion below can
+    be exercised without a second machine -- the same reason `RestSession`
+    carries an injectable clock.
+
     Deliberately excluded: `git config user.name` and `user.email`, which are
-    already the public GitHub handle and its noreply address.
+    already the public GitHub handle and its noreply address; and the service
+    logins in `_SERVICE_ACCOUNTS`, which name a build agent rather than a person.
     """
-    hostname = socket.gethostname()
-    names = {hostname, hostname.removesuffix(".local"), _os_login()}
-    return sorted(name for name in names if len(name) >= _MIN_IDENTIFIER_LEN)
+    host = socket.gethostname() if hostname is None else hostname
+    names = {host, host.removesuffix(".local"), _os_login() if login is None else login}
+    return sorted(
+        name
+        for name in names
+        if len(name) >= _MIN_IDENTIFIER_LEN and name.lower() not in _SERVICE_ACCOUNTS
+    )
 
 
 def _os_login() -> str:

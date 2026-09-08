@@ -63,6 +63,22 @@ def test_the_published_surfaces_include_the_readme_and_docs() -> None:
     assert len(published_files(REPO_ROOT)) > 40
 
 
+def test_a_ci_service_account_is_not_treated_as_an_identity() -> None:
+    """CI is where this check matters most, and it broke there first.
+
+    GitHub Actions runs as the login `runner`, which is also an ordinary word
+    in this repo -- job runner, features runner, `runner.py`. Reading it as a
+    personal identifier failed 6 files on the first CI run this check ever saw
+    (2026-09-08), on a repo with no leak in it.
+    """
+    assert local_identifiers(hostname="fv-az1234-567", login="runner") == ["fv-az1234-567"]
+
+
+def test_a_personal_login_is_still_an_identity() -> None:
+    """The exclusion must not swallow the case the check exists for."""
+    assert "nymisha" in local_identifiers(hostname="host-abc", login="nymisha")
+
+
 def test_no_published_artifact_carries_an_identity() -> None:
     """The gate. Runs against this machine's own identifiers, so a leak from
     whoever is working is caught on their next run rather than at review time.
