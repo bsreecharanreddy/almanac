@@ -20,7 +20,22 @@ review queue. The domain is incidental, and that is the point.
 > measured cold start (51.96 s). Phase 5 (semantic layer + vector search)
 > complete. Phase 6 (streaming ingest + online feature store) — 10 of 10
 > tasks, exit gate demonstrated against the live GitHub feed and the
-> billable stack torn down.**
+> billable stack torn down. Phase 7 (governance, reporting,
+> reproducibility) — 14 of 14 tasks: UC column lineage published with its
+> own blind spots, contracts enforced on the feature and streaming
+> surfaces, three AI/BI dashboards demonstrated against the real quarter
+> and then torn down, eight ADRs, limitations, a decision memo with a
+> stated confidence level, and a postmortem.**
+> **Phase 7 found a defect in Phase 4 that changes what this project
+> claims about its own model:** the train/test split is random where §4.5
+> requires a temporal one — by the design doc's own words, *"a random
+> split is itself a leakage bug"*. The features remain point-in-time
+> correct and the leakage suite is not wrong about what it tests; the
+> **evaluation** is what is unsound, so the champion's 0.612 PR-AUC is
+> optimistic by an unmeasured margin. Recorded in
+> [`docs/limitations.md`](docs/limitations.md), treated as the blocking
+> item in [`docs/decision-memo.md`](docs/decision-memo.md), and **not yet
+> fixed**.
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -300,9 +315,18 @@ docker/             containerized Spark + Delta, matching CI
 
 ```bash
 uv sync --all-extras --dev
-make check      # ruff + mypy --strict + pytest
-make test-all   # includes Spark tests
-make dbt        # fixtures -> Silver, then the Gold layer through the runner that builds the session first
+make check-fast   # ruff + mypy --strict + the 292 tests that need no SparkSession
+```
+
+**Clone to a green run is 4 m 28 s, measured** on a fresh clone with a
+cold `uv` cache — 1 s to clone, 75 s to sync, 192 s for `check-fast`.
+
+Then, when you want the whole thing:
+
+```bash
+make check      # the full gate: adds the Spark suite. 33 m 27 s measured, so not the inner loop
+make test-all   # every test including the network-marked ones
+make dbt        # fixtures -> Silver, then Gold through the runner that builds the session first
 make fixtures   # rebuild committed fixtures from the live archive
 ```
 

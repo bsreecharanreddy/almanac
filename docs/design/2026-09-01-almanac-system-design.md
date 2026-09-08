@@ -1688,6 +1688,15 @@ flight.
 
 ## 10. Goals — what "done" means
 
+> **Reconciled against reality 2026-09-08 (Phase 7 Task 14):
+> [`docs/goal-reconciliation.md`](../goal-reconciliation.md)** — every
+> item marked done / partly done / not done, with the evidence or the
+> absence of it. **20 done, 9 partly, 3 not done, 1 not assessable.**
+> The boxes below are left unticked on purpose: this section is the goal
+> as written on 2026-09-01, and the reconciliation is the single place
+> that records status. Ticking here as well would be two records of one
+> fact, which this repo has now watched go stale three times.
+
 ### Technical
 - [ ] Tier 3 (unsampled month of 2025) and Tier 2 (2014 month) ingested, both schema eras through the same framework
 - [ ] Legacy events carry a deterministic surrogate `event_id`, and duplicate legacy records dedup correctly (§4.1a)
