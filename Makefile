@@ -1,5 +1,5 @@
 .PHONY: test test-fast test-all lint fmt typecheck check check-fast fixtures dbt \
-	silver-fixture lineage window-up window-down
+	silver-fixture lineage window-up window-down coverage
 
 # -n 4: four xdist workers, each with its own SparkSession. Tuned for a
 # local 8-core / 16 GB machine -- four Spark JVMs fit, eight would thrash.
@@ -84,3 +84,11 @@ window-up:
 
 window-down:
 	uv run python -m almanac.infra.window down --apply
+
+# §10's coverage figure. The scope lives in pyproject.toml's
+# [tool.coverage.run], so this and CI cannot disagree about what is measured.
+# The Spark tests are not optional here: the same scope measures 60% on the
+# non-Spark subset alone (2026-09-07), because the transform layer is
+# exercised almost entirely by them.
+coverage:
+	uv run pytest -m "not network" -n 4 --cov --cov-report=term

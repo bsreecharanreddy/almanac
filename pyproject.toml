@@ -186,6 +186,32 @@ ignore_missing_imports = true
 module = ["databricks.feature_engineering.*"]
 ignore_missing_imports = true
 
+# §10 asks for coverage on "transformation and feature logic" -- a scoped
+# figure, not a repo-wide one. The scope is defined here once so the Makefile
+# target and the CI job cannot disagree about what is being measured; both
+# just pass a bare `--cov`. It is not a flattering scope, which was the
+# specific worry: measured 2026-09-07, the scoped number came in *below* the
+# repo-wide one.
+[tool.coverage.run]
+source = ["src/almanac/pipeline", "src/almanac/features", "src/almanac/gold"]
+
+[tool.coverage.report]
+# Line coverage, not branch. §10's figure is a line figure, and coverage.py
+# cannot do branch coverage under its sysmon core on Python 3.12 anyway, so
+# adding it would fix the measurement core as well as the metric.
+show_missing = true
+skip_covered = true
+
+# §10 asks for >=70%. Measured 2026-09-07 across two full runs: 88%
+# (470 statements, 58 missed), so the gate is set at 85 rather than 70.
+# Gating at the requirement would license a 17-point regression without ever
+# going red, which is not what "wire the threshold in so it cannot regress"
+# means. 85 leaves ~3 points of headroom for honest movement -- deleting a
+# well-covered module can lower the ratio without anything getting worse.
+# This is a ratchet: raise it when the real number rises, never lower it to
+# make a build pass.
+fail_under = 85
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
