@@ -10,6 +10,55 @@ real schema break — not because this project is about GitHub. The same
 architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
+---
+
+## In sixty seconds
+
+**Built solo, start to finish** — design docs, infrastructure, pipelines,
+model, serving, dashboards, and the write-ups of what went wrong.
+
+**341,060,851 real events** ingested across a real schema break, for a
+**measured $11.96**. A point-in-time-correct feature store, a model
+measured at **0.4661 PR-AUC** against a 0.2650 baseline, a live serving
+endpoint with **measured cold start (51.96 s)** and warm **p50 263.5 ms**,
+and three AI/BI dashboards demonstrated against the real quarter.
+
+**88% coverage** on transformation and feature logic, gated at 85% in CI.
+**Clone to a green run: 4 m 28 s**, measured on a cold cache.
+
+Three decisions that carry the project:
+
+- **Point-in-time correctness is enforced, not asserted.** Every feature
+  computed `as_of` T reads only events with `created_at < T`, and the
+  invariant is stated so it can be tested: the same `as_of` must produce a
+  byte-identical vector from the same Delta version, a year later.
+- **A baseline shipped before the model, and the first result was a null
+  one.** LightGBM lost to a per-segment median by 51% on the regression
+  target. That is published, not buried — then reframed to classification,
+  where it wins by a measured margin.
+- **The project found a leakage bug in its own registered champion.**
+  The train/test split was random where the design requires temporal.
+  Fixed, re-scored, and the inflated number retracted in public: **0.612 →
+  0.4661**, optimistic by 24%. The leakage suite was green throughout and
+  was not wrong — it tested one axis, and the bug was on another.
+
+**No persistent public demo.** The serving endpoint scales to zero and
+needs Databricks auth; everything billable is torn down between sessions
+on purpose, and the cost of each teardown is measured. The evidence below
+is the artifact, and `make check-fast` reproduces the local half in
+4 m 28 s from a fresh clone.
+
+### What it looks like
+
+| | |
+|---|---|
+| ![Review SLA risk dashboard](docs/images/phase7-dashboard-review-sla-risk.png) | ![Model and platform health](docs/images/phase7-dashboard-model-platform-health.png) |
+| **Page 1 — the intervention queue**, ranked by predicted breach risk, with a calibration curve monotonic across all ten deciles. | **Page 2 — model and platform health**, including the panels that ship *marked unavailable* rather than faked. |
+| ![Unity Catalog lineage](docs/images/phase2-unity-catalog-lineage.png) | ![Model serving endpoint](docs/images/phase4-model-serving-endpoint.png) |
+| **Column-level lineage** across the medallion, published with the edges the catalog cannot see stated on it. | **The serving endpoint**, live, with measured warm and cold latency. |
+
+---
+
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
 > (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
 > Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.
@@ -34,10 +83,12 @@ review queue. The domain is incidental, and that is the point.
 > tests — it checks that each row's features precede that row's own
 > `as_of`, which held. It tested one axis; the bug was on another. **The
 > code is fixed** (`temporal_split`, whole-week boundaries, mutation-tested
-> three ways) — but **the champion has not been retrained**, so the
-> recorded **0.612 PR-AUC is still the random-split number** and is
-> optimistic by an unmeasured margin. Re-scoring it is the first Phase 8
-> item. Recorded in [`docs/limitations.md`](docs/limitations.md) and
+> three ways) **and the champion has been re-scored on it**
+> (2026-09-08, run `817800814439176`): **0.612 → 0.4661 PR-AUC**, so the
+> published figure was optimistic by **24%**. The margin is no longer
+> unmeasured. The winning configuration also changed — `is_unbalance`
+> instead of `default` — so a random split would have shipped the wrong
+> *config*, not merely an inflated score. Recorded in [`docs/limitations.md`](docs/limitations.md) and
 > [`docs/decision-memo.md`](docs/decision-memo.md); the review checklist it
 > produced is `.claude/skills/almanac-leakage-review/`.
 > **The full medallion has run on a real quarter of the firehose:**
@@ -112,9 +163,12 @@ review queue. The domain is incidental, and that is the point.
 > **Reframed to classification (§5.3)** — predict SLA breach/no-breach
 > against the measured p75 threshold (1,487 s) instead of the raw
 > duration — and re-measured for real on the same quarter:
-> `LGBMClassifier` beat a per-segment breach-rate baseline by more than
-> 2x on PR-AUC (**0.612 vs. 0.285**, `roc_auc` 0.828), across a real
-> comparison sweep of two hyperparameter configs rather than one shot.
+> `LGBMClassifier` beat a per-segment breach-rate baseline on PR-AUC
+> across a real comparison sweep of two hyperparameter configs rather than
+> one shot. *(The figures first published here — 0.612 vs. 0.285, `roc_auc`
+> 0.828 — came from a **random** split and were retracted 2026-09-08. On
+> the temporal split §4.5 requires: **0.4661 vs. 0.2650**, `roc_auc`
+> 0.7546 — still a **1.76x** lift, measured.)*
 > The gate fired for real this time and registered the winner in Unity
 > Catalog (`almanac_dbx.models.pr_review_sla_risk` v1, `@champion`
 > alias) — the **first live UC registration in this project** — which
@@ -362,10 +416,21 @@ make window-down    # gone, confirmed from state rather than from an exit code
 Tests run offline against committed fixtures. Anything touching the
 network is marked and excluded from the default run.
 
-## Design
+## Design and the paper trail
 
 [`docs/design/2026-09-01-almanac-system-design.md`](docs/design/2026-09-01-almanac-system-design.md)
 is the authoritative architecture, phasing, and scope document.
+
+| | |
+|---|---|
+| [`CHANGELOG.md`](CHANGELOG.md) | phase-by-phase history, including what turned out wrong |
+| [`docs/STATUS.md`](docs/STATUS.md) | the verification log, at task granularity |
+| [`docs/limitations.md`](docs/limitations.md) | what this does **not** do, written before anyone had to find out |
+| [`docs/decision-memo.md`](docs/decision-memo.md) | ship / don't-ship, with a stated confidence level and a prediction that was later scored |
+| [`docs/adr/`](docs/adr/) | eight decisions, each citing the measurement that settled it |
+| [`docs/goal-reconciliation.md`](docs/goal-reconciliation.md) | every stated goal checked against the artifact that would prove it |
+| [`docs/findings/`](docs/findings/) | the measurements themselves, each with its `n` and its method |
+| [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md) | one real incident, written up properly |
 
 ## Why the name
 

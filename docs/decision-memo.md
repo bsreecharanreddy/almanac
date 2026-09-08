@@ -32,6 +32,19 @@ positive and ROC-AUC flatters an imbalanced problem):
 | `default` (champion) | **0.6120** | 0.8279 | 0.4219 |
 | `is_unbalance` | 0.6074 | 0.8279 | 0.5081 |
 
+> **Re-measured 2026-09-08 on the temporal split** (run
+> `817800814439176`), which is what this memo called its blocking
+> measurement:
+>
+> | | Average precision | ROC-AUC |
+> |---|---|---|
+> | Breach-rate baseline | 0.2650 | — |
+> | `default` | 0.4264 | 0.7004 |
+> | **`is_unbalance` (new champion)** | **0.4661** | 0.7546 |
+>
+> **1.76× the baseline**, down from 2.15×. The table above is kept because
+> the comparison between the two is the finding.
+
 **2.15× the baseline.** The gate in `run_training` — register only if the
 candidate beats the baseline — fired for real, and `is_unbalance` losing
 is itself informative: the obvious imbalance remedy did not help.
@@ -192,9 +205,10 @@ Q3 2025.
 
 | | |
 |---|---|
-| **Recommendation** | Not yet. Re-measure with a temporal split, then deploy as a human-in-the-loop ranked queue. |
-| **Confidence, absolute performance** | **Low** — the reported 0.612 is optimistic by an unmeasured margin |
-| **Confidence, relative to baseline** | **Moderate** — both sides shared the same favourable split |
-| **Blocking measurement** | Temporal, whole-week split re-run. ≈$1, ~15 min. |
+| **Recommendation** | **Unchanged: deploy as a human-in-the-loop ranked queue, not automated action.** The blocking measurement is now done and did not reverse it. |
+| **Confidence, absolute performance** | **Moderate**, was Low — 0.4661 is measured on a temporal split, no longer an estimate optimistic by an unmeasured margin |
+| **Confidence, relative to baseline** | **Moderate** — 1.76×, and the prediction below held |
+| **Blocking measurement** | **Done 2026-09-08**, run `817800814439176`. 890 s, one job cluster. |
 | **Blocking engineering** | Re-log the model signature so the endpoint returns a probability |
-| **Would reverse this** | Temporally-split PR-AUC collapsing toward 0.2845 |
+| **Would reverse this** | Temporally-split PR-AUC collapsing toward 0.2845 — **it did not.** 0.4661 against a 0.2650 baseline, a 1.76× lift retained. The prediction was written before the measurement and is scored here rather than quietly dropped. |
+| **What the re-score changed instead** | The winning *configuration*: `default` → `is_unbalance`. Not anticipated by this memo. |
