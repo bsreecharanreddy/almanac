@@ -515,3 +515,20 @@ variable "reporting_auto_stop_mins" {
   description = "Idle minutes before the reporting warehouse stops. Provider default is 120."
   default     = 5
 }
+
+# Phase 7 Task 9a: batch scoring, so §7's page 1 can rank by risk.
+
+variable "score_python_file" {
+  type        = string
+  description = "Workspace path of scripts/score.py, the job entrypoint for almanac.model.score_runner."
+  default     = "/Workspace/Shared/almanac/scripts/score.py"
+}
+
+variable "predictions_dir" {
+  type = string
+  # The features container, not gold: this is model output keyed on the PR, not
+  # a dbt-built consumer model, and putting it under gold/ would imply dbt owns
+  # it. Contracted by almanac.contracts like every other governed surface.
+  description = "Subdirectory under the features container holding the scored predictions table."
+  default     = "predictions"
+}

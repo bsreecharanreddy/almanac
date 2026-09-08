@@ -293,7 +293,42 @@ check.
 **Done when:** the check runs in CI and fails on a planted identifier.
 **Commit:** `feat(governance): fail the build on an actor identifier in a published artifact`
 
-## Task 9: Dashboards as code
+## Task 9a: Batch-score the quarter, so page 1 has a score to rank by
+
+**Added 2026-09-08, before any dashboard code, because the page 1 panels
+could not be sourced.** §7 page 1 ranks open items *by predicted breach
+risk* and draws a calibration curve. Both need a probability, and checking
+rather than assuming showed the system produces one **nowhere**:
+`mlflow.lightgbm.log_model` is given a signature inferred from
+`model.predict()`, so the endpoint and Task 1's inference table carry a
+**boolean**. `predict_proba` exists only inside `train.py`, for metrics.
+No table anywhere holds a score.
+
+**A boolean cannot rank**, and §5's whole premise is an intervention queue
+ordered by risk — so this is a product gap surfaced by the reporting work,
+not merely a reporting inconvenience.
+
+**The change:** a scoring job that loads the registered champion, scores
+`build_classification_frame`'s output with `predict_proba`, and writes a
+predictions table carrying the score beside the true outcome. Page 1 then
+draws on ~7.3M rows with real labels rather than on 24 live predictions,
+which is both the honest source and the stronger one.
+
+**The table is contracted** via `almanac.contracts` like every other
+governed surface (Task 4), and **version-pinned** through the per-table
+`features_versions` mapping, so a scored frame is reproducible.
+
+**Deliberately not done here:** re-logging the champion to serve
+probabilities. That fixes the serving contract rather than the dashboard,
+costs a model version and a serving update, and would leave Task 1's
+inference table carrying two response shapes. It is recorded as a
+limitation and as a Task 11 ADR candidate instead.
+
+**Done when:** the predictions table exists with a contract and a test, and
+its scores are real numbers from the registered champion.
+**Commit:** `feat(model): batch-score the quarter, so risk can be ranked`
+
+## Task 9b: Dashboards as code
 
 **All three pages as `databricks_dashboard` resources** with their JSON
 committed and referenced by `file_path`, so they are diffable, reviewable
@@ -331,6 +366,8 @@ by assuming.**
 **Done when:** `terraform plan` shows all three dashboards, and every panel
 either has real data or is marked.
 **Commit:** `feat(reporting): three dashboards defined as code, page 3 included`
+
+*(Task 9 became 9a/9b on 2026-09-08; the exit gate below is unchanged.)*
 
 ## Task 10: The narrow window — dashboards against real Gold, then down
 
