@@ -9,13 +9,14 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 from almanac.features.bot import is_bot_column
+from almanac.features.spine import earliest_opened_events, opened_predicate
 
 
 def _opened() -> Column:
-    """A fresh Column each call, not a module-level constant: `F.col(...)`
-    asserts an active SparkContext, which does not exist yet at import time.
+    """Stated once, in spine.py: the spine and `pr_static` join on the same
+    key, so two definitions of "opened" that drift would fan the join out.
     """
-    return (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "opened")
+    return opened_predicate()
 
 
 def _closed() -> Column:
@@ -76,7 +77,7 @@ def compute_pr_static(events: DataFrame) -> DataFrame:
     joins this on (repo_id, pr_number) directly, not through as_of_join,
     since there is nothing temporal to look up.
     """
-    return events.where(_opened()).select(
+    return earliest_opened_events(events).select(
         "repo_id",
         "pr_number",
         F.col("pr_draft").alias("is_draft"),
