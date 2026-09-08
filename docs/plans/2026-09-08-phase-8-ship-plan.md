@@ -107,9 +107,15 @@ downstream numbers rested on it — including the REST enrichment sizing
 ("~4,800 requests, ~1 hr per 2026 day"), which is wrong in the same
 direction.
 
-**This is the third instance of the same failure mode** — generalizing
-from one sample — after the 2026 volume claim and the VM SKU claim. Say
-so in the correction. That pattern is worth more than the number.
+**Do not call this a third `n=1` incident.** Checked 2026-09-08: the
+origin finding `2026-09-01-third-schema-era.md` measured **n=5** 2026
+hours at 120–265 opened PRs/hour and warned in its own text that "any
+single hour is a bad basis for a claim." It is sound for the window it
+sampled. What broke is the *extrapolation* — a June–August observation
+re-quoted as "on current data". The quantity is **not stationary**, so no
+`n` within one period would have caught it. That is a distinct failure
+from the two `n=1` incidents, and the correction should say so rather than
+flatten it into the familiar story.
 
 ---
 

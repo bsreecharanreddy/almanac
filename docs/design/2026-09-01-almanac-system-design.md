@@ -1950,7 +1950,7 @@ Each of these is a real property of GH Archive, each goes in
     and every size field. **What collapsed is pull-request activity
     specifically: roughly 25–50× fewer PR events and ~30–40× fewer opened
     PRs** (≈130–265/hr against 6,618/hr), with review events falling
-    comparably. **Total firehose volume is essentially unchanged** —
+    comparably. *(**Re-measured 2026-09-08.** These figures hold for the Jun–Aug 2026 window they were sampled over, but the rate is **not stationary**: n=5 September hours ran 308–10,544 opened PRs/hour, one of them above the 2025 reference. Hour-9 file size swings 50x across 14 consecutive days. Quote them as a 2026-08 measurement, never as "current" -- see `docs/findings/2026-09-02-second-source.md`.)* **Total firehose volume is essentially unchanged** —
     ~155–162K events/hour in 2026 against 167K in 2025; push and create
     events continue at normal rates.
     *(**Corrected 2026-09-08.** This item previously read "Volume fell

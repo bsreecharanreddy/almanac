@@ -48,7 +48,7 @@ fields to 5**, losing `merged`, `user`, `draft`, `created_at`, `title`,
 
 **What collapsed is pull-request activity specifically**, not the
 firehose: roughly **25–50× fewer PR events** and **~30–40× fewer opened
-PRs** (≈130–265/hr against 6,618/hr), with reviews falling comparably.
+PRs** (≈130–265/hr against 6,618/hr), with reviews falling comparably. *(**Re-measured 2026-09-08.** These figures hold for the Jun–Aug 2026 window they were sampled over, but the rate is **not stationary**: n=5 September hours ran 308–10,544 opened PRs/hour, one of them above the 2025 reference. Hour-9 file size swings 50x across 14 consecutive days. Quote them as a 2026-08 measurement, never as "current" -- see `docs/findings/2026-09-02-second-source.md`.)*
 **Total volume is essentially unchanged** — ~155–162K events/hour in 2026
 against 167K in 2025, with push and create events continuing normally.
 

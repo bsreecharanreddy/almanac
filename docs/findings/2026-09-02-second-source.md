@@ -55,6 +55,65 @@ The REST API repairs what the October 2025 firehose reduction dropped
 training data — it is what makes the label **re-runnable on today's
 data**.
 
+> ### ⚠️ Corrected 2026-09-08 — the rate below does not hold in September
+>
+> **Not a sample-size failure.** `2026-09-01-third-schema-era.md` measured
+> **n = 5** 2026 hours (Jun 10, Jul 15, Aug 12, Aug 19, Aug 28) at
+> 120–265 opened PRs/hour, and warned in its own text that "any single
+> hour is a bad basis for a claim." That finding is sound for the window
+> it sampled. **What broke is the extrapolation made here** — turning a
+> June–August observation into "~200 opened PRs/hour **on current
+> data**", a standing rate.
+>
+> **The quantity is not stationary**, so no `n` within one period would
+> have caught this. That makes it a *different* failure from the two
+> `n=1` incidents behind `almanac-design-decision`'s gate 1, and worth
+> naming separately: **gate 1 asks whether the sample covers the
+> dimension being generalized over, and "now" is a different point on the
+> time axis than "August".** A rate re-quoted as current needs a fresh
+> reading, not a bigger old one.
+>
+> **Re-measured 2026-09-08, n = 5 hours across 4 days, plus one Q3 2025
+> hour**, by downloading and parsing the real files:
+>
+> | Hour (UTC) | Total events | Opened PRs |
+> |---|---|---|
+> | 2026-09-08 14:00 | 87,563 | 308 |
+> | 2026-09-08 03:00 | 74,609 | 579 |
+> | 2026-09-07 20:00 | 107,961 | 415 |
+> | **2026-09-05 09:00** | 74,595 | **10,544** |
+> | 2025-08-13 09:00 (reference) | 165,601 | 6,702 |
+>
+> **One recent hour carries more opened PRs than the 2025 reference
+> hour.** Volume has not collapsed; it is *intermittent*. Hour-9 file size
+> across 14 consecutive days swings **50×** — 1.5 MB on 09-02 against
+> 86.3 MB on 09-06 — and composition follows: 2026-09-05 is **37.3%**
+> `PullRequestEvent`, while 2026-09-08 14:00 is **94% `PushEvent`** with
+> `PullRequestEvent` at ~1%.
+>
+> The outlier was checked before being believed: **5,959 distinct actors
+> across 8,133 repos, top actor 6.2%** — broad activity, not a bot flood.
+>
+> **What rested on the wrong number:** the request-budget table below.
+> Sized against ~200 opens/hour it is optimistic by up to 50× on a rich
+> hour, so "a 5% repo sample of one week fits one rate-limit window" does
+> not hold for a window chosen without characterizing it first. The
+> **operational** conclusion survives and is strengthened: enrich a
+> *bounded, characterized* slice — the bound just has to be derived from
+> the window in hand rather than from a global rate. Design doc §4.8
+> decision 2 makes that characterization a precondition, and a degraded
+> window a refusal.
+>
+> **And most of this section's premise is now moot.** §4.8 decision 3:
+> `merged` is recoverable from the firehose alone, because the reduced era
+> replaced `pull_request.merged` with a distinct `action='merged'`. Only
+> `draft` still needs a second source — and it must **not** be filled from
+> a current-state fetch, because `is_draft` is a feature read from the
+> opened event, so today's value would encode a future action. What
+> remains of the enrichment case is smaller than what is argued below.
+
+**The original analysis follows, unedited.**
+
 From Phase 0's measurements (STATUS 2026-09-01): a 2026 hour carries PR
 events at **−97%** against 2025's ~6,618 PRs opened/hour → **~200 opened
 PRs/hour** on current data. At one detail request per PR against a
