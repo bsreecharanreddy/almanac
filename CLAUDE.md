@@ -252,6 +252,16 @@ after closing out a debugging saga or making a real decision:
   pre-existing dead code, say so rather than deleting it silently.
 - Conventional commit prefixes (`feat:`, `fix:`, `docs:`, `test:`,
   `refactor:`).
+- **Commit messages are plain ASCII: `--`, never an em-dash.** Docs and
+  the README use `—` freely and should keep doing so; the git log does
+  not. Written down 2026-09-08 because it had held for **six consecutive
+  commits purely as pattern-matching against the previous message**, and
+  broke on the seventh (`6e1c5eb`) the moment nothing was there to match.
+  A convention that lives only in practice is a habit, and a habit does
+  not survive a context boundary — the same failure this file already
+  records for the README and for "Current status". **Earlier commits are
+  left as they are**; this applies going forward, so `6e1c5eb` stays the
+  one that names the rule by breaking it.
 - The README never claims something is built when it is not, and never
   carries an unmeasured number.
 - **The three reader-facing artifacts get refreshed proactively, not on
