@@ -1,10 +1,21 @@
-.PHONY: test test-fast test-all lint fmt typecheck check check-fast fixtures dbt
+.PHONY: test test-fast test-all lint fmt typecheck check check-fast fixtures dbt \
+	silver-fixture lineage window-up window-down coverage
 
 # -n 4: four xdist workers, each with its own SparkSession. Tuned for a
 # local 8-core / 16 GB machine -- four Spark JVMs fit, eight would thrash.
+# "Fit" means on an otherwise idle machine: on 2026-09-08 a run with a
+# 15-minute load average of 35 gave 2 failures and 11 errors across
+# test_pipeline, test_silver_partitions and test_model_similarity_comparison,
+# every one of which passed serially, and the whole suite passed on a
+# re-run once load dropped. Treat a failure in those files as "check the
+# load" before "check the code".
 # CI keeps the plain serial `pytest` (2-core runner) in .github/workflows.
+# --durations=25: the suite is heavily back-loaded (the dbt/Gold Spark tests
+# all land last), so percent-complete predicts nothing and "it feels slow" was
+# never checkable. Reported on every run so a real slowdown is visible for
+# free, rather than needing a dedicated instrumented run to find.
 test:
-	uv run pytest -m "not network" -n 4
+	uv run pytest -m "not network" -n 4 --durations=25
 
 # The ~195 tests that need no SparkSession -- seconds, not half an hour.
 # The inner-loop counterpart to `test`; `check` still runs everything.
@@ -58,3 +69,32 @@ silver-fixture:
 # has to exist, with Delta and a persistent metastore, before dbt asks for one.
 dbt: silver-fixture
 	uv run python -m almanac.gold.runner --silver-path data/gold_fixture/silver build
+
+# Needs a workspace: system.access.column_lineage is a Databricks system table,
+# so CI cannot regenerate this. The artifact is committed, and
+# tests/unit/test_governance_lineage_artifact.py guards it against silently
+# losing a tier -- which is what a broken extraction looks like.
+lineage:
+	DATABRICKS_HOST=$${DATABRICKS_HOST:?set DATABRICKS_HOST} \
+	uv run python -m almanac.governance.lineage_runner \
+		--warehouse-id $${DATABRICKS_WAREHOUSE_ID:?set DATABRICKS_WAREHOUSE_ID}
+
+# The one billable thing Phase 7 provisions (design doc §4.7): a serverless SQL
+# warehouse for the dashboards, up for an attended window and then gone. Never
+# a bare `terraform apply` -- that plans to recreate Phase 5's and Phase 6's
+# deliberately destroyed stacks (~$19/day idle, measured 2026-09-07). Both
+# targets read the plan and refuse anything reaching past the window; drop
+# `--apply` to see that plan without running it.
+window-up:
+	uv run python -m almanac.infra.window up --apply
+
+window-down:
+	uv run python -m almanac.infra.window down --apply
+
+# §10's coverage figure. The scope lives in pyproject.toml's
+# [tool.coverage.run], so this and CI cannot disagree about what is measured.
+# The Spark tests are not optional here: the same scope measures 60% on the
+# non-Spark subset alone (2026-09-07), because the transform layer is
+# exercised almost entirely by them.
+coverage:
+	uv run pytest -m "not network" -n 4 --cov --cov-report=term

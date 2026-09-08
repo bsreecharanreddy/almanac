@@ -20,7 +20,26 @@ review queue. The domain is incidental, and that is the point.
 > measured cold start (51.96 s). Phase 5 (semantic layer + vector search)
 > complete. Phase 6 (streaming ingest + online feature store) — 10 of 10
 > tasks, exit gate demonstrated against the live GitHub feed and the
-> billable stack torn down.**
+> billable stack torn down. Phase 7 (governance, reporting,
+> reproducibility) — 14 of 14 tasks: UC column lineage published with its
+> own blind spots, contracts enforced on the feature and streaming
+> surfaces, three AI/BI dashboards demonstrated against the real quarter
+> and then torn down, eight ADRs, limitations, a decision memo with a
+> stated confidence level, and a postmortem.**
+> **Phase 7 found a defect in Phase 4 that changes what this project
+> claims about its own model:** the train/test split was random where
+> §4.5 requires a temporal one — by the design doc's own words, *"a
+> random split is itself a leakage bug"*. The features remain
+> point-in-time correct and the leakage suite is not wrong about what it
+> tests — it checks that each row's features precede that row's own
+> `as_of`, which held. It tested one axis; the bug was on another. **The
+> code is fixed** (`temporal_split`, whole-week boundaries, mutation-tested
+> three ways) — but **the champion has not been retrained**, so the
+> recorded **0.612 PR-AUC is still the random-split number** and is
+> optimistic by an unmeasured margin. Re-scoring it is the first Phase 8
+> item. Recorded in [`docs/limitations.md`](docs/limitations.md) and
+> [`docs/decision-memo.md`](docs/decision-memo.md); the review checklist it
+> produced is `.claude/skills/almanac-leakage-review/`.
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -203,10 +222,16 @@ flowchart LR
   end
 
   subgraph ml[ML platform]
-    R[Model registry<br/>MLflow]
+    R[Model registry<br/>MLflow · @champion alias]
     E[Model Serving<br/>scale-to-zero]
+    P[Batch scoring<br/>7,320,196 rows · probabilities]
     V[Vector Search<br/>pre-computed embeddings]
     O[Lakebase online store<br/>Postgres · low-latency serving]
+  end
+
+  subgraph gov[Governance]
+    CT[Data contracts<br/>fail the build, not a doc]
+    LN[UC column lineage<br/>blind spots published on it]
   end
 
   GHA --> B
@@ -214,24 +239,35 @@ flowchart LR
   B --> S
   S --> G
   S --> F
-  G --> BI[Power BI]
   F --> R --> E
+  R --> P
+  F --> P
+  P --> BI[AI/BI dashboards<br/>3 pages, defined as code]
+  G --> BI
   B --> V
   V --> F
   EV --> L --> SS --> SF --> O
+  CT -.-> S
+  CT -.-> F
+  LN -.-> G
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
   classDef gone fill:#fff3cd,stroke:#d39e00,color:#000,stroke-dasharray:2 2
-  class GHA,B,S,G,F,R,E,V,EV,L,SS,SF done
-  class API,BI todo
-  class O gone
+  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN done
+  class API todo
+  class V,O,BI gone
 ```
 
 Solid green = built and green. Dashed grey = designed, not built.
-Dashed amber = built and demonstrated live, then **torn down on purpose** —
-a Lakebase online store bills for existing, so it runs for a measured window
-and is destroyed with its stack.
+Dashed amber = built and demonstrated live, then **torn down on purpose**.
+A Vector Search endpoint and a Lakebase online store both bill for merely
+existing ($6.72/day and $12.06/day, measured), and a SQL warehouse bills
+while a dashboard is being looked at — so each ran for a measured window and
+was destroyed with its stack. **The Delta tables they were built over
+survive**; only the serving copies are gone. Model Serving stays up because
+it is the one that genuinely scales to zero: measured DBUs during its live
+window, then zero.
 
 ## What has been measured
 
@@ -273,7 +309,7 @@ bind in both directions; it bound upward, from one month to a quarter.
 | Infrastructure | Terraform |
 | Language | Python 3.12 — `uv`, Pydantic v2, `ruff`, `mypy --strict`, `pytest` |
 | CI | GitHub Actions — lint, format, types, tests on every push |
-| Reporting | Power BI |
+| Reporting | Databricks AI/BI — 3 dashboards, JSON committed and Terraform-managed |
 
 Stack choices, and what each substitution costs, are argued in the design
 doc rather than asserted here.
@@ -281,13 +317,18 @@ doc rather than asserted here.
 ## Layout
 
 ```text
-src/almanac/        extract (URLs, fetching) · explore (schema, measurement) · pipeline · gold · spark
+src/almanac/        extract · explore · pipeline · gold · features · model · embed · stream
+                    contracts (governed surfaces) · governance (lineage) · infra (the cloud window)
 dbt/                the Gold project — models, snapshots, sources, both targets
 tests/              unit tests + committed fixtures; tests never touch the network
 docs/design/        the authoritative architecture and phasing document
 docs/findings/      measurements, each with its method and sample size
 docs/plans/         per-phase implementation plans, written before any code
-infra/terraform/    Azure resource group, ADLS Gen2, Databricks workspace
+docs/lineage/       column lineage, generated from Unity Catalog by `make lineage`
+docs/data-contract.md   what a consumer may rely on, every number citing its finding
+docs/pseudonymization.md  what is masked in published artifacts, and what the check cannot see
+dashboards/         §7's three AI/BI pages as committed JSON, provisioned by Terraform
+infra/terraform/    Azure resource group, ADLS Gen2, Databricks workspace, the jobs, the reporting warehouse
 docker/             containerized Spark + Delta, matching CI
 ```
 
@@ -295,10 +336,27 @@ docker/             containerized Spark + Delta, matching CI
 
 ```bash
 uv sync --all-extras --dev
-make check      # ruff + mypy --strict + pytest
-make test-all   # includes Spark tests
-make dbt        # fixtures -> Silver, then the Gold layer through the runner that builds the session first
+make check-fast   # ruff + mypy --strict + the 292 tests that need no SparkSession
+```
+
+**Clone to a green run is 4 m 28 s, measured** on a fresh clone with a
+cold `uv` cache — 1 s to clone, 75 s to sync, 192 s for `check-fast`.
+
+Then, when you want the whole thing:
+
+```bash
+make check      # the full gate: adds the Spark suite. 33 m 27 s measured, so not the inner loop
+make test-all   # every test including the network-marked ones
+make dbt        # fixtures -> Silver, then Gold through the runner that builds the session first
 make fixtures   # rebuild committed fixtures from the live archive
+```
+
+The cloud side is brought up and taken down by one command each, and both
+refuse any plan that reaches past the window they were asked for:
+
+```bash
+make window-up      # the reporting SQL warehouse, and nothing else
+make window-down    # gone, confirmed from state rather than from an exit code
 ```
 
 Tests run offline against committed fixtures. Anything touching the

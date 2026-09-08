@@ -1,0 +1,144 @@
+{
+  "blind_spots": [
+    "Local Spark runs are invisible. Unity Catalog records lineage for work executed on Databricks; this repo's entire test suite runs on local Spark and contributes nothing here. An edge's absence is not evidence it does not exist in code.",
+    "The lineage system tables keep a rolling 1-year window. Catalog Explorer and the lineage API retain indefinitely for lineage captured after 2024-09-01, so this artifact is the cheap view, not the archival one.",
+    "Lineage is emitted only where it can be inferred: a column written from a literal, rather than read from somewhere, produces no edge at all.",
+    "Phase 2's Photon A/B schemas (ab_photon_*, ab_standard_*) are excluded on purpose. They are a one-off experiment harness, and including them would present four extra tiers as though they were part of the platform.",
+    "`external` is a residual bucket, not a place. It holds anything not in this catalog, not in a lake container, and not under a volume -- staging paths and foreign tables alike. An `x -> external` edge says only that something was written somewhere this taxonomy does not name; do not read it as an export."
+  ],
+  "column_edges": 2516,
+  "generated": "2026-09-07 17:49 UTC",
+  "scope": [
+    "external",
+    "landing",
+    "bronze",
+    "silver",
+    "gold",
+    "features",
+    "embeddings",
+    "models",
+    "serving_logs"
+  ],
+  "source": "system.access.column_lineage",
+  "tier_edges": [
+    {
+      "column_edges": 2,
+      "source_tables": 1,
+      "source_tier": "bronze",
+      "target_tables": 1,
+      "target_tier": "external"
+    },
+    {
+      "column_edges": 40,
+      "source_tables": 1,
+      "source_tier": "bronze",
+      "target_tables": 2,
+      "target_tier": "silver"
+    },
+    {
+      "column_edges": 5,
+      "source_tables": 2,
+      "source_tier": "embeddings",
+      "target_tables": 1,
+      "target_tier": "external"
+    },
+    {
+      "column_edges": 12,
+      "source_tables": 1,
+      "source_tier": "external",
+      "target_tables": 3,
+      "target_tier": "bronze"
+    },
+    {
+      "column_edges": 14,
+      "source_tables": 1,
+      "source_tier": "external",
+      "target_tables": 2,
+      "target_tier": "embeddings"
+    },
+    {
+      "column_edges": 3,
+      "source_tables": 1,
+      "source_tier": "external",
+      "target_tables": 1,
+      "target_tier": "features"
+    },
+    {
+      "column_edges": 3,
+      "source_tables": 1,
+      "source_tier": "external",
+      "target_tables": 1,
+      "target_tier": "gold"
+    },
+    {
+      "column_edges": 16,
+      "source_tables": 4,
+      "source_tier": "features",
+      "target_tables": 1,
+      "target_tier": "external"
+    },
+    {
+      "column_edges": 5,
+      "source_tables": 1,
+      "source_tier": "gold",
+      "target_tables": 1,
+      "target_tier": "external"
+    },
+    {
+      "column_edges": 4,
+      "source_tables": 1,
+      "source_tier": "gold",
+      "target_tables": 1,
+      "target_tier": "features"
+    },
+    {
+      "column_edges": 29,
+      "source_tables": 3,
+      "source_tier": "gold",
+      "target_tables": 3,
+      "target_tier": "gold"
+    },
+    {
+      "column_edges": 2256,
+      "source_tables": 2256,
+      "source_tier": "landing",
+      "target_tables": 3,
+      "target_tier": "bronze"
+    },
+    {
+      "column_edges": 40,
+      "source_tables": 1,
+      "source_tier": "landing",
+      "target_tables": 2,
+      "target_tier": "silver"
+    },
+    {
+      "column_edges": 6,
+      "source_tables": 1,
+      "source_tier": "serving_logs",
+      "target_tables": 1,
+      "target_tier": "external"
+    },
+    {
+      "column_edges": 19,
+      "source_tables": 1,
+      "source_tier": "silver",
+      "target_tables": 1,
+      "target_tier": "external"
+    },
+    {
+      "column_edges": 29,
+      "source_tables": 1,
+      "source_tier": "silver",
+      "target_tables": 4,
+      "target_tier": "features"
+    },
+    {
+      "column_edges": 33,
+      "source_tables": 1,
+      "source_tier": "silver",
+      "target_tables": 4,
+      "target_tier": "gold"
+    }
+  ]
+}

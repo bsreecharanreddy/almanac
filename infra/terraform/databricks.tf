@@ -450,6 +450,33 @@ resource "databricks_model_serving" "pr_review_sla_risk" {
     }
   }
 
+  # Phase 7 Task 1 (design doc §4.7). Without this, nothing is ever logged,
+  # and only traffic occurring *after* it is switched on can ever be captured
+  # -- so deferring it does not delay the platform-health page, it destroys
+  # the data that page would plot.
+  #
+  # `ai_gateway`, not the `auto_capture_config` block the provider still
+  # documents without a deprecation marker: Databricks' own product docs for
+  # that mechanism are formally retired ("no longer supported") and direct to
+  # this one. The provider trails the product here, so the provider's silence
+  # is not evidence.
+  #
+  # Delivery is asynchronous, and this endpoint does NOT get the documented
+  # "fast inference table" path: that one materializes `_payload` as a view
+  # over an `_otel_logs` table and lands rows in seconds, but what was
+  # actually created here is a MANAGED table with no `_otel_logs` beside it,
+  # so the 1-hour best-effort delivery is what applies. Checked rather than
+  # assumed, because the first version of this comment claimed the fast path
+  # on the strength of the docs saying it covers CPU custom-model endpoints.
+  ai_gateway {
+    inference_table_config {
+      enabled           = true
+      catalog_name      = var.model_registry_catalog
+      schema_name       = databricks_schema.serving_logs.name
+      table_name_prefix = "pr_review_sla_risk"
+    }
+  }
+
   tags {
     key   = "project"
     value = var.prefix

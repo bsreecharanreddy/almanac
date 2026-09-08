@@ -65,7 +65,7 @@ variable "tags" {
   default = {
     project = "almanac"
     env     = "dev"
-    owner   = "sree"
+    owner   = "bsreecharanreddy"
   }
 }
 
@@ -227,6 +227,16 @@ variable "model_registry_schema" {
   type        = string
   description = "Unity Catalog schema, under model_registry_catalog, holding the trained model."
   default     = "models"
+}
+
+# Phase 7 Task 1. Its own schema, not `models`: Databricks also creates an
+# internal `<payload table ID>_checkpoints` volume alongside the inference
+# table, and mixing that machinery into the schema holding the registered
+# model makes both harder to reason about and to grant on.
+variable "serving_logs_schema" {
+  type        = string
+  description = "Unity Catalog schema, under model_registry_catalog, holding the serving endpoint's inference table."
+  default     = "serving_logs"
 }
 
 variable "model_python_file" {
@@ -478,4 +488,63 @@ variable "streaming_publish_pip_dependencies" {
   type        = list(string)
   description = "The feature-engineering client, needed only by the publish task."
   default     = ["databricks-feature-engineering>=0.17.1"]
+}
+
+# Phase 7 (§4.7): the reporting warehouse. Its whole life is a short attended
+# window, so both knobs below are set against a default that assumes otherwise.
+
+variable "reporting_warehouse_size" {
+  type = string
+  # 2X-Small, the smallest the API offers, against a UI default of X-Large.
+  # The Phase 7 dashboards read Gold and the serving log, not Bronze's 341M
+  # rows, so latency is not the binding constraint -- and raising it is a
+  # one-line change, the same knob shape as similarity_sample_size.
+  description = "Cluster size for the reporting warehouse (§7's dashboards)."
+  default     = "2X-Small"
+}
+
+variable "reporting_auto_stop_mins" {
+  type = number
+  # The Terraform provider's own default is 120: two hours of idle DBUs and
+  # cloud instance charges after the last query, which is the exact shape of
+  # bill this project's cost rules exist to prevent. Azure Databricks documents
+  # the serverless floor as 5 minutes in the UI and as low as 1 via the SQL
+  # warehouses API, which is what Terraform drives (Microsoft Learn, "Create a
+  # SQL warehouse", updated 2026-08-20). 5 rather than 1 so that reading a
+  # dashboard between screenshots does not restart the warehouse per panel.
+  description = "Idle minutes before the reporting warehouse stops. Provider default is 120."
+  default     = 5
+}
+
+# Phase 7 Task 9a: batch scoring, so §7's page 1 can rank by risk.
+
+variable "score_python_file" {
+  type        = string
+  description = "Workspace path of scripts/score.py, the job entrypoint for almanac.model.score_runner."
+  default     = "/Workspace/Shared/almanac/scripts/score.py"
+}
+
+variable "predictions_dir" {
+  type = string
+  # The features container, not gold: this is model output keyed on the PR, not
+  # a dbt-built consumer model, and putting it under gold/ would imply dbt owns
+  # it. Contracted by almanac.contracts like every other governed surface.
+  description = "Subdirectory under the features container holding the scored predictions table."
+  default     = "predictions"
+}
+
+variable "dashboard_parent_path" {
+  type = string
+  # A shared folder, not /Workspace/Users/<email>/: a personal path would put an
+  # email in committed config, which is the leak docs/pseudonymization.md and
+  # tests/unit/test_governance_pseudonymity.py exist to prevent. Same reasoning
+  # that moved the job files to /Workspace/Shared in Phase 2.
+  description = "Workspace folder holding §7's dashboards. Leading slash, no trailing slash."
+  default     = "/Shared/almanac"
+}
+
+variable "predictions_schema" {
+  type        = string
+  description = "Unity Catalog schema holding the batch predictions table (§7 page 1's source)."
+  default     = "features"
 }
