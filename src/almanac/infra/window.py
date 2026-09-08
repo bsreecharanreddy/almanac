@@ -14,8 +14,18 @@ from typing import Any, Protocol
 # infra/terraform/ is either live and must not be disturbed, or deliberately
 # destroyed and expensive to bring back: on 2026-09-07 a bare `terraform plan`
 # read "6 to add", five of which were Phase 5's and Phase 6's torn-down stacks
-# (~$19/day idle, and neither scales to zero). Task 9 adds the two dashboards.
-WINDOW_TARGETS: tuple[str, ...] = ("databricks_sql_endpoint.reporting",)
+# (~$19/day idle, and neither scales to zero).
+#
+# The three dashboards joined on 2026-09-08 (Task 9b). They cost nothing while
+# the warehouse is down, but they are torn down with it so the window leaves
+# nothing behind -- and so a destroy plan that touches only these addresses is
+# the whole of what Phase 7 provisioned.
+WINDOW_TARGETS: tuple[str, ...] = (
+    "databricks_sql_endpoint.reporting",
+    'databricks_dashboard.reporting["review-sla-risk"]',
+    'databricks_dashboard.reporting["model-platform-health"]',
+    'databricks_dashboard.reporting["developer-engagement"]',
+)
 
 TERRAFORM_DIR = "infra/terraform"
 PLAN_FILE = "window.tfplan"

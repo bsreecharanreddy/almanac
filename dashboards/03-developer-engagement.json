@@ -1,0 +1,346 @@
+{
+  "datasets": [
+    {
+      "name": "ds_activation",
+      "displayName": "Activation funnel, by repository-day",
+      "queryLines": [
+        "SELECT activity_date,\n",
+        "       count(DISTINCT repo_id) AS repos_active,\n",
+        "       sum(prs_opened) AS prs_opened,\n",
+        "       sum(prs_closed) AS prs_closed,\n",
+        "       sum(issues_opened) AS issues_opened,\n",
+        "       sum(pushes) AS pushes\n",
+        "FROM almanac_dbx.gold.agg_repo_daily\n",
+        "GROUP BY activity_date\n",
+        "ORDER BY activity_date\n"
+      ]
+    },
+    {
+      "name": "ds_retention",
+      "displayName": "Repository retention by weeks since first activity",
+      "queryLines": [
+        "WITH first_seen AS (\n",
+        "  SELECT repo_id, min(activity_date) AS cohort_date\n",
+        "  FROM almanac_dbx.gold.agg_repo_daily\n",
+        "  GROUP BY repo_id\n",
+        ")\n",
+        "SELECT date_trunc('WEEK', f.cohort_date) AS cohort_week,\n",
+        "       floor(datediff(a.activity_date, f.cohort_date) / 7) AS weeks_since_first,\n",
+        "       count(DISTINCT a.repo_id) AS repos_still_active\n",
+        "FROM almanac_dbx.gold.agg_repo_daily a\n",
+        "JOIN first_seen f ON f.repo_id = a.repo_id\n",
+        "GROUP BY cohort_week, weeks_since_first\n",
+        "ORDER BY cohort_week, weeks_since_first\n"
+      ]
+    },
+    {
+      "name": "ds_concentration",
+      "displayName": "Contributor concentration, by rank -- never by name",
+      "queryLines": [
+        "WITH per_author AS (\n",
+        "  SELECT repo_id, author_login, count(*) AS prs\n",
+        "  FROM almanac_dbx.gold.fact_pull_request\n",
+        "  WHERE author_is_bot = false AND author_login IS NOT NULL\n",
+        "  GROUP BY repo_id, author_login\n",
+        "),\n",
+        "ranked AS (\n",
+        "  SELECT repo_id, prs,\n",
+        "         row_number() OVER (PARTITION BY repo_id ORDER BY prs DESC) AS contributor_rank,\n",
+        "         sum(prs) OVER (PARTITION BY repo_id) AS repo_prs\n",
+        "  FROM per_author\n",
+        ")\n",
+        "SELECT contributor_rank,\n",
+        "       count(DISTINCT repo_id) AS repos,\n",
+        "       round(avg(prs / repo_prs), 4) AS mean_share_of_repo_prs\n",
+        "FROM ranked\n",
+        "WHERE contributor_rank <= 10\n",
+        "GROUP BY contributor_rank\n",
+        "ORDER BY contributor_rank\n"
+      ]
+    },
+    {
+      "name": "ds_bus_factor",
+      "displayName": "Bus factor: contributors needed to reach half a repo's PRs",
+      "queryLines": [
+        "WITH per_author AS (\n",
+        "  SELECT repo_id, author_login, count(*) AS prs\n",
+        "  FROM almanac_dbx.gold.fact_pull_request\n",
+        "  WHERE author_is_bot = false AND author_login IS NOT NULL\n",
+        "  GROUP BY repo_id, author_login\n",
+        "),\n",
+        "running AS (\n",
+        "  SELECT repo_id, prs,\n",
+        "         row_number() OVER (PARTITION BY repo_id ORDER BY prs DESC) AS contributor_rank,\n",
+        "         sum(prs) OVER (PARTITION BY repo_id ORDER BY prs DESC\n",
+        "                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_prs,\n",
+        "         sum(prs) OVER (PARTITION BY repo_id) AS repo_prs\n",
+        "  FROM per_author\n",
+        ")\n",
+        "SELECT bus_factor, count(*) AS repos\n",
+        "FROM (SELECT repo_id, min(contributor_rank) AS bus_factor\n",
+        "      FROM running\n",
+        "      WHERE cumulative_prs >= repo_prs / 2\n",
+        "      GROUP BY repo_id)\n",
+        "GROUP BY bus_factor\n",
+        "ORDER BY bus_factor\n"
+      ]
+    },
+    {
+      "name": "ds_time_to_merge",
+      "displayName": "Time to merge, as percentiles -- never a mean",
+      "queryLines": [
+        "SELECT author_is_bot,\n",
+        "       count(*) AS merged_prs,\n",
+        "       round(percentile_approx(timestampdiff(SECOND, opened_at, closed_at), 0.5) / 3600, 2) AS p50_hours,\n",
+        "       round(percentile_approx(timestampdiff(SECOND, opened_at, closed_at), 0.75) / 3600, 2) AS p75_hours,\n",
+        "       round(percentile_approx(timestampdiff(SECOND, opened_at, closed_at), 0.9) / 3600, 2) AS p90_hours,\n",
+        "       round(percentile_approx(timestampdiff(SECOND, opened_at, closed_at), 0.99) / 3600, 2) AS p99_hours\n",
+        "FROM almanac_dbx.gold.fact_pull_request\n",
+        "WHERE merged = true AND closed_at IS NOT NULL\n",
+        "GROUP BY author_is_bot\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "developer_engagement",
+      "displayName": "Developer Engagement",
+      "layout": [
+        {
+          "widget": {
+            "name": "w1_header",
+            "textbox_spec": "# Developer Engagement\n\nActivity, retention, and how concentrated contribution is. Every panel aggregates over contributor identity and none of them lists it -- concentration is reported **by rank**, never by name (`docs/pseudonymization.md`)."
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "w2_activation",
+            "queries": [
+              {
+                "name": "main",
+                "query": {
+                  "datasetName": "ds_activation",
+                  "fields": [
+                    {
+                      "name": "activity_date",
+                      "expression": "`activity_date`"
+                    },
+                    {
+                      "name": "repos_active",
+                      "expression": "`repos_active`"
+                    },
+                    {
+                      "name": "prs_opened",
+                      "expression": "`prs_opened`"
+                    },
+                    {
+                      "name": "prs_closed",
+                      "expression": "`prs_closed`"
+                    },
+                    {
+                      "name": "issues_opened",
+                      "expression": "`issues_opened`"
+                    },
+                    {
+                      "name": "pushes",
+                      "expression": "`pushes`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table"
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w3_retention",
+            "queries": [
+              {
+                "name": "main",
+                "query": {
+                  "datasetName": "ds_retention",
+                  "fields": [
+                    {
+                      "name": "cohort_week",
+                      "expression": "`cohort_week`"
+                    },
+                    {
+                      "name": "weeks_since_first",
+                      "expression": "`weeks_since_first`"
+                    },
+                    {
+                      "name": "repos_still_active",
+                      "expression": "`repos_still_active`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table"
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w4_concentration",
+            "queries": [
+              {
+                "name": "main",
+                "query": {
+                  "datasetName": "ds_concentration",
+                  "fields": [
+                    {
+                      "name": "contributor_rank",
+                      "expression": "`contributor_rank`"
+                    },
+                    {
+                      "name": "repos",
+                      "expression": "`repos`"
+                    },
+                    {
+                      "name": "mean_share_of_repo_prs",
+                      "expression": "`mean_share_of_repo_prs`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table"
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 8,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w5_bus_factor",
+            "queries": [
+              {
+                "name": "main",
+                "query": {
+                  "datasetName": "ds_bus_factor",
+                  "fields": [
+                    {
+                      "name": "bus_factor",
+                      "expression": "`bus_factor`"
+                    },
+                    {
+                      "name": "repos",
+                      "expression": "`repos`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table"
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w6_time_to_merge",
+            "queries": [
+              {
+                "name": "main",
+                "query": {
+                  "datasetName": "ds_time_to_merge",
+                  "fields": [
+                    {
+                      "name": "author_is_bot",
+                      "expression": "`author_is_bot`"
+                    },
+                    {
+                      "name": "merged_prs",
+                      "expression": "`merged_prs`"
+                    },
+                    {
+                      "name": "p50_hours",
+                      "expression": "`p50_hours`"
+                    },
+                    {
+                      "name": "p75_hours",
+                      "expression": "`p75_hours`"
+                    },
+                    {
+                      "name": "p90_hours",
+                      "expression": "`p90_hours`"
+                    },
+                    {
+                      "name": "p99_hours",
+                      "expression": "`p99_hours`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table"
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 14,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w7_limitations",
+            "textbox_spec": "## Limitations -- read before drawing a conclusion\n\n**Stars are gross, not net.** GH Archive emits a `WatchEvent` on starring and nothing on unstarring, so `stars_gained` can only ever go up. It is not a net follower count.\n\n**Bots are excluded by default.** `author_is_bot` filters the concentration and bus-factor panels, because a bot opening 4,000 PRs is not a contributor. Measured 2026-09-04: bots breach the SLA *more* than humans (32.16% vs 21.97%), so including them moves every number here, not just the totals.\n\n**Commits are capped at 20 per push.** The events API truncates a push payload's commit list, so `commits_pushed` under-counts large pushes and `distinct_commits_pushed` is the safer of the two.\n\n**Time to merge is a percentile, never a mean.** The distribution is severely right-skewed -- measured p50 72s against a mean of 72,054s -- so a mean describes the tail rather than the typical PR.\n\n**This is a quarter, not all of history.** Q3 2025, 341,060,851 rows. Retention cohorts are therefore truncated at the window edge and the last cohorts look worse than they are."
+          },
+          "position": {
+            "x": 0,
+            "y": 19,
+            "width": 6,
+            "height": 7
+          }
+        }
+      ]
+    }
+  ]
+}
