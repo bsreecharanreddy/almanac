@@ -439,12 +439,24 @@ resource "databricks_model_serving" "pr_review_sla_risk" {
 
   config {
     served_entities {
-      # entity_version "1": the first Task 9 training run that beats the
-      # baseline registers version 1. If that run does NOT beat the
-      # baseline, no version is registered and this resource cannot apply
-      # -- a real, documented null result (§5.1), not a wiring bug to force.
+      # entity_version "2": the temporally-split champion, registered by the
+      # Phase 8 Task 1 re-score (run 817800814439176). Version 1 is the
+      # random-split model whose 0.612 PR-AUC is retracted -- do not serve it.
+      #
+      # This is a pinned number and not the @champion alias BY NECESSITY:
+      # the provider's entity_version takes a registry version, and has no
+      # alias form (checked against databricks/databricks 1.131.0 docs,
+      # 2026-09-08). Pinning is also what this project wants -- an unrelated
+      # apply must not silently swap the served model -- but the cost is that
+      # the pin does not follow the alias. It already drifted once: the
+      # re-score moved @champion to version 2 on 2026-09-08 and this line
+      # still read "1". `make check` now fails when they disagree.
+      #
+      # If a training run does NOT beat the baseline, no version is
+      # registered and this resource cannot apply -- a real, documented
+      # null result (§5.1), not a wiring bug to force.
       entity_name           = "${var.model_registry_catalog}.${databricks_schema.models.name}.pr_review_sla_risk"
-      entity_version        = "1"
+      entity_version        = "2"
       workload_size         = var.model_serving_workload_size
       scale_to_zero_enabled = true
     }
