@@ -532,3 +532,13 @@ variable "predictions_dir" {
   description = "Subdirectory under the features container holding the scored predictions table."
   default     = "predictions"
 }
+
+variable "dashboard_parent_path" {
+  type = string
+  # A shared folder, not /Workspace/Users/<email>/: a personal path would put an
+  # email in committed config, which is the leak docs/pseudonymization.md and
+  # tests/unit/test_governance_pseudonymity.py exist to prevent. Same reasoning
+  # that moved the job files to /Workspace/Shared in Phase 2.
+  description = "Workspace folder holding §7's dashboards. Leading slash, no trailing slash."
+  default     = "/Shared/almanac"
+}

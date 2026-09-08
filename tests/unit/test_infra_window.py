@@ -252,3 +252,15 @@ def test_an_empty_target_set_never_reaches_terraform() -> None:
         window.up(terraform, [], apply=True)
 
     assert terraform.calls == []
+
+
+def test_the_window_targets_are_exactly_what_phase_7_provisions() -> None:
+    """The warehouse plus §7's three dashboards, and nothing else. A target added
+    here without thought is how a torn-down stack gets resurrected.
+    """
+    assert window.WINDOW_TARGETS == (
+        "databricks_sql_endpoint.reporting",
+        'databricks_dashboard.reporting["review-sla-risk"]',
+        'databricks_dashboard.reporting["model-platform-health"]',
+        'databricks_dashboard.reporting["developer-engagement"]',
+    )
