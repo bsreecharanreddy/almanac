@@ -9,6 +9,7 @@ almanac/features/runner.py.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from typing import Literal
 
 from pyspark.sql import SparkSession
@@ -43,7 +44,7 @@ def run_training(
     model_name: str = "pr_review_sla_risk",
     registry_uri: str = "databricks-uc",
     silver_version: int | None = None,
-    features_version: int | None = None,
+    features_versions: Mapping[str, int] | None = None,
     gold_version: int | None = None,
 ) -> TrainResult | ClassificationResult:
     """Registration fires only when `register` is set AND the model beat
@@ -63,7 +64,7 @@ def run_training(
             gold_table=gold_table,
             threshold_seconds=threshold_seconds,
             silver_version=silver_version,
-            features_version=features_version,
+            features_versions=features_versions,
             gold_version=gold_version,
         )
         classification_result = train_classifier(classification_frame)
@@ -82,7 +83,7 @@ def run_training(
         features_path=features_path,
         gold_table=gold_table,
         silver_version=silver_version,
-        features_version=features_version,
+        features_versions=features_versions,
         gold_version=gold_version,
     )
     result = train_model(frame)
