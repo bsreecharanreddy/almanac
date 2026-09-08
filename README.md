@@ -290,6 +290,7 @@ docs/findings/      measurements, each with its method and sample size
 docs/plans/         per-phase implementation plans, written before any code
 docs/lineage/       column lineage, generated from Unity Catalog by `make lineage`
 docs/data-contract.md   what a consumer may rely on, every number citing its finding
+docs/pseudonymization.md  what is masked in published artifacts, and what the check cannot see
 infra/terraform/    Azure resource group, ADLS Gen2, Databricks workspace, the jobs, the reporting warehouse
 docker/             containerized Spark + Delta, matching CI
 ```

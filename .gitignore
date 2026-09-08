@@ -7,9 +7,9 @@ __pycache__/
 .pytest_cache/
 .coverage
 # pytest-xdist writes one per worker as `.coverage.<hostname>.<pid>.<random>`.
-# The hostname is the point: this repo has already paid for that once, when
-# `Sree <sree@Nymishas-MacBook-Pro.local>` leaked a machine name containing a
-# personal name and took a git filter-repo rewrite over 126 commits to remove.
+# The hostname is the point: this repo has already paid for that once, when a
+# commit trailer leaked a machine name containing a personal name and took a
+# git filter-repo rewrite over 126 commits to remove.
 .coverage.*
 coverage/
 htmlcov/

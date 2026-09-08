@@ -65,7 +65,7 @@ variable "tags" {
   default = {
     project = "almanac"
     env     = "dev"
-    owner   = "sree"
+    owner   = "bsreecharanreddy"
   }
 }
 
