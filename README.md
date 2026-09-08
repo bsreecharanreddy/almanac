@@ -278,7 +278,7 @@ flowchart LR
   subgraph ml[ML platform]
     R[Model registry<br/>MLflow · @champion alias]
     E[Model Serving<br/>scale-to-zero]
-    P[Batch scoring<br/>7,320,196 rows · probabilities]
+    P[Batch scoring<br/>one row per PR · probabilities]
     V[Vector Search<br/>pre-computed embeddings]
     O[Lakebase online store<br/>Postgres · low-latency serving]
   end
@@ -286,6 +286,8 @@ flowchart LR
   subgraph gov[Governance]
     CT[Data contracts<br/>fail the build, not a doc]
     LN[UC column lineage<br/>blind spots published on it]
+    WC[Window characterization<br/>a degraded window is refused]
+    DR[Offline drift<br/>schema drift reported before covariate]
   end
 
   GHA --> B
@@ -304,11 +306,14 @@ flowchart LR
   CT -.-> S
   CT -.-> F
   LN -.-> G
+  WC -.-> B
+  F -.-> DR
+  DR -.-> R
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
   classDef gone fill:#fff3cd,stroke:#d39e00,color:#000,stroke-dasharray:2 2
-  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN done
+  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN,WC,DR done
   class API todo
   class V,O,BI gone
 ```
