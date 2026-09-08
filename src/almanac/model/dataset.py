@@ -15,6 +15,8 @@ workspace `CREATE TABLE gold.x` lands in the default catalog's managed
 storage, not under any `--warehouse` path (2026-09-04, Task 9).
 """
 
+from collections.abc import Mapping
+
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -93,26 +95,62 @@ def _read_table(spark: SparkSession, name: str, version: int | None) -> DataFram
     return reader.table(name)
 
 
+# The tables `_build_feature_frame` reads, and therefore the exact keys a
+# pin must carry. Kept here rather than imported from `features.runner`,
+# which already imports this module through `similarity_runner`;
+# `test_the_pinnable_tables_are_the_tables_the_runner_writes` is what keeps
+# the two in step.
+FEATURE_TABLE_NAMES: tuple[str, ...] = ("author_activity", "repo_activity", "pr_static")
+
+
+def feature_pins(versions: Mapping[str, int] | None) -> dict[str, int | None]:
+    """One version per feature table, refusing a pin that does not name them all.
+
+    A partial pin must not fall back to "latest" for the rest. The three feature
+    tables take a different number of Delta commits per run -- 5, 6 and 4
+    constraint commits respectively (Phase 7 Task 4) -- so their versions
+    diverge, and pinning two while reading the third live mixes points in time
+    and raises nothing at all. That silence is what this refusal exists to end.
+    """
+    if versions is None:
+        return dict.fromkeys(FEATURE_TABLE_NAMES)
+    missing = sorted(set(FEATURE_TABLE_NAMES) - set(versions))
+    unknown = sorted(set(versions) - set(FEATURE_TABLE_NAMES))
+    if missing or unknown:
+        raise KeyError(
+            f"features_versions must name every table in {list(FEATURE_TABLE_NAMES)}, "
+            f"or be None: missing {missing}, unknown {unknown}"
+        )
+    return dict(versions)
+
+
 def _build_feature_frame(
     spark: SparkSession,
     *,
     silver_path: str,
     features_path: str,
     silver_version: int | None = None,
-    features_version: int | None = None,
+    features_versions: Mapping[str, int] | None = None,
 ) -> DataFrame:
     """Silver -> the PR-opened spine -> the assembled v1 feature set, no
     label. Shared by every training-frame builder -- only the label join
     differs between the regression and classification paths (§5.3).
     """
+    # Checked before the first read: a bad pin should not cost a Silver scan
+    # to discover, and half a frame is worse than none.
+    pins = feature_pins(features_versions)
+
     events = _read_delta(spark, f"{silver_path}/clean", silver_version)
     spine = build_pr_opened_spine(events)
 
-    author_activity = _read_delta(spark, f"{features_path}/author_activity", features_version)
-    repo_activity = _read_delta(spark, f"{features_path}/repo_activity", features_version)
-    pr_static = _read_delta(spark, f"{features_path}/pr_static", features_version)
+    def read(table: str) -> DataFrame:
+        return _read_delta(spark, f"{features_path}/{table}", pins[table])
+
     return assemble_training_set(
-        spine, author_activity=author_activity, repo_activity=repo_activity, pr_static=pr_static
+        spine,
+        author_activity=read("author_activity"),
+        repo_activity=read("repo_activity"),
+        pr_static=read("pr_static"),
     )
 
 
@@ -123,18 +161,21 @@ def build_training_frame(
     features_path: str,
     gold_table: str,
     silver_version: int | None = None,
-    features_version: int | None = None,
+    features_versions: Mapping[str, int] | None = None,
     gold_version: int | None = None,
 ) -> pd.DataFrame:
     """Read Silver, the three v1 feature tables, and Gold's fact -- each at
     its own optionally-pinned Delta version -- and collect one pandas frame.
+
+    `features_versions` is per table because their Delta versions genuinely
+    differ; one shared number was only ever correct by coincidence.
     """
     training_frame = _build_feature_frame(
         spark,
         silver_path=silver_path,
         features_path=features_path,
         silver_version=silver_version,
-        features_version=features_version,
+        features_versions=features_versions,
     )
     fact_pull_request = _read_table(spark, gold_table, gold_version)
     return join_label(training_frame, fact_pull_request).toPandas()
@@ -149,7 +190,7 @@ def build_classification_frame(
     threshold_seconds: int,
     similarity_frame: DataFrame | None = None,
     silver_version: int | None = None,
-    features_version: int | None = None,
+    features_versions: Mapping[str, int] | None = None,
     gold_version: int | None = None,
 ) -> pd.DataFrame:
     """Same shape as `build_training_frame`, with the wider §5.3 breach
@@ -166,7 +207,7 @@ def build_classification_frame(
         silver_path=silver_path,
         features_path=features_path,
         silver_version=silver_version,
-        features_version=features_version,
+        features_versions=features_versions,
     )
     if similarity_frame is not None:
         training_frame = join_similarity_features(training_frame, similarity_frame)
