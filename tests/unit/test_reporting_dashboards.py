@@ -9,6 +9,7 @@ that must say they are unavailable still say so.
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -120,3 +121,35 @@ def test_no_widget_overlaps_another_on_the_canvas(path: Path) -> None:
             overlaps_x = a["x"] < b["x"] + b["width"] and b["x"] < a["x"] + a["width"]
             overlaps_y = a["y"] < b["y"] + b["height"] and b["y"] < a["y"] + a["height"]
             assert not (overlaps_x and overlaps_y), f"{path.name}: {a} overlaps {b}"
+
+
+# Every object the dashboards may query, verified against the live workspace on
+# 2026-09-08 with `databricks tables list`. The first draft of these pages
+# referenced four that do not exist -- `silver.events_clean` (the table is
+# `silver.events`), `bronze.events` (there is no bronze schema; Bronze is an
+# ADLS path) and `features.pr_breach_predictions` before the scoring job
+# registered it. `terraform plan` cannot see any of that, and a dashboard
+# querying a missing table renders an error panel rather than failing loudly.
+KNOWN_OBJECTS = {
+    "almanac_dbx.silver.events",
+    "almanac_dbx.silver.events_quarantine",
+    "almanac_dbx.gold.agg_repo_daily",
+    "almanac_dbx.gold.dim_repo",
+    "almanac_dbx.gold.fact_pull_request",
+    "almanac_dbx.gold.int_pr_events",
+    "almanac_dbx.serving_logs.pr_review_sla_risk_payload",
+    # Created and registered by the scoring job (Task 9a) before the window.
+    "almanac_dbx.features.pr_breach_predictions",
+    "system.lakeflow.job_run_timeline",
+}
+
+_QUALIFIED = re.compile(r"\b(almanac_dbx|system)\.[a-z_]+\.[a-z_]+\b")
+
+
+@pytest.mark.parametrize("path", PAGES, ids=lambda p: p.stem)
+def test_every_queried_object_is_one_that_exists(path: Path) -> None:
+    sql = "".join(line for dataset in load(path)["datasets"] for line in dataset["queryLines"])
+
+    names = {m.group(0) for m in _QUALIFIED.finditer(sql)}
+
+    assert names <= KNOWN_OBJECTS, f"{path.name}: unknown objects {sorted(names - KNOWN_OBJECTS)}"

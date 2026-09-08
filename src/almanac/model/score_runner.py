@@ -11,6 +11,7 @@ from pyspark.sql import SparkSession
 
 from almanac.cli import run_cli
 from almanac.contracts import apply_constraints, enforce
+from almanac.features.registration import register_feature_table
 from almanac.model.dataset import FEATURE_TABLE_NAMES
 from almanac.model.score import PREDICTIONS_CONTRACT, SCORE_COLUMN, ProbabilityModel, score_quarter
 from almanac.spark import active_or_local_session
@@ -38,6 +39,7 @@ def write_predictions(
     gold_table: str,
     threshold_seconds: int,
     features_versions: Mapping[str, int] | None = None,
+    register_as: str | None = None,
 ) -> int:
     """Score, enforce the contract, write, then put the rules on the table."""
     model = load_champion(model_uri, registry_uri)
@@ -53,6 +55,12 @@ def write_predictions(
     enforce(scored, PREDICTIONS_CONTRACT)
     scored.write.format("delta").mode("overwrite").save(out_path)
     apply_constraints(spark, out_path, PREDICTIONS_CONTRACT)
+    if register_as is not None:
+        # A dashboard dataset queries by name; an unregistered Delta path is
+        # invisible to it. Registered after the write so a failed score leaves
+        # no empty table behind for a panel to render as zero rows.
+        catalog, schema, table = register_as.split(".")
+        register_feature_table(spark, schema=f"{catalog}.{schema}", table=table, path=out_path)
     return scored.count()
 
 
@@ -69,6 +77,11 @@ def main() -> int:
         type=int,
         required=True,
         help="The SLA breach threshold. Passed explicitly, never recomputed (§5.3).",
+    )
+    parser.add_argument(
+        "--register-as",
+        default=None,
+        help="Fully-qualified UC name to register the written table as, e.g. cat.schema.table.",
     )
     parser.add_argument(
         "--features-versions",
@@ -90,6 +103,7 @@ def main() -> int:
         gold_table=args.gold_table,
         threshold_seconds=args.threshold_seconds,
         features_versions=json.loads(args.features_versions) if args.features_versions else None,
+        register_as=args.register_as,
     )
     print(f"wrote {rows} scored rows to {args.out_path} ({SCORE_COLUMN} from {args.model_uri})")
     return 0

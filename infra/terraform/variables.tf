@@ -542,3 +542,9 @@ variable "dashboard_parent_path" {
   description = "Workspace folder holding §7's dashboards. Leading slash, no trailing slash."
   default     = "/Shared/almanac"
 }
+
+variable "predictions_schema" {
+  type        = string
+  description = "Unity Catalog schema holding the batch predictions table (§7 page 1's source)."
+  default     = "features"
+}
