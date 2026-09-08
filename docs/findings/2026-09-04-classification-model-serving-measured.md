@@ -1,5 +1,22 @@
 # Findings — Phase 4's classification re-run: a measured, non-null result
 
+> ### ⚠️ Superseded 2026-09-08 — the PR-AUC below came from a random split
+>
+> The 0.612 / 0.2845 / roc_auc 0.828 figures in this document were produced
+> by `train_test_split(random_state=42)`, where design doc §4.5 requires a
+> **temporal** split and calls a random one "itself a leakage bug". Re-scored
+> on the temporal split: **0.4661 PR-AUC against a 0.2650 baseline**,
+> `roc_auc` 0.7546 — a 1.76x lift, and the published figure was optimistic
+> by **24%**. The winning configuration changed too, `default` to
+> `is_unbalance`.
+>
+> **Everything else here stands** — the serving latency, the registration
+> defect, the segment breach rates. Only the split-dependent metrics moved.
+> See `2026-09-08-champion-rescored-temporal-split.md`. The original numbers
+> are kept below, unedited, because a retraction that deletes the evidence
+> is not a retraction.
+
+
 **Date:** 2026-09-04
 **Source:** Training run `1102177434831425` (job `117899697123337`, task
 run `884564330191323`) against the real Q3 2025 quarter; MLflow experiment

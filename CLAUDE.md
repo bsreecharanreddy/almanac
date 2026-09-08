@@ -72,11 +72,12 @@ done, 9 partly, 2 not done, 1 not assessable**
 a random split "itself a leakage bug" — in the code that produced the
 registered champion. The leakage suite was green throughout and was *not
 wrong*: it tests row time, and the bug was on split time. Fixed in Task 15
-(`temporal_split`, whole-week boundaries, mutation-tested); **the champion
-has not been retrained**, so the recorded 0.612 PR-AUC is still the
-random-split number and is optimistic by an unmeasured margin. That
-re-scoring is the first Phase 8 item, and it is why
-`skills/almanac-leakage-review` now exists.
+(`temporal_split`, whole-week boundaries, mutation-tested), and **re-scored
+in Phase 8 Task 1** (2026-09-08, run `817800814439176`): **0.612 → 0.4661
+PR-AUC**, so the published figure was optimistic by **24%**. The winning
+configuration changed too — `is_unbalance` rather than `default` — so a
+random split would have shipped the wrong *config*, not just an inflated
+score. `skills/almanac-leakage-review` exists because of this.
 
 The full medallion has run on
 Q3 2025 — 341,060,851 rows for $11.96, then Gold over that quarter for $0.78.

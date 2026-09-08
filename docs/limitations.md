@@ -191,7 +191,7 @@ weekend review latency differ sharply. `train_classifier` used
 boundary, train strictly before and test at or after, mutation-tested
 three ways. **The champion is not.** `pr_review_sla_risk` v1 was
 registered on 2026-09-04 through the random split and has not been
-retrained, so every metric recorded for it — including the 0.612 PR-AUC —
+retrained at the time this was written, so every metric recorded for it — including the 0.612 PR-AUC —
 is still the random-split number.
 
 **Be precise about what this does and does not mean.** The *features* are
@@ -205,7 +205,7 @@ channel is entity autocorrelation — the same repos and authors appear on
 both sides with overlapping feature histories, and those features are
 strongly autocorrelated over 92 days.
 
-**Consequence:** the reported PR-AUC of **0.612 is an optimistic estimate
+**Consequence (resolved 2026-09-08 — see below):** the reported PR-AUC of **0.612 was an optimistic estimate
 of deployment performance, by an unmeasured margin.** The *relative*
 claim survives better than the absolute one, because the baseline was fit
 on the same split and enjoys the same advantage — "beats the baseline by
@@ -213,6 +213,23 @@ on the same split and enjoys the same advantage — "beats the baseline by
 only compute, ≈$1 and one job, since the code change is done; it remains
 the highest-value measurement outstanding and `docs/decision-memo.md`
 treats it as the blocking item for any deployment decision.
+
+> ### ✅ Resolved 2026-09-08 — the margin is now measured
+>
+> Phase 8 Task 1 re-scored the champion on the temporal split (run
+> `817800814439176`, 890 s). **0.612 → 0.4661 PR-AUC** against a baseline
+> that also moved, 0.2845 → 0.2650. **The published figure was optimistic
+> by 24%** — and the prediction made above held: the *relative* claim
+> survived far better than the absolute one, 2.15× → **1.76×**.
+>
+> **The winning configuration also changed**, `default` → `is_unbalance`.
+> A random split would have shipped the wrong hyperparameter
+> configuration, not merely an inflated score for the right one. That was
+> not anticipated above and is the more useful half of the finding.
+>
+> Full method, attribution across the three fixes in the deploy, and what
+> it does not establish:
+> `docs/findings/2026-09-08-champion-rescored-temporal-split.md`.
 
 **The served endpoint returns a class, not a probability.** `train.py`
 logs the champion with a signature inferred from `model.predict()`, so
