@@ -297,3 +297,23 @@ def test_author_activity_counts_each_prior_once_for_a_same_instant_burst(
 
     row = one(compute_author_activity(events).where(F.col("event_time") == F.lit(burst)))
     assert (row["prior_pr_count"], row["prior_merge_rate"]) == (1, 1.0)
+
+
+def test_two_opened_events_for_one_pr_produce_one_static_row(spark: SparkSession) -> None:
+    """`compute_pr_static` is joined to the spine on (repo_id, pr_number), so
+    deduping only the spine still fans out 1x2. Both sides must agree
+    (docs/findings/2026-09-08-pr-opened-spine-fanout.md).
+    """
+    earlier = datetime(2025, 8, 13, 9, tzinfo=UTC)
+    later = datetime(2025, 8, 13, 11, tzinfo=UTC)
+    rows = [
+        (1, 10, later, "PullRequestEvent", "opened", "alice", None, True, None, later),
+        (1, 10, earlier, "PullRequestEvent", "opened", "alice", None, False, None, earlier),
+    ]
+    events = spark.createDataFrame(rows, _SCHEMA)
+
+    static = compute_pr_static(events)
+
+    assert static.count() == 1
+    # The earliest event wins, so its `pr_draft` is the one that survives.
+    assert static.collect()[0]["is_draft"] is False

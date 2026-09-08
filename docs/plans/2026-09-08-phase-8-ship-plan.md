@@ -24,8 +24,23 @@ offline is verified before it opens — the discipline Phase 7 Task 10
 proved, when pre-flight caught four dead table references that would
 otherwise have been found inside the paid window.
 
-Task 1 comes first because it is the one number the project currently
-publishes knowing it is wrong.
+**Task 4 runs before Task 1. Corrected 2026-09-08, before any code was
+written to this plan.** As first written, Task 1 re-scored the champion and
+Task 4 then fixed the PR-opened spine fan-out -- but the re-score goes
+through `assemble_training_set`, the same builder the fan-out lives in, so
+that order re-scores on data still carrying 25 PRs at 4x weight and ships
+the new number with a caveat attached. The original draft half-noticed this
+and hedged ("say which order was used"), which is a note where a fix
+belongs. Fixed order below; task numbers are left alone so the STATUS log
+and this document keep referring to the same things.
+
+Task 2 is unaffected either way: `action='merged'` is reduced-era only, and
+the training population is Q3 2025, which is rich-era.
+
+**Order: 4, then 2, 3, 5, 6 (all local and free), then 1 and 7 (both
+billable, both after Phase 7 merges).** Task 1 is the one number the project
+currently publishes knowing it is wrong, so it goes first among the
+billable work.
 
 ---
 
