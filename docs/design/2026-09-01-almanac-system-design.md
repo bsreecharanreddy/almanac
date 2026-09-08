@@ -1787,7 +1787,10 @@ flight.
 > **Reconciled against reality 2026-09-08 (Phase 7 Task 14):
 > [`docs/goal-reconciliation.md`](../goal-reconciliation.md)** — every
 > item marked done / partly done / not done, with the evidence or the
-> absence of it. **20 done, 9 partly, 3 not done, 1 not assessable.**
+> absence of it. **The tally lives there and only there** -- this line
+> carried its own copy (`20 done, 9 partly, 3 not done`) until 2026-09-08,
+> when it went stale twice in one day while the sentence directly below it
+> explained why it should not exist.
 > The boxes below are left unticked on purpose: this section is the goal
 > as written on 2026-09-01, and the reconciliation is the single place
 > that records status. Ticking here as well would be two records of one

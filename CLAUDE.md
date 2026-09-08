@@ -63,8 +63,8 @@ a year later.**
 `1cff101`). **Phase 7 (governance, reporting, reproducibility) is complete
 — 14 of 14 tasks plus an unplanned Task 15**, on branch
 `phase-7-governance`, unpushed. §9's exit gate is measured: **clone to a
-green run in 4 m 28 s** against a 15-minute bar. §10 reconciles to **21
-done, 9 partly, 2 not done, 1 not assessable**
+green run in 4 m 28 s** against a 15-minute bar. §10 reconciles to **24
+done, 10 partly, 0 not done, 1 not assessable**
 (`docs/goal-reconciliation.md`).
 
 **Phase 7's most consequential output is a defect it found in Phase 4.**
