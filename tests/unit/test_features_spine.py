@@ -131,3 +131,28 @@ def test_the_spine_is_deterministic_when_duplicates_tie_on_time(spark: SparkSess
 
     assert len(first) == 1
     assert first == second
+
+
+def test_a_narrow_frame_without_pr_draft_still_dedups(spark: SparkSession) -> None:
+    """`similarity_runner` passes five columns, not the full Silver contract.
+
+    The first version of the dedup ordered by `pr_draft` unconditionally and
+    broke three similarity-runner tests with UNRESOLVED_COLUMN (2026-09-08).
+    The tiebreak may only *require* what the spine itself requires.
+    """
+    narrow = "repo_id long, pr_number long, created_at timestamp, event_type string, "
+    narrow += "event_action string, actor_login string"
+    earlier = datetime(2025, 8, 13, 9, tzinfo=UTC)
+    later = datetime(2025, 8, 13, 11, tzinfo=UTC)
+    events = spark.createDataFrame(
+        [
+            (1, 10, later, "PullRequestEvent", "opened", "alice"),
+            (1, 10, earlier, "PullRequestEvent", "opened", "alice"),
+        ],
+        narrow,
+    )
+
+    spine = build_pr_opened_spine(events)
+
+    assert spine.count() == 1
+    assert epoch_of(spine, "as_of_timestamp") == int(earlier.timestamp())
