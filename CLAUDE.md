@@ -60,10 +60,24 @@ a year later.**
 ## Current status
 
 **Phases 0–6 complete and merged to `main`** (Phase 6 via PR #13,
-`1cff101`). **Phase 7 (governance, reporting, reproducibility) is planned,
-not started** — design doc §4.7 and a 14-task plan, on branch
-`phase-7-governance`. Its Task 1 is time-critical: inference capture is
-off, and only traffic occurring after it is enabled can ever be logged.
+`1cff101`). **Phase 7 (governance, reporting, reproducibility) is complete
+— 14 of 14 tasks plus an unplanned Task 15**, on branch
+`phase-7-governance`, unpushed. §9's exit gate is measured: **clone to a
+green run in 4 m 28 s** against a 15-minute bar. §10 reconciles to **21
+done, 9 partly, 2 not done, 1 not assessable**
+(`docs/goal-reconciliation.md`).
+
+**Phase 7's most consequential output is a defect it found in Phase 4.**
+`train_classifier` split randomly where §4.5 requires temporally and calls
+a random split "itself a leakage bug" — in the code that produced the
+registered champion. The leakage suite was green throughout and was *not
+wrong*: it tests row time, and the bug was on split time. Fixed in Task 15
+(`temporal_split`, whole-week boundaries, mutation-tested); **the champion
+has not been retrained**, so the recorded 0.612 PR-AUC is still the
+random-split number and is optimistic by an unmeasured margin. That
+re-scoring is the first Phase 8 item, and it is why
+`skills/almanac-leakage-review` now exists.
+
 The full medallion has run on
 Q3 2025 — 341,060,851 rows for $11.96, then Gold over that quarter for $0.78.
 Phase 6 made the platform live: a poller against GitHub's public Events API,
@@ -308,6 +322,25 @@ Currently present:
   already-standing web-validation and where-it-gets-written rules rather
   than adding anything new.
 
+- **`skills/almanac-leakage-review`** — **the trigger fired.** It sat on
+  the deferred list below with an explicit condition — "write it the first
+  time a leakage bug actually gets through" — and on **2026-09-08** one had:
+  `train_classifier` used `train_test_split(random_state=42)` where §4.5
+  requires a temporal split and calls a random one "itself a leakage bug",
+  in the code that produced the registered champion. **The leakage suite
+  was green throughout and was not wrong** — it tests that each row's
+  features precede that row's own `as_of`, which held. It tested one axis;
+  the bug was on another. The skill's gate 1 is that table of axes — row
+  time, split time, entity overlap, label construction, target definition
+  — and which of them anything actually covers. Gates 2–4 are
+  incident-derived too: mutation-test the new test (`temporal_split` was
+  broken three ways, `canonicalize` five of seven), ask whether the fixture
+  can even express the failure (the model frames carried **no**
+  `as_of_timestamp`; the streaming fixture's late rows were **all**
+  duplicates), and treat a justification written into an assertion message
+  as a claim that can be wrong — the watermark bug survived review because
+  its test explained why the drop was fine.
+
 - **`skills/almanac-code-style`** + **`hooks/code-style-reminder.sh`** —
   **the one deliberate exception to "nothing here is anticipatory."**
   Written 2026-09-02 at the user's direct request, not from a named
@@ -327,9 +360,9 @@ Currently present:
 Deliberately deferred until earned, with the trigger that would justify
 each:
 
-- **A point-in-time / leakage review skill** — write it the first time a
-  leakage bug actually gets through, which will most likely be in Phase
-  3. Writing it now would be guessing at what the bug looks like.
+*(**`skills/almanac-leakage-review` was on this list and has been written**
+— see above. Its trigger fired 2026-09-08, in Phase 4's model layer rather
+than Phase 3 as predicted.)*
 - **A cost-guard hook on `terraform apply`** — write it if a session
   actually ends with resources left running. The discipline is stated
   above; mechanize it once it is proven that stating it was not enough.

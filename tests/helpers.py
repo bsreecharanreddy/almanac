@@ -2,7 +2,7 @@
 
 import json
 import math
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,6 +31,23 @@ def epoch_of(df: DataFrame, column: str) -> int:
     always passes on a UTC CI runner). An epoch carries no ambiguity.
     """
     return int(one(df.selectExpr(f"unix_timestamp({column}) AS epoch"))["epoch"])
+
+
+# 2025-08-04 is a Monday, so PRs spread from here land in whole weeks.
+_FIRST_MONDAY = datetime(2025, 8, 4, 9, tzinfo=UTC)
+
+
+def opened_at(pr_number: int, *, minutes: int = 0, weeks: int = 4) -> datetime:
+    """When PR `pr_number` opened, spread over `weeks` calendar weeks.
+
+    `temporal_split` refuses a frame inside a single week, so a fixture
+    whose PRs all open at one instant cannot be trained on at all. The week
+    is `pr_number % weeks` rather than monotonic on purpose: these fixtures
+    derive the label from `pr_number`, and a monotonic spread would put one
+    class wholly on one side of the split, leaving `roc_auc_score` nothing
+    to score.
+    """
+    return _FIRST_MONDAY + timedelta(weeks=pr_number % weeks, days=pr_number % 7, minutes=minutes)
 
 
 def build_bronze(

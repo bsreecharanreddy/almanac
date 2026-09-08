@@ -27,15 +27,19 @@ review queue. The domain is incidental, and that is the point.
 > and then torn down, eight ADRs, limitations, a decision memo with a
 > stated confidence level, and a postmortem.**
 > **Phase 7 found a defect in Phase 4 that changes what this project
-> claims about its own model:** the train/test split is random where §4.5
-> requires a temporal one — by the design doc's own words, *"a random
-> split is itself a leakage bug"*. The features remain point-in-time
-> correct and the leakage suite is not wrong about what it tests; the
-> **evaluation** is what is unsound, so the champion's 0.612 PR-AUC is
-> optimistic by an unmeasured margin. Recorded in
-> [`docs/limitations.md`](docs/limitations.md), treated as the blocking
-> item in [`docs/decision-memo.md`](docs/decision-memo.md), and **not yet
-> fixed**.
+> claims about its own model:** the train/test split was random where
+> §4.5 requires a temporal one — by the design doc's own words, *"a
+> random split is itself a leakage bug"*. The features remain
+> point-in-time correct and the leakage suite is not wrong about what it
+> tests — it checks that each row's features precede that row's own
+> `as_of`, which held. It tested one axis; the bug was on another. **The
+> code is fixed** (`temporal_split`, whole-week boundaries, mutation-tested
+> three ways) — but **the champion has not been retrained**, so the
+> recorded **0.612 PR-AUC is still the random-split number** and is
+> optimistic by an unmeasured margin. Re-scoring it is the first Phase 8
+> item. Recorded in [`docs/limitations.md`](docs/limitations.md) and
+> [`docs/decision-memo.md`](docs/decision-memo.md); the review checklist it
+> produced is `.claude/skills/almanac-leakage-review/`.
 > **The full medallion has run on a real quarter of the firehose:**
 > Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
 > 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
@@ -218,10 +222,16 @@ flowchart LR
   end
 
   subgraph ml[ML platform]
-    R[Model registry<br/>MLflow]
+    R[Model registry<br/>MLflow · @champion alias]
     E[Model Serving<br/>scale-to-zero]
+    P[Batch scoring<br/>7,320,196 rows · probabilities]
     V[Vector Search<br/>pre-computed embeddings]
     O[Lakebase online store<br/>Postgres · low-latency serving]
+  end
+
+  subgraph gov[Governance]
+    CT[Data contracts<br/>fail the build, not a doc]
+    LN[UC column lineage<br/>blind spots published on it]
   end
 
   GHA --> B
@@ -229,24 +239,35 @@ flowchart LR
   B --> S
   S --> G
   S --> F
-  G --> BI[AI/BI dashboards<br/>3 pages, defined as code]
   F --> R --> E
+  R --> P
+  F --> P
+  P --> BI[AI/BI dashboards<br/>3 pages, defined as code]
+  G --> BI
   B --> V
   V --> F
   EV --> L --> SS --> SF --> O
+  CT -.-> S
+  CT -.-> F
+  LN -.-> G
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
   classDef gone fill:#fff3cd,stroke:#d39e00,color:#000,stroke-dasharray:2 2
-  class GHA,B,S,G,F,R,E,V,EV,L,SS,SF done
-  class API,BI todo
-  class O gone
+  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN done
+  class API todo
+  class V,O,BI gone
 ```
 
 Solid green = built and green. Dashed grey = designed, not built.
-Dashed amber = built and demonstrated live, then **torn down on purpose** —
-a Lakebase online store bills for existing, so it runs for a measured window
-and is destroyed with its stack.
+Dashed amber = built and demonstrated live, then **torn down on purpose**.
+A Vector Search endpoint and a Lakebase online store both bill for merely
+existing ($6.72/day and $12.06/day, measured), and a SQL warehouse bills
+while a dashboard is being looked at — so each ran for a measured window and
+was destroyed with its stack. **The Delta tables they were built over
+survive**; only the serving copies are gone. Model Serving stays up because
+it is the one that genuinely scales to zero: measured DBUs during its live
+window, then zero.
 
 ## What has been measured
 

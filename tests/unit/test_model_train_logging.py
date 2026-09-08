@@ -16,6 +16,7 @@ from almanac.model.train import (
     train_classifier,
     train_model,
 )
+from tests.frames import with_as_of
 
 
 def _frame(n: int = 60) -> pd.DataFrame:
@@ -40,7 +41,7 @@ def _frame(n: int = 60) -> pd.DataFrame:
 
 def test_logs_a_run_with_the_expected_metrics_and_returns_a_model_uri(tmp_path: Path) -> None:
     tracking_uri = f"file://{tmp_path}/mlruns"
-    result = train_model(_frame(), random_state=42)
+    result = train_model(with_as_of(_frame()), random_state=42)
 
     model_uri = log_training_run(
         result, experiment_name="test-pr-review-sla-risk", tracking_uri=tracking_uri
@@ -85,7 +86,7 @@ def _classification_frame(n: int = 200) -> pd.DataFrame:
 
 def test_logs_a_classification_run_per_candidate_plus_the_baseline(tmp_path: Path) -> None:
     tracking_uri = f"file://{tmp_path}/mlruns"
-    result = train_classifier(_classification_frame(), random_state=42)
+    result = train_classifier(with_as_of(_classification_frame()), random_state=42)
 
     model_uris = log_classification_run(
         result, experiment_name="test-pr-review-sla-breach", tracking_uri=tracking_uri
