@@ -881,6 +881,102 @@ so Phase 8's full-stack window is understood as the only remaining
 opportunity — against a *fresh* instance, not the one that produced the
 measurements.
 
+### 4.8 Phase 8 concretized — re-score, a chosen window, drift, and ship (2026-09-08)
+
+§9 scopes Phase 8 as "Tag `v1.0`. Stop." That still governs the *spirit* —
+nothing here is a new subsystem. Every item below is either an integrity
+debt this project already owes, or scope §9 assigned to an earlier phase
+and never delivered. Six decisions.
+
+**1. The champion is re-scored before anything else.** Phase 7 Task 15
+fixed the random train/test split; the registered champion was trained
+through the old one, so the published **0.612 PR-AUC is the random-split
+number** and is optimistic by an unmeasured margin. It is quoted in the
+README, `CLAUDE.md`, `docs/STATUS.md`, `docs/limitations.md` and
+`docs/decision-memo.md`. **Whatever the temporal split produces is
+published, including a drop** — §5.1's null-result discipline applies to
+a number getting worse under a correct method exactly as it applied to
+the regression model failing its baseline.
+
+**2. The demo window is chosen and justified, never "the latest".**
+Measured 2026-09-08 (n=5 hours over 4 days, plus one Q3 2025 hour, plus
+14 days of hourly file sizes): the 2026 firehose is **intermittently
+degraded**, and the same hour-of-day varies **50×** in size across
+fourteen consecutive days — 1.5 MB on 09-02 against 86.3 MB on 09-06.
+Composition, not just volume:
+
+| | 2026-09-05 09:00 | 2026-09-08 14:00 | 2025-08-13 09:00 |
+|---|---|---|---|
+| PullRequestEvent | **37.3%** (27,796) | ~1% (851) | 6,702 opened |
+| PushEvent | — | **94%** (82,434) | — |
+| `pull_request.draft` present | 0 | 0 | 13,301 |
+
+A window picked by recency lands on the degraded side and produces
+degenerate panels and an uncomputable label. **Window quality is
+therefore measured before use, and a degraded window is refused rather
+than rendered.** This supersedes nothing — it is a constraint discovered
+after §4.7, and it is the reason "run it against any data" is stated as
+*any characterized window* rather than *any date*.
+
+**3. `merged` is recovered from the firehose, not from the REST API.**
+The reduced era replaced `payload.pull_request.merged` with a distinct
+`action='merged'` — present in every 2026 hour sampled (285/457/283) and
+**absent from the 2025 hour**, whose actions are only
+`{opened, closed, reopened}`. `payloads.py:150` reads the field, so
+`pr_merged` is NULL across the whole reduced era while the information
+sits unread in `payload.action`. Recovering it needs no second source and
+no rate limit.
+
+**4. REST enrichment is deferred, and the reason is leakage, not
+effort.** What remains after decision 3 is `draft`, and `is_draft` is a
+**feature** (`groups.py:82` → `FEATURE_COLUMNS`), taken from the opened
+event so it is point-in-time correct by construction. The REST API
+returns *current* state: a PR opened as a draft and later marked ready
+reads `draft=false` today, so filling the feature from a fetch-now
+encodes a future action into a value computed `as_of` the open. That is
+leakage on the governing axis. It is worse than the status quo, because
+the reduced era currently leaves `pr_draft` NULL and the pipeline treats
+era-bound nulls as *unknown* rather than folding them to `False` —
+enrichment would convert an honest unknown into a confidently wrong
+known. **Ceiling, with its upgrade path named:** draft-at-open is
+reconstructible from the timeline API's `ready_for_review` events, or the
+current value can be landed as a distinctly-named column that is never
+admitted to an `as_of` join. Neither is Phase 8.
+
+**5. Drift ships, split by cost.** §10 line 1718 asks for it, the
+skills-mapping table (line 1911) maps it to the MLOps claim, and the
+resume-bullet template (line 1922) already asserts it — so this is
+unfinished scope the project advertises, not new scope. §411's "drift
+monitoring over a short window demonstrates nothing" is **not** an
+argument against it: that line sits in the case for hash-sampling
+`repo_id` instead of shortening the window, precisely so drift stays
+demonstrable. The span now exists — 14 months between the Q3 2025
+training data and the demo window — and carries three genuine kinds:
+covariate (PR share 37.3% → ~1%), schema (`draft`/`merged` present 13,301
+times in the 2025 hour, zero in every 2026 hour), and semantic (`merged`
+moving from a field to an action value).
+
+- **Feature and data drift — offline and local.** Training distribution
+  against the chosen window. No cloud, no billable window.
+- **Training/serving skew — inside the demo window only.** It needs the
+  online store back up, measured at $12.06/day idle. It rides the window
+  already being paid for; it does not justify one of its own.
+
+The monitor has to change a decision or it is theatre. Here it does: a
+champion trained on `is_draft` cannot score a window where the field does
+not exist, and the correct response to the alarm is to refuse to serve,
+not to re-baseline.
+
+**6. `v1.0` is tagged after the demo run, before the public flip.**
+Task 10 found four defects that only a live window could surface; a tag
+cut before the window would be a tag that predates its own most likely
+bug report. Tagging after means `v1.0` carries whatever the window
+taught. The public flip is **not** a phase — it is a wrap-up checklist
+over decisions already made and deferred, and it lives in
+`docs/plans/2026-09-08-public-repo-readiness-checklist.md`, following the
+structure proven on the sibling project's 2026-08-31 flip.
+
+
 ## 5. The model
 
 **Primary: PR review-SLA risk.** Given an open PR, predict whether it
