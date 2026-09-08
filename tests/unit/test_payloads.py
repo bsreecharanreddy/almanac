@@ -1,5 +1,6 @@
 """Parsing Bronze's raw JSON into the Silver contract."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -109,3 +110,67 @@ def test_malformed_json_is_not_silently_dropped(spark: SparkSession) -> None:
     row = parsed.first()
     assert row is not None
     assert row["event_type"] is None
+
+
+def _events_file(tmp_path: Path, *events: dict[str, object]) -> Path:
+    path = tmp_path / "events.json"
+    path.write_text("\n".join(json.dumps(e) for e in events))
+    return path
+
+
+def _pr_event(action: str, *, pull_request: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": f"evt-{action}",
+        "type": "PullRequestEvent",
+        "actor": {"login": "alice"},
+        "repo": {"id": 1, "name": "o/r"},
+        "created_at": "2026-09-08T14:00:00Z",
+        "payload": {"action": action, "number": 7, "pull_request": pull_request},
+    }
+
+
+# The reduced era's `pull_request` object, measured 2026-09-08 across 5 hours:
+# these five keys and nothing else -- no `merged`, no `draft`, no `title`.
+_REDUCED_PR: dict[str, object] = {"base": {}, "head": {}, "id": 9, "number": 7, "url": "u"}
+
+
+def test_reduced_era_merge_is_read_from_the_action(spark: SparkSession, tmp_path: Path) -> None:
+    """The October 2025 reduction dropped `pull_request.merged` and replaced it
+    with a distinct `action='merged'` -- present in every 2026 hour sampled
+    (285/457/283), absent from the 2025 hour, whose actions are only
+    {opened, closed, reopened}. Reading only the field leaves `pr_merged` NULL
+    across the whole reduced era (design doc 4.8 decision 3).
+    """
+    path = _events_file(
+        tmp_path,
+        _pr_event("merged", pull_request=_REDUCED_PR),
+        _pr_event("closed", pull_request=_REDUCED_PR),
+    )
+    by_action = {r["event_action"]: r["pr_merged"] for r in _parsed(spark, path).collect()}
+
+    assert by_action["merged"] is True
+    assert by_action["closed"] is False
+
+
+def test_reduced_era_open_leaves_merge_unknown(spark: SparkSession, tmp_path: Path) -> None:
+    """An `opened` event says nothing about whether the PR ever merged.
+
+    Era-bound nulls stay unknown rather than being folded to False -- the same
+    rule `pr_draft` already follows. Folding here would fabricate a negative
+    label for every open PR in the reduced era.
+    """
+    path = _events_file(tmp_path, _pr_event("opened", pull_request=_REDUCED_PR))
+
+    assert _parsed(spark, path).collect()[0]["pr_merged"] is None
+
+
+def test_rich_era_still_reads_the_field_not_the_action(spark: SparkSession, tmp_path: Path) -> None:
+    """The rich era carries `merged` on a `closed` action, and it must win.
+
+    Deriving from the action first would read this true merge as False.
+    """
+    path = _events_file(
+        tmp_path, _pr_event("closed", pull_request={**_REDUCED_PR, "merged": True, "draft": False})
+    )
+
+    assert _parsed(spark, path).collect()[0]["pr_merged"] is True
