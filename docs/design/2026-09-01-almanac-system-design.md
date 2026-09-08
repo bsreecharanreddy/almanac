@@ -1842,9 +1842,23 @@ Each of these is a real property of GH Archive, each goes in
     `docs/findings/2026-09-01-third-schema-era.md`. Between **2025-10-08
     and 2025-10-15** `payload.pull_request` was cut from **48 fields to
     5**, losing `merged`, `user`, `draft`, `created_at`, `title`, `body`,
-    and every size field. Volume fell alongside it — one 2026 hour holds
-    54,232 events against 227,376 in 2025 (−76%), PR events −97%, review
-    events −96%. Documented nowhere upstream. Consequences: `SchemaEra`
+    and every size field. **What collapsed is pull-request activity
+    specifically: roughly 25–50× fewer PR events and ~30–40× fewer opened
+    PRs** (≈130–265/hr against 6,618/hr), with review events falling
+    comparably. **Total firehose volume is essentially unchanged** —
+    ~155–162K events/hour in 2026 against 167K in 2025; push and create
+    events continue at normal rates.
+    *(**Corrected 2026-09-08.** This item previously read "Volume fell
+    alongside it — one 2026 hour holds 54,232 events against 227,376 in
+    2025 (−76%)". That claim was generalised from a single hour and was
+    corrected in the finding on **2026-09-01**, the day it was written;
+    this copy was never updated, so the authoritative traps list carried
+    a retracted number for a week. Two of the six sampled hours — 54,232
+    and 3,511 events — are truncated captures, i.e. a live instance of
+    trap 5 above. The stale copy was found while writing
+    `docs/limitations.md`, which exists to state §12 plainly and could
+    not do so while §12 and its own source disagreed.)*
+    Documented nowhere upstream. Consequences: `SchemaEra`
     has a third member `REDUCED_V3`; Bronze and Silver ingest all three
     eras; facts are built event-natively so the primary label survives
     (§4.3a); and the fidelity the firehose no longer carries comes from
