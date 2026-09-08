@@ -153,3 +153,33 @@ def test_every_queried_object_is_one_that_exists(path: Path) -> None:
     names = {m.group(0) for m in _QUALIFIED.finditer(sql)}
 
     assert names <= KNOWN_OBJECTS, f"{path.name}: unknown objects {sorted(names - KNOWN_OBJECTS)}"
+
+
+# The Lakeview widget schema is not published, and `terraform plan` never opens
+# the JSON, so the first three pages were applied with `{"version": 1,
+# "widgetType": "table"}` and every data widget rendered "Invalid widget
+# definition is imported" while all 15 dataset queries ran correctly. The valid
+# shape below was read back from the workspace on 2026-09-08 after the UI
+# rebuilt one widget: version 2, an `encodings.columns` entry per rendered
+# field, and `spec.data.queryName` naming the widget's own query.
+WIDGET_SPEC_VERSION = 2
+
+
+@pytest.mark.parametrize("path", PAGES, ids=lambda p: p.stem)
+def test_every_data_widget_carries_a_renderable_spec(path: Path) -> None:
+    for widget in widgets(load(path)):
+        queries = widget.get("queries")
+        if not queries:
+            continue
+        spec = widget["spec"]
+        name = widget["name"]
+
+        assert spec["version"] == WIDGET_SPEC_VERSION, f"{name}: spec v{spec['version']}"
+
+        rendered = [field["name"] for field in queries[0]["query"]["fields"]]
+        encoded = [column["fieldName"] for column in spec["encodings"]["columns"]]
+        assert encoded == rendered, f"{name}: encodings {encoded} != fields {rendered}"
+
+        assert spec["data"]["queryName"] == queries[0]["name"], (
+            f"{name}: spec.data.queryName does not name this widget's query"
+        )

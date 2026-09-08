@@ -4,12 +4,16 @@
       "name": "ds_unresolved_risk",
       "displayName": "Unresolved PRs by predicted breach risk",
       "queryLines": [
+        "WITH horizon AS (\n",
+        "  SELECT max(opened_at) AS as_of FROM almanac_dbx.gold.fact_pull_request\n",
+        ")\n",
         "SELECT p.repo_id, p.pr_number, p.breach_risk, p.is_bot_author,\n",
         "       f.opened_at,\n",
-        "       timestampdiff(MINUTE, f.opened_at, current_timestamp()) AS minutes_open\n",
+        "       timestampdiff(MINUTE, f.opened_at, h.as_of) AS minutes_open_at_horizon\n",
         "FROM almanac_dbx.features.pr_breach_predictions p\n",
         "JOIN almanac_dbx.gold.fact_pull_request f\n",
         "  ON f.repo_id = p.repo_id AND f.pr_number = p.pr_number\n",
+        "CROSS JOIN horizon h\n",
         "WHERE f.closed_at IS NULL\n",
         "ORDER BY p.breach_risk DESC\n",
         "LIMIT 200"
@@ -19,11 +23,13 @@
       "name": "ds_calibration",
       "displayName": "Calibration: predicted risk vs observed breach rate",
       "queryLines": [
-        "SELECT ntile(10) OVER (ORDER BY breach_risk) AS risk_decile,\n",
+        "SELECT risk_decile,\n",
         "       round(avg(breach_risk), 4) AS mean_predicted,\n",
         "       round(avg(CASE WHEN breach THEN 1.0 ELSE 0.0 END), 4) AS observed_rate,\n",
         "       count(*) AS pull_requests\n",
-        "FROM almanac_dbx.features.pr_breach_predictions\n",
+        "FROM (SELECT breach_risk, breach,\n",
+        "             ntile(10) OVER (ORDER BY breach_risk) AS risk_decile\n",
+        "      FROM almanac_dbx.features.pr_breach_predictions)\n",
         "GROUP BY risk_decile\n",
         "ORDER BY risk_decile"
       ]
@@ -64,7 +70,7 @@
         {
           "widget": {
             "name": "w1_header",
-            "textbox_spec": "# Review SLA Risk\n\nWhich open pull requests are most likely to breach the **1,487 s** review-latency expectation (§5.3's measured p75), ranked so a human can intervene while it still matters.\n\n**Scores are batch, not live.** The serving endpoint returns a class, not a probability, so these come from `almanac.model.score` over the historical quarter using the same registered champion. See `docs/limitations.md`."
+            "textbox_spec": "# Review SLA Risk\n\nWhich open pull requests are most likely to breach the **1,487 s** review-latency expectation (§5.3's measured p75), ranked so a human can intervene while it still matters.\n\n**Scores are batch, not live.** The serving endpoint returns a class, not a probability, so these come from `almanac.model.score` over the historical quarter using the same registered champion. Age is measured to the data's own horizon (the latest `opened_at` in Gold), not wall-clock. The quarter is historical, so a wall-clock age would read the same large number for every row. See `docs/limitations.md`."
           },
           "position": { "x": 0, "y": 0, "width": 6, "height": 3 }
         },
@@ -73,21 +79,34 @@
             "name": "w2_unresolved",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_unresolved_risk",
                   "fields": [
                     { "name": "repo_id", "expression": "`repo_id`" },
                     { "name": "pr_number", "expression": "`pr_number`" },
                     { "name": "breach_risk", "expression": "`breach_risk`" },
-                    { "name": "minutes_open", "expression": "`minutes_open`" },
+                    { "name": "minutes_open_at_horizon", "expression": "`minutes_open_at_horizon`" },
                     { "name": "is_bot_author", "expression": "`is_bot_author`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
-            "spec": { "version": 1, "widgetType": "table" }
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "repo_id" },
+                  { "fieldName": "pr_number" },
+                  { "fieldName": "breach_risk" },
+                  { "fieldName": "minutes_open_at_horizon" },
+                  { "fieldName": "is_bot_author" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
+            }
           },
           "position": { "x": 0, "y": 3, "width": 6, "height": 7 }
         },
@@ -96,7 +115,7 @@
             "name": "w3_calibration",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_calibration",
                   "fields": [
@@ -109,7 +128,19 @@
                 }
               }
             ],
-            "spec": { "version": 1, "widgetType": "table" }
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "risk_decile" },
+                  { "fieldName": "mean_predicted" },
+                  { "fieldName": "observed_rate" },
+                  { "fieldName": "pull_requests" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
+            }
           },
           "position": { "x": 0, "y": 10, "width": 3, "height": 6 }
         },
@@ -118,7 +149,7 @@
             "name": "w4_risk_by_repo",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_risk_by_repo",
                   "fields": [
@@ -131,7 +162,19 @@
                 }
               }
             ],
-            "spec": { "version": 1, "widgetType": "table" }
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "repo_id" },
+                  { "fieldName": "pull_requests" },
+                  { "fieldName": "mean_risk" },
+                  { "fieldName": "observed_breach_rate" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
+            }
           },
           "position": { "x": 3, "y": 10, "width": 3, "height": 6 }
         },
@@ -140,7 +183,7 @@
             "name": "w5_predicted_vs_actual",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_predicted_vs_actual",
                   "fields": [
@@ -153,7 +196,19 @@
                 }
               }
             ],
-            "spec": { "version": 1, "widgetType": "table" }
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "is_bot_author" },
+                  { "fieldName": "pull_requests" },
+                  { "fieldName": "mean_predicted_risk" },
+                  { "fieldName": "observed_breach_rate" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
+            }
           },
           "position": { "x": 0, "y": 16, "width": 6, "height": 4 }
         }
