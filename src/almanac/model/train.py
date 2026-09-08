@@ -13,13 +13,50 @@ import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRegressor
 from mlflow.models import ModelSignature, infer_signature
 from sklearn.metrics import average_precision_score, log_loss, mean_absolute_error, roc_auc_score
-from sklearn.model_selection import train_test_split
 
 from almanac.model.baseline import NaiveBaseline, fit_naive_baseline
 
 LABEL_COLUMN = "time_to_first_response_seconds"
 SEGMENT_COLUMN = "is_bot_author"
 BREACH_LABEL_COLUMN = "breach"
+
+# The spine's own "now" for each PR, carried through the frame as an
+# identifier rather than a feature. It is what makes a temporal split
+# possible at all.
+AS_OF_COLUMN = "as_of_timestamp"
+
+
+def temporal_split(
+    frame: pd.DataFrame,
+    *,
+    time_column: str = AS_OF_COLUMN,
+    test_size: float = 0.3,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split on a whole-week boundary: train strictly before, test at or after.
+
+    Design doc §4.5 -- "a random split is itself a leakage bug" -- and §5.1,
+    which requires the boundary to fall on a whole week because
+    weekday/weekend review latency differs sharply and an arbitrary split
+    point encodes day-of-week.
+    """
+    times = pd.to_datetime(frame[time_column])
+    # Monday 00:00 of each row's week, tz preserved. `dt.normalize()` rather
+    # than `.dt.date` so the result stays a timestamp and stays comparable.
+    week_starts = (times - pd.to_timedelta(times.dt.weekday, unit="D")).dt.normalize()
+
+    # The earliest week cannot be a boundary: it would leave training empty.
+    candidates = sorted(week_starts.unique())[1:]
+    if not candidates:
+        raise ValueError(
+            f"{time_column} spans less than two calendar weeks, so there is no week "
+            "boundary to split on. Widen the window rather than falling back to a "
+            "random split."
+        )
+
+    boundary = min(candidates, key=lambda b: abs(float((times >= b).mean()) - test_size))
+    before = times < boundary
+    return frame[before], frame[~before]
+
 
 # Named LGBMClassifier configs tried in one run (design doc §5.3): plain
 # defaults, and LightGBM's own answer to the measured 25.55%/74.45% class
@@ -74,7 +111,7 @@ def train_model(
     **lgbm_params: Any,
 ) -> TrainResult:
     """Fit LightGBM, fit the baseline on the same split, and compare their MAE."""
-    train, test = train_test_split(frame, test_size=test_size, random_state=random_state)
+    train, test = temporal_split(frame, test_size=test_size)
 
     baseline = fit_naive_baseline(train, label_col=LABEL_COLUMN, segment_col=SEGMENT_COLUMN)
     baseline_predictions = baseline.predict(test[[SEGMENT_COLUMN]])
@@ -142,7 +179,7 @@ def train_classifier(
     arm of the same comparison, same CLASSIFIER_CANDIDATES sweep, same split.
     """
     columns = feature_columns if feature_columns is not None else FEATURE_COLUMNS
-    train, test = train_test_split(frame, test_size=test_size, random_state=random_state)
+    train, test = temporal_split(frame, test_size=test_size)
 
     baseline = fit_naive_baseline(
         train, label_col=BREACH_LABEL_COLUMN, segment_col=SEGMENT_COLUMN, agg="mean"

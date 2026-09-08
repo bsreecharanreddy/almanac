@@ -52,6 +52,21 @@ jobs:
         with:
           enable-cache: true
 
+      # A hosted runner has ~20 GB free after its preinstalled image, and this
+      # suite outgrew it: run 34263618259 died with "No space left on device"
+      # (2026-09-08) -- `coverage` lost the runner outright at 1h14m, `check`
+      # reached the cache-save post-step at 1h26m and failed there, after every
+      # real step had passed. The load is a ~2 GB venv (torch 553M, pyspark
+      # 475M, pyarrow 122M), a multi-GB uv cache restored *and re-saved*, Spark
+      # scratch, MLflow artifacts, and pytest's tmp roots (~305 MB/run, last 3
+      # retained). Dropping toolchains this repo never uses buys back ~25 GB.
+      - name: Free disk space
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / | tail -1
+
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
 
@@ -74,3 +89,50 @@ jobs:
       # and Silver exactly as `tests/integration/test_pipeline.py` does.
       - run: uv run python scripts/build_silver_fixture.py
       - run: uv run python -m almanac.gold.runner --silver-path data/gold_fixture/silver build
+
+  # §10's ">=70% coverage on transformation and feature logic", enforced as a
+  # build failure rather than a number in a document. Its own job, not a flag
+  # on the step above, for two measured reasons: coverage costs ~2.4x on this
+  # suite (46:19 against a 19:32 baseline, 2026-09-07), and a separate job
+  # runs *alongside* `check` rather than after it, so the wall-clock time to a
+  # red/green signal is unchanged.
+  #
+  # pull_request only, and that is a cost decision rather than a rigour one:
+  # this repo is private on the free plan, where Actions minutes are finite,
+  # and its branch model is one PR per phase -- so this runs a handful of
+  # times instead of on every push. Drop the `if` when the repo goes public.
+  #
+  # The scope and the threshold both live in pyproject.toml's [tool.coverage.*],
+  # so this job and `make coverage` cannot disagree about what is measured or
+  # about what passes.
+  coverage:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      # A hosted runner has ~20 GB free after its preinstalled image, and this
+      # suite outgrew it: run 34263618259 died with "No space left on device"
+      # (2026-09-08) -- `coverage` lost the runner outright at 1h14m, `check`
+      # reached the cache-save post-step at 1h26m and failed there, after every
+      # real step had passed. The load is a ~2 GB venv (torch 553M, pyspark
+      # 475M, pyarrow 122M), a multi-GB uv cache restored *and re-saved*, Spark
+      # scratch, MLflow artifacts, and pytest's tmp roots (~305 MB/run, last 3
+      # retained). Dropping toolchains this repo never uses buys back ~25 GB.
+      - name: Free disk space
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / | tail -1
+
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+
+      # Serial, like the `check` job: a 2-core runner gains nothing from
+      # xdist, and the parallel run is what made the streaming tests' hang
+      # guard fire on budget alone.
+      - run: uv run pytest -m "not network" --cov --cov-report=term

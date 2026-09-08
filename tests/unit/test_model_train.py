@@ -17,6 +17,7 @@ from almanac.model.train import (
     train_classifier,
     train_model,
 )
+from tests.frames import with_as_of
 
 
 def _separable_frame(n: int = 200) -> pd.DataFrame:
@@ -44,7 +45,7 @@ def _separable_frame(n: int = 200) -> pd.DataFrame:
 def test_a_perfectly_separable_feature_is_learned_and_beats_the_baseline() -> None:
     frame = _separable_frame()
 
-    result = train_model(frame, random_state=42)
+    result = train_model(with_as_of(frame), random_state=42)
 
     assert result.beats_baseline is True
     assert result.model_mae < result.baseline_mae
@@ -72,7 +73,7 @@ def test_a_feature_with_no_signal_does_not_falsely_beat_the_baseline() -> None:
         }
     )
 
-    result = train_model(frame, random_state=42)
+    result = train_model(with_as_of(frame), random_state=42)
 
     assert result.beats_baseline is False
 
@@ -80,8 +81,8 @@ def test_a_feature_with_no_signal_does_not_falsely_beat_the_baseline() -> None:
 def test_the_same_seed_produces_the_same_result_twice() -> None:
     frame = _separable_frame()
 
-    first = train_model(frame, random_state=42)
-    second = train_model(frame, random_state=42)
+    first = train_model(with_as_of(frame), random_state=42)
+    second = train_model(with_as_of(frame), random_state=42)
 
     assert first.model_mae == second.model_mae
     assert first.baseline_mae == second.baseline_mae
@@ -111,7 +112,7 @@ def _separable_classification_frame(n: int = 400) -> pd.DataFrame:
 def test_a_perfectly_separable_feature_beats_the_baseline_by_pr_auc() -> None:
     frame = _separable_classification_frame()
 
-    result = train_classifier(frame, random_state=42)
+    result = train_classifier(with_as_of(frame), random_state=42)
 
     assert result.beats_baseline is True
     assert len(result.candidates) >= 2  # a comparison sweep, not one config
@@ -151,7 +152,7 @@ def test_a_classification_feature_with_no_signal_scores_near_chance() -> None:
         }
     )
 
-    result = train_classifier(frame, random_state=42)
+    result = train_classifier(with_as_of(frame), random_state=42)
 
     for candidate in result.candidates.values():
         assert 0.4 < candidate.roc_auc < 0.6
@@ -160,8 +161,8 @@ def test_a_classification_feature_with_no_signal_scores_near_chance() -> None:
 def test_classifier_same_seed_produces_the_same_result_twice() -> None:
     frame = _separable_classification_frame()
 
-    first = train_classifier(frame, random_state=42)
-    second = train_classifier(frame, random_state=42)
+    first = train_classifier(with_as_of(frame), random_state=42)
+    second = train_classifier(with_as_of(frame), random_state=42)
 
     assert first.candidates["default"].average_precision == (
         second.candidates["default"].average_precision
@@ -174,7 +175,7 @@ def test_train_classifier_defaults_to_feature_columns_unchanged() -> None:
     §8.3a) -- every existing call site passes no feature_columns at all."""
     frame = _separable_classification_frame()
 
-    result = train_classifier(frame, random_state=42)
+    result = train_classifier(with_as_of(frame), random_state=42)
 
     assert result.feature_columns == FEATURE_COLUMNS
 
@@ -207,9 +208,12 @@ def test_similarity_columns_let_the_with_run_win_when_the_world_says_it_should()
         }
     )
 
-    without = train_classifier(frame, feature_columns=FEATURE_COLUMNS, random_state=42)
+    timed = with_as_of(frame)
+    without = train_classifier(timed, feature_columns=FEATURE_COLUMNS, random_state=42)
     with_similarity = train_classifier(
-        frame, feature_columns=FEATURE_COLUMNS + SIMILARITY_FEATURE_COLUMNS, random_state=42
+        timed,
+        feature_columns=FEATURE_COLUMNS + SIMILARITY_FEATURE_COLUMNS,
+        random_state=42,
     )
 
     assert without.feature_columns == FEATURE_COLUMNS

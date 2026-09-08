@@ -2,6 +2,11 @@
 pinnable, so a specific training frame -- features AND label -- stays
 reproducible even after later Gold/Silver activity, extending Task 7's
 leakage-suite invariant to the label join (design doc §5.2).
+
+"Independently" is per feature table, and that is not cosmetic. The three
+tables take a different number of Delta commits per run, so one shared
+version number is wrong -- loudly when it exceeds a table's history, and
+silently when it does not.
 """
 
 from datetime import UTC, datetime
@@ -13,7 +18,11 @@ from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 
 from almanac.features.runner import run_features
-from almanac.model.dataset import build_classification_frame, build_training_frame
+from almanac.model.dataset import (
+    FEATURE_TABLE_NAMES,
+    build_classification_frame,
+    build_training_frame,
+)
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -34,6 +43,11 @@ _GOLD_SCHEMA_WITH_TIMES = (
 def _latest_version(spark: SparkSession, path: Path) -> int:
     row = DeltaTable.forPath(spark, str(path)).history(1).select("version").collect()[0]
     return int(row["version"])
+
+
+def _feature_versions(spark: SparkSession, features_path: Path) -> dict[str, int]:
+    """Each feature table's own latest version. They are not the same number."""
+    return {name: _latest_version(spark, features_path / name) for name in FEATURE_TABLE_NAMES}
 
 
 def _register(spark: SparkSession, name: str, location: Path) -> None:
@@ -73,7 +87,7 @@ def test_pinning_every_version_reproduces_the_frame_after_a_later_label_update(
     run_features(
         spark, silver_path=str(silver_path), features_path=str(features_path), register=False
     )
-    features_v1 = _latest_version(spark, features_path / "author_activity")
+    features_v1 = _feature_versions(spark, features_path)
 
     spark.createDataFrame([(1, 5, 3600, None)], _GOLD_SCHEMA).write.format("delta").save(
         str(gold_dir)
@@ -81,13 +95,13 @@ def test_pinning_every_version_reproduces_the_frame_after_a_later_label_update(
     _register(spark, gold_table, gold_dir)
     gold_v1 = _latest_version(spark, gold_dir)
 
-    def build(features_version: int, gold_version: int) -> pd.DataFrame:
+    def build(features_versions: dict[str, int], gold_version: int) -> pd.DataFrame:
         return build_training_frame(
             spark,
             silver_path=str(silver_path),
             features_path=str(features_path),
             gold_table=gold_table,
-            features_version=features_version,
+            features_versions=features_versions,
             gold_version=gold_version,
         )
 
@@ -145,7 +159,7 @@ def test_classification_frame_shares_the_same_version_pinning(
     run_features(
         spark, silver_path=str(silver_path), features_path=str(features_path), register=False
     )
-    features_v1 = _latest_version(spark, features_path / "author_activity")
+    features_v1 = _feature_versions(spark, features_path)
 
     spark.createDataFrame([(1, 5, 3600, None, None, None)], _GOLD_SCHEMA_WITH_TIMES).write.format(
         "delta"
@@ -159,9 +173,47 @@ def test_classification_frame_shares_the_same_version_pinning(
         features_path=str(features_path),
         gold_table=gold_table,
         threshold_seconds=100,
-        features_version=features_v1,
+        features_versions=features_v1,
         gold_version=gold_v1,
     )
 
     assert len(frame) == 1
     assert bool(frame.iloc[0]["breach"]) is True  # 3600s > 100s threshold
+
+
+def test_the_three_feature_tables_do_not_share_a_delta_version(
+    spark: SparkSession, tmp_path: Path
+) -> None:
+    """The regression guard. One `features_version` across all three was safe
+    only while they happened to move together; Phase 7 Task 4's CHECK
+    constraints ended that -- 5, 6 and 4 constraint commits respectively.
+    """
+    silver_path = tmp_path / "silver"
+    features_path = tmp_path / "features"
+    spark.createDataFrame(
+        [
+            (
+                1,
+                5,
+                datetime(2025, 8, 13, 9, tzinfo=UTC),
+                "PullRequestEvent",
+                "opened",
+                "alice",
+                None,
+                False,
+                None,
+                datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+            )
+        ],
+        _SILVER_SCHEMA,
+    ).write.format("delta").save(str(silver_path / "clean"))
+
+    run_features(
+        spark, silver_path=str(silver_path), features_path=str(features_path), register=False
+    )
+
+    versions = _feature_versions(spark, features_path)
+    assert len(set(versions.values())) > 1, (
+        f"the three tables share a version ({versions}); if that is now true by design, "
+        "a single shared pin is still wrong -- it would be correct by coincidence again"
+    )

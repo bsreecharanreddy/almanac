@@ -45,13 +45,29 @@ def compute_repo_activity(events: DataFrame) -> DataFrame:
     bot_events = F.sum("_is_bot").over(window)
     prs_opened = F.sum("_is_pr_open").over(window)
 
-    return scoped.select(
+    per_event = scoped.select(
         "repo_id",
         F.col("created_at").alias("event_time"),
         events_total.alias("events_total_to_date"),
         bot_events.alias("bot_events_to_date"),
         prs_opened.alias("prs_opened_to_date"),
         (bot_events / events_total).alias("bot_share_to_date"),
+    )
+
+    # Two events for one repo at the same instant produce two rows -- a ROWS
+    # frame gives each its own position, so their running totals differ. Both
+    # carry `(repo_id, event_time)`, which is this table's Unity Catalog
+    # primary key and `as_of_join`'s lookup key, so one of them has to go and
+    # it cannot be an arbitrary one. The cumulative value *at* that instant is
+    # the one that counted every event at it. Measured 2026-09-07: 2 of 3997
+    # fixture rows, the defect Phase 7's contract work surfaced.
+    settled = Window.partitionBy("repo_id", "event_time").orderBy(
+        F.col("events_total_to_date").desc()
+    )
+    return (
+        per_event.withColumn("_rank", F.row_number().over(settled))
+        .where(F.col("_rank") == 1)
+        .drop("_rank")
     )
 
 

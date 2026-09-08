@@ -4,7 +4,6 @@ test in this repo. The live Databricks/UC path is exercised for real only
 during Phase 4's cloud verification step (this plan's own next task).
 """
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import mlflow
@@ -16,6 +15,7 @@ from almanac.features.runner import run_features
 from almanac.model.dataset import build_classification_frame
 from almanac.model.runner import main, run_training
 from almanac.model.train import ClassificationResult, TrainResult
+from tests.helpers import opened_at
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -47,14 +47,14 @@ def _write_silver_and_gold(spark: SparkSession, tmp_path: Path) -> tuple[Path, P
         (
             1,
             n,
-            datetime(2025, 8, 13, 9, tzinfo=UTC),
+            opened_at(n),
             "PullRequestEvent",
             "opened",
             "alice",
             None,
             False,
             None,
-            datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+            opened_at(n, minutes=5),
         )
         for n in range(1, 40)
     ]
@@ -135,14 +135,14 @@ def _write_silver_and_gold_for_classification(
         (
             1,
             n,
-            datetime(2025, 8, 13, 9, tzinfo=UTC),
+            opened_at(n),
             "PullRequestEvent",
             "opened",
             "alice",
             None,
             False,
             None,
-            datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+            opened_at(n, minutes=5),
         )
         for n in range(1, 40)
     ]

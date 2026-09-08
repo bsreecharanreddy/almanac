@@ -2,7 +2,7 @@
 
 import json
 import math
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,6 +31,23 @@ def epoch_of(df: DataFrame, column: str) -> int:
     always passes on a UTC CI runner). An epoch carries no ambiguity.
     """
     return int(one(df.selectExpr(f"unix_timestamp({column}) AS epoch"))["epoch"])
+
+
+# 2025-08-04 is a Monday, so PRs spread from here land in whole weeks.
+_FIRST_MONDAY = datetime(2025, 8, 4, 9, tzinfo=UTC)
+
+
+def opened_at(pr_number: int, *, minutes: int = 0, weeks: int = 4) -> datetime:
+    """When PR `pr_number` opened, spread over `weeks` calendar weeks.
+
+    `temporal_split` refuses a frame inside a single week, so a fixture
+    whose PRs all open at one instant cannot be trained on at all. The week
+    is `pr_number % weeks` rather than monotonic on purpose: these fixtures
+    derive the label from `pr_number`, and a monotonic spread would put one
+    class wholly on one side of the split, leaving `roc_auc_score` nothing
+    to score.
+    """
+    return _FIRST_MONDAY + timedelta(weeks=pr_number % weeks, days=pr_number % 7, minutes=minutes)
 
 
 def build_bronze(
@@ -109,10 +126,19 @@ def land_poll(landing: Path, events: list[dict[str, object]], *, polled_at: str,
     return path
 
 
-def run_streaming_query(query: "StreamingQuery", *, timeout: int = 60) -> None:
+def run_streaming_query(query: "StreamingQuery", *, timeout: int = 180) -> None:
     """``awaitTermination`` bounded, failing loudly rather than hanging the suite
     if a streaming test's query never stops on its own (e.g. ``availableNow``
-    finding nothing to do is instant; a genuine hang is a real bug to see)."""
+    finding nothing to do is instant; a genuine hang is a real bug to see).
+
+    180s, not the 60s this started at. Coverage instrumentation costs ~2.4x on
+    this suite (46:19 against a 19:32 baseline, measured 2026-09-07 on a quiet
+    machine), so under `make coverage` a 60s budget bought about 25s of real
+    work -- and four streaming tests failed on the budget alone, all four
+    passing serially in 85s total. This is a guard against a hang, which is
+    unbounded; it is not an assertion about latency, so widening it gives up
+    nothing a test here was ever meant to catch.
+    """
     finished = query.awaitTermination(timeout)
     if not finished:
         query.stop()

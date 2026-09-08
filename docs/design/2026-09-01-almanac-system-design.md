@@ -89,7 +89,7 @@ data.gharchive.org (hourly .json.gz) ─────┘        │  missing-file
       └───────────┬───────────────┘                  ▼
                   ▼                   ┌──────────────────────────────────┐
             ┌───────────┐             │ ML LIFECYCLE                     │
-            │ Power BI  │             │ training → MLflow registry →     │
+            │  AI/BI    │             │ training → MLflow registry →     │
             │ (3 pages) │             │ serving endpoint → drift +       │
             └───────────┘             │ training/serving skew monitoring │
                                       └──────────────────────────────────┘
@@ -687,6 +687,200 @@ three as unmeasured):
   it. Task 9 confirms this one the same way. Bounded estimate: **~$6/day
   at 1 DBU/hour, ~$25/day if it behaves like Vector Search at 4.**
 
+  > **Settled 2026-09-07, and the premise above was wrong.** Measured:
+  > **0.852 DBU/hour → $12.06/day** on
+  > `PREMIUM_DATABASE_SERVERLESS_COMPUTE_US_CENTRAL` at $0.59/DBU-hour,
+  > flat across `n = 14` consecutive 10-minute billing buckets. The rate
+  > was in `list_prices` **all along** — priced since 2025-06-11 — and so
+  > was Phase 5's; both "gaps" were the same search mistake, looking for
+  > product names in a namespace that holds meter names. The `n=2`
+  > pattern claimed above was therefore one error counted twice. Full
+  > correction: `docs/findings/2026-09-07-live-feed-era-and-watermark.md`.
+
+### 4.7 Phase 7 concretized — governance, reporting, and reproducibility (2026-09-07)
+
+Recorded before any code, same shape as §4.4a, §4.6 and §8.3a. Four of
+the six decisions below **supersede text written earlier in this doc**;
+each says which, because a phase that silently drifts from its own design
+doc is the drift §9's own correction note exists to prevent.
+
+**Reporting splits across two tools, because Power BI Desktop cannot run
+on the machine this is built on.** Verified 2026-09-07: Power BI Desktop
+is Windows-only, with no Mac version and none planned — Microsoft
+restated this as recently as September 2025. **This supersedes §7's
+"three Power BI pages" and §9's Phase 7 row.** Pages 1–2 (Review SLA
+Risk; Model & Platform Health) become Databricks AI/BI dashboards;
+page 3 (Developer Engagement) stays Power BI, authored in the browser
+Service.
+
+The split is not a workaround, it is the better arrangement on its
+merits. `databricks_dashboard` accepts a `file_path` to dashboard JSON,
+so pages 1–2 are **version-controlled in the repo and provisioned and
+destroyed by Terraform like every other resource here** — where a `.pbix`
+is a binary blob no CI can diff or check. Page 3 is import-mode over
+`agg_repo_daily`, which is the shape Power BI is genuinely for, and it
+keeps §7's non-negotiable limitations panel. The cost of the decision,
+stated plainly: two BI surfaces to maintain for one phase, in exchange
+for keeping the Power BI signal without letting it dictate the
+architecture.
+
+**Corrected 2026-09-07, before Task 9: page 3 becomes a third AI/BI
+dashboard, and Power BI leaves the build entirely.** The paragraph above
+is kept because its Desktop finding still holds and still forces pages
+1–2; what it got wrong is the sentence "page 3 stays Power BI, authored
+in the browser Service", which was never checked past Desktop's platform
+support. Two things were verified when the gap was found — page 3 carried
+an exit-gate row with no owning task in the plan:
+
+- **Publishing from the Databricks UI to Power BI requires a Power BI
+  Premium license** (Premium capacity, PPU, or Fabric capacity) plus XMLA
+  Read Write on the capacity. Microsoft Learn, *Publish to the Power BI
+  service from Azure Databricks*, updated 2026-08-20. That is a paid
+  product this project does not hold, on a credit expiring 2026-09-24.
+- The one free path — connecting manually from the Power BI service —
+  runs on a **free license restricted to My workspace**, which cannot
+  share and cannot publish anywhere else (Microsoft Learn, *Power BI free
+  user feature availability*). A portfolio report nobody can open is not
+  a portfolio report; a screenshot would have been its only artifact.
+  Sign-up is also unverifiable in advance here, since Power BI rejects
+  personal Microsoft accounts and this tenant's only Global Administrator
+  was one.
+
+So the "two BI surfaces" trade above was priced without its real cost.
+Page 3 ships as a third `databricks_dashboard`: version-controlled,
+Terraform-managed, destroyable with the rest, and carrying §7's
+non-negotiable limitations panel unchanged. **The Power BI signal is
+carried by the ADR that records this evaluation** (§4.7's Task 11
+candidate, *AI/BI over Power BI*) rather than by an unshareable report —
+and the project's own ordering rule points the same way: page 3 is
+explicitly §7's *analyst* page, and §1 puts the ML-platform story ahead
+of the analyst one whenever they compete.
+
+**Lineage is Unity Catalog's own, not OpenLineage. This supersedes §9's
+Phase 7 row**, and it is a decision made against measured state rather
+than a preference:
+
+- `system.access.column_lineage` is **already enabled and already
+  populated** — 18,102 rows spanning 2026-09-02 → 09-07, which is Phases
+  2 through 6 captured with **zero instrumentation work ever done**.
+- OpenLineage's value is a common language across heterogeneous
+  execution environments. Almanac has one. Instrumenting a Spark listener
+  to re-emit what UC already recorded would be ceremony bought at the
+  price of real machinery.
+- **The trap that shapes the task, measured before writing it:** of
+  Almanac's **4,778** column-lineage rows across **29** distinct sources,
+  **4,133 — 86.5% — carry only `source_path`, never
+  `source_table_full_name`**, because Bronze, Silver and the feature tier
+  are external Delta paths rather than registered tables. This is
+  documented behavior, not a defect. A lineage query written the obvious
+  way, filtering on table name, would return **13.5% of the graph and
+  report no error.**
+
+What UC cannot see is stated in the artifact rather than hidden by it:
+**local Spark runs are invisible** (which is the entire test suite), and
+the system tables keep a **rolling 1-year window** — Catalog Explorer and
+the lineage API retain indefinitely for lineage captured after
+2024-09-01. Accepting UC means accepting no vendor-neutral lineage
+export. That is the trade, and it is worth it here.
+
+**Contracts are extended, not rebuilt — §10's item is already largely
+met.** `dbt/models/gold/schema.yml` carries `contract: enforced: true` on
+both consumer models, and `tests/integration/test_gold_contracts.py`
+proves the build fails on a breach. Recorded here specifically so Phase 7
+does not re-derive work Phase 2 already shipped: the remaining gap is the
+surfaces carrying **no** contract (the feature tier, streaming Silver)
+plus §10's *Documentation* item, a published contract + SLA, which does
+not exist in any form.
+
+**Those surfaces are PySpark writing Delta by path, so the mechanism is
+Delta's own CHECK constraints plus a shape check before the write — not a
+second dbt-shaped thing.** Settled 2026-09-07 by measurement
+(`docs/findings/2026-09-07-delta-contract-enforcement.md`), and the split
+is not arbitrary. Delta already rejects a *widened* type on overwrite, so
+that half needs nothing; it **accepts an overwrite missing a column**, keeps
+the column in the schema and nulls every row, which is the one failure a
+downstream reader cannot distinguish from real absent data — so the shape is
+checked in `contracts.enforce` before anything lands. Row-local invariants
+go on the table itself as CHECK constraints applied *by path*, which needs
+no metastore and therefore runs identically local and on Databricks, unlike
+the UC primary key and CDF statements gated behind `--register`. That also
+closes a gap §4.6 recorded and left open: open-source Delta refuses
+`ALTER COLUMN ... SET NOT NULL` on a populated table, so nothing outside
+Databricks enforced non-null keys — but it accepts `CHECK (key IS NOT NULL)`,
+which does. Uniqueness stays a test assertion, since it is not row-local and
+no constraint can express it.
+
+**The first thing the contract did was find a defect, which is the
+argument for it.** `repo_activity` had two rows under one
+`(repo_id, event_time)` — its declared Unity Catalog primary key — on 2 of
+3,997 fixture rows, because two events for one repo at the same instant get
+different running totals from a ROWS frame. `as_of_join` reads that key and
+the online store serves the latest row per key, so both were choosing
+between two rows arbitrarily. Fixed by keeping the row whose totals include
+every event at that instant, which is what "to date" means.
+
+**The cloud window is narrow, and re-provisioning is itself the
+deliverable.** Only the SQL warehouse comes up, only long enough to prove
+the dashboards against real Gold, then down. **This supersedes §9's
+"second bounded paid window for the final live demo"** for this phase:
+the full-stack demo moves to Phase 8. What Phase 7 ships instead is a
+documented one-command up/down path, proven by actually being used for
+this window rather than asserted — which is what makes Phase 8's demo
+cheap enough to run more than once.
+
+**Inference capture must be enabled now. Deferring it does not delay a
+panel; it destroys the data.** Measured 2026-09-07:
+`almanac-pr-review-sla-risk` is **`READY`**, `scale_to_zero = true`,
+serving `almanac_dbx.models.pr_review_sla_risk` v1 — **it was never torn
+down**, and it drew **zero inference DBUs on 09-07**, confirming Phase
+4's scale-to-zero finding a second time. But `auto_capture_config` is
+`null`, so not one request has ever been logged, and the only traffic
+that can ever be captured is traffic occurring **after** capture is
+switched on.
+
+**The mechanism is `ai_gateway.inference_table_config`, not
+`auto_capture_config`** — corrected during Task 1, before anything was
+applied. The Databricks Terraform provider still documents
+`auto_capture_config` **with no deprecation marker**, but the product
+documentation for that mechanism is formally retired ("no longer
+supported") and directs to AI Gateway. The provider trails the product,
+so the **provider's silence is not evidence** — the same shape as Phase
+5's finding that the PyPI rename ran ahead of the CLI surface, in the
+opposite direction. This is the second time a gate-2 check has caught a
+load-bearing API as superseded before design hardened around it.
+
+That correction also **replaced the one-way constraint recorded here.**
+The rules first written down — payload logging cannot be re-enabled once
+disabled, and catalog/schema/prefix cannot change after setup — belong to
+the **legacy** mechanism. The real constraint runs the other way: once AI
+Gateway inference tables are enabled, **the endpoint cannot switch back
+to legacy tables**. Enabling on an existing endpoint that has no
+inference table configured is explicitly supported, which is exactly this
+endpoint's case. Less irreversible than first stated, and the corrected
+version is the one that governs.
+
+What is genuinely irreversible is the data: **the log begins at the
+moment capture is switched on and no earlier**, which is the whole reason
+this is Task 1.
+
+The table lands in its **own schema**, not alongside the registered
+model. Databricks also creates an internal
+`<payload table ID>_checkpoints` volume beside it, and deleting that
+volume corrupts the table; mixing that machinery into the schema holding
+the champion model makes both harder to grant on and to reason about.
+The schema carries `force_destroy = false` for the same reason the model
+registry schema does, and it binds harder here: a prediction log is the
+one artifact in this project that **cannot be re-derived at any price**,
+because re-provisioning replays no history.
+
+**Phase 6 has no console evidence and cannot acquire any in this phase.**
+Its stack was destroyed at Task 9's close. `2026-09-06-console-evidence.md`
+covers Phases 2, 4 and 5 only. Named here so the gap reads as a
+consequence of a recorded teardown decision rather than an oversight, and
+so Phase 8's full-stack window is understood as the only remaining
+opportunity — against a *fresh* instance, not the one that produced the
+measurements.
+
 ## 5. The model
 
 **Primary: PR review-SLA risk.** Given an open PR, predict whether it
@@ -964,7 +1158,7 @@ reasoning about it.
   threshold`. Same §3.1 boundary reasoning §5.2 already used for the
   continuous label: a label is supervision about the outcome, not a
   point-in-time feature, and Gold's contract (the continuous truth,
-  useful to other consumers such as the Power BI reporting layer) stays
+  useful to other consumers such as the reporting layer) stays
   unchanged — no dbt model touched, no re-run of the Gold job.
 - **The threshold is reused, not recomputed**: **1,487 s (p75, ≈25
   min)**, the value Task 9 already measured over the *narrower*
@@ -1055,6 +1249,11 @@ the LLM.
 
 ## 7. Reporting — three Power BI pages
 
+> **Superseded on the tool, not the content (§4.7, 2026-09-07).** All three
+> pages ship as Databricks AI/BI dashboards; Power BI is out. The page
+> definitions below — including the non-negotiable limitations panel — stand
+> unchanged. §4.7 carries the two licensing findings that forced it.
+
 Cut from the guide's four. "Repository Deep Dive" is dropped as the least
 differentiated page per hour spent.
 
@@ -1102,7 +1301,7 @@ measured and reported.
 | IaC | Terraform | Apply/destroy cycles are a cost control, not a demo |
 | CI/CD | GitHub Actions | Contracts and DQ enforced as build failures |
 | Language | Python 3.12+, `uv`, `ruff`, `mypy --strict`, `pytest` | Current-generation tooling only |
-| BI | Power BI | 3 pages, import mode |
+| BI | ~~Power BI~~ → **Databricks AI/BI (§4.7, 2026-09-07)** | 3 pages, defined as committed JSON. Power BI Desktop is Windows-only, and both cloud paths are Premium-gated or unshareable |
 | Local dev | Single Docker container, `pyspark` + `delta-spark`, `local[*]` | **Not** a Spark master/worker Compose cluster — slower at this volume and teaches nothing |
 
 ### 8.1 Serving topology
@@ -1473,7 +1672,7 @@ turning Sep 24 from a cliff into a planning input.
 | **4 — Model + MLflow** | Oct 5–18 | Measured baseline first, then the SLA-risk model. MLflow tracking + registry. Batch scoring, then a serving endpoint. Drift and training/serving skew monitoring. **Live serving window on bounded paid spend (§8.1)**, measuring cold start. | Model beats baseline by a measured margin, or the null result is documented |
 | **5 — Embeddings + vector index** | Oct 19 – Nov 1 | Incremental embedding pipeline, ANN index, similarity features, measured downstream lift. **Index choice decided by §8.3's rule, on measured vector count.** | Measured lift, or an honest documented null result |
 | **6 — Streaming** | ~~Nov 2–8~~ → **pulled forward to before Sep 24 (§4.6, 2026-09-06)** | Live Events API ingest, watermarks, late-arrival and exactly-once handling, online feature freshness. **Scope confirmed to include the online store**, deferred since §4.4a. | Live events land and update online features |
-| **7 — Governance, BI, docs** | Nov 9–22 | OpenLineage, contracts enforced in CI, 3 Power BI pages, ADRs, limitations, decision memo, postmortem. Second bounded paid window for the final live demo. | A stranger clones and runs locally in <15 min |
+| **7 — Governance, BI, docs** | Nov 9–22 | OpenLineage, contracts enforced in CI, ~~3 Power BI pages~~ → **3 AI/BI dashboards (§4.7)**, ADRs, limitations, decision memo, postmortem. Second bounded paid window for the final live demo. | A stranger clones and runs locally in <15 min |
 | **8 — Ship** | Nov 23 | Tag `v1.0`. Stop. | — |
 
 **Only Phases 1 and 2 are deadline-bound.** Everything from Phase 3 on is
@@ -1488,6 +1687,15 @@ flight.
 ---
 
 ## 10. Goals — what "done" means
+
+> **Reconciled against reality 2026-09-08 (Phase 7 Task 14):
+> [`docs/goal-reconciliation.md`](../goal-reconciliation.md)** — every
+> item marked done / partly done / not done, with the evidence or the
+> absence of it. **20 done, 9 partly, 3 not done, 1 not assessable.**
+> The boxes below are left unticked on purpose: this section is the goal
+> as written on 2026-09-01, and the reconciliation is the single place
+> that records status. Ticking here as well would be two records of one
+> fact, which this repo has now watched go stale three times.
 
 ### Technical
 - [ ] Tier 3 (unsampled month of 2025) and Tier 2 (2014 month) ingested, both schema eras through the same framework
@@ -1545,7 +1753,7 @@ an open choice with a defensible alternative.
 | Free credits fund the data-platform proof; ML serving paid for later | Split evenly, or save credits for serving | Spark backfill at volume is the expensive operation; training and serving are cheap |
 | **Credit expiry is a budget, not a wall** (2026-09-06) | Scope phases down to fit the remaining balance | Broadens the row above. Modest real spend after 2026-09-24 is acceptable *provided* it is spent judiciously and **resources are torn down when not in use** — the point of provisioning is to learn, build and document, not to keep anything online. Future demos bring infrastructure up on demand. Scoping a phase down to fit a balance would have traded architecture quality for a constraint that was never real |
 | **Teardown ships with provisioning** (2026-09-06) | Tear down as a follow-up task | Two incidents: Vector Search billed a flat 4 DBU/hour idle because nothing scaled to zero, and Lakebase documents the same property up front. A delete path written after the fact is written under time pressure, or not at all |
-| 3 Power BI pages | 4+ pages | Beyond three, page count stops carrying signal and starts costing hours |
+| 3 report pages (~~Power BI~~ → AI/BI, §4.7 2026-09-07) | 4+ pages | Beyond three, page count stops carrying signal and starts costing hours. The *count* was the decision and it held; only the tool changed |
 | dbt included, scoped to Gold only | No dbt, or dbt through Silver | Market-demanded and cheap at Gold; rewriting Silver in dbt would discard the Spark work that is the point |
 | Streaming built in Phase 6 | Deferred to a future project | Most-probed interview topic, and a deferred project may never happen |
 | Data contract enforced as a CI test | Contract as a markdown document | A contract nothing enforces is a wish |
@@ -1643,9 +1851,23 @@ Each of these is a real property of GH Archive, each goes in
     `docs/findings/2026-09-01-third-schema-era.md`. Between **2025-10-08
     and 2025-10-15** `payload.pull_request` was cut from **48 fields to
     5**, losing `merged`, `user`, `draft`, `created_at`, `title`, `body`,
-    and every size field. Volume fell alongside it — one 2026 hour holds
-    54,232 events against 227,376 in 2025 (−76%), PR events −97%, review
-    events −96%. Documented nowhere upstream. Consequences: `SchemaEra`
+    and every size field. **What collapsed is pull-request activity
+    specifically: roughly 25–50× fewer PR events and ~30–40× fewer opened
+    PRs** (≈130–265/hr against 6,618/hr), with review events falling
+    comparably. **Total firehose volume is essentially unchanged** —
+    ~155–162K events/hour in 2026 against 167K in 2025; push and create
+    events continue at normal rates.
+    *(**Corrected 2026-09-08.** This item previously read "Volume fell
+    alongside it — one 2026 hour holds 54,232 events against 227,376 in
+    2025 (−76%)". That claim was generalised from a single hour and was
+    corrected in the finding on **2026-09-01**, the day it was written;
+    this copy was never updated, so the authoritative traps list carried
+    a retracted number for a week. Two of the six sampled hours — 54,232
+    and 3,511 events — are truncated captures, i.e. a live instance of
+    trap 5 above. The stale copy was found while writing
+    `docs/limitations.md`, which exists to state §12 plainly and could
+    not do so while §12 and its own source disagreed.)*
+    Documented nowhere upstream. Consequences: `SchemaEra`
     has a third member `REDUCED_V3`; Bronze and Silver ingest all three
     eras; facts are built event-natively so the primary label survives
     (§4.3a); and the fidelity the firehose no longer carries comes from

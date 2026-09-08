@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pyspark.sql import DataFrame, SparkSession
 
 from almanac.cli import run_cli
+from almanac.contracts import Contract, apply_constraints, enforce
 from almanac.features.groups import (
     compute_author_activity,
     compute_pr_static,
@@ -20,6 +21,7 @@ from almanac.features.groups import (
 )
 from almanac.features.registration import (
     change_data_feed_sql,
+    key_columns,
     not_null_key_sql,
     primary_key_sql,
     register_feature_table,
@@ -29,16 +31,86 @@ from almanac.spark import active_or_local_session
 
 @dataclass(frozen=True)
 class FeatureTableSpec:
+    """A feature table's whole definition: how to build it, and what it promises."""
+
     name: str
     compute: Callable[[DataFrame], DataFrame]
     entity_cols: list[str]
     event_time_col: str | None
+    columns: dict[str, str]
+    checks: dict[str, str]
+
+    @property
+    def contract(self) -> Contract:
+        """The key comes from `entity_cols`/`event_time_col`, so it cannot disagree
+        with the UC primary key `registration` builds from the same two fields."""
+        return Contract(
+            surface=self.name,
+            columns=self.columns,
+            keys=tuple(key_columns(self.entity_cols, self.event_time_col)),
+            checks=self.checks,
+        )
 
 
 FEATURE_TABLES: list[FeatureTableSpec] = [
-    FeatureTableSpec("author_activity", compute_author_activity, ["author_login"], "event_time"),
-    FeatureTableSpec("repo_activity", compute_repo_activity, ["repo_id"], "event_time"),
-    FeatureTableSpec("pr_static", compute_pr_static, ["repo_id", "pr_number"], None),
+    FeatureTableSpec(
+        "author_activity",
+        compute_author_activity,
+        ["author_login"],
+        "event_time",
+        columns={
+            "author_login": "string",
+            "event_time": "timestamp",
+            "prior_pr_count": "bigint",
+            "prior_merge_rate": "double",
+        },
+        checks={
+            "prior_pr_count_nonneg": "prior_pr_count >= 0",
+            # A null rate means "no prior PRs to judge by", never a lost value --
+            # the unknown-vs-zero distinction compute_author_activity is built on.
+            "rate_known_iff_prior_prs": "(prior_pr_count = 0) = (prior_merge_rate IS NULL)",
+            "rate_is_a_rate": "prior_merge_rate IS NULL OR prior_merge_rate BETWEEN 0 AND 1",
+        },
+    ),
+    FeatureTableSpec(
+        "repo_activity",
+        compute_repo_activity,
+        ["repo_id"],
+        "event_time",
+        columns={
+            "repo_id": "bigint",
+            "event_time": "timestamp",
+            "events_total_to_date": "bigint",
+            "bot_events_to_date": "bigint",
+            "prs_opened_to_date": "bigint",
+            "bot_share_to_date": "double",
+        },
+        checks={
+            # Inclusive of the event on its own row, so never zero.
+            "events_total_positive": "events_total_to_date > 0",
+            "bot_events_within_total": "bot_events_to_date BETWEEN 0 AND events_total_to_date",
+            "prs_opened_within_total": "prs_opened_to_date BETWEEN 0 AND events_total_to_date",
+            "bot_share_is_a_share": "bot_share_to_date BETWEEN 0 AND 1",
+        },
+    ),
+    FeatureTableSpec(
+        "pr_static",
+        compute_pr_static,
+        ["repo_id", "pr_number"],
+        None,
+        columns={
+            "repo_id": "bigint",
+            "pr_number": "bigint",
+            "is_draft": "boolean",
+            "is_bot_author": "boolean",
+            "opened_day_of_week": "int",
+            "opened_hour": "int",
+        },
+        checks={
+            "day_of_week_in_range": "opened_day_of_week BETWEEN 1 AND 7",
+            "hour_in_range": "opened_hour BETWEEN 0 AND 23",
+        },
+    ),
 ]
 
 
@@ -57,9 +129,17 @@ def write_and_register(
     different features from a different source but needs this exact sequence
     -- one statement of what "a registered feature table" means, rather than
     two that drift.
+
+    The contract is enforced on both sides of the write and outside the
+    ``register`` branch, unlike the UC constraints below: the shape is checked
+    before anything lands, and the CHECK constraints go on by path, which the
+    local metastore supports and every run therefore exercises.
     """
     path = f"{features_path}/{spec.name}"
-    spec.compute(events).write.format("delta").mode("overwrite").save(path)
+    frame = spec.compute(events)
+    enforce(frame, spec.contract)
+    frame.write.format("delta").mode("overwrite").save(path)
+    apply_constraints(spark, path, spec.contract)
     if register:
         register_feature_table(spark, table=spec.name, path=path, schema=schema)
         # Online-publish prerequisites, in dependency order: NOT NULL keys
