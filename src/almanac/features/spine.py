@@ -14,7 +14,14 @@ from pyspark.sql.window import Window
 # Ordered so the earliest event wins, then deterministically among ties.
 # Byte-for-byte reproducibility is the governing invariant, so the winner of
 # a `created_at` tie cannot be left to Spark's row order.
-_EARLIEST_FIRST: tuple[str, ...] = ("created_at", "actor_login", "pr_draft")
+#
+# Only the first two are part of the spine's own contract. `pr_draft` sharpens
+# the tiebreak for `compute_pr_static`, which selects it -- but callers pass
+# narrower frames (`similarity_runner` hands over five columns), so it is used
+# only when present rather than required. Requiring it broke three tests on
+# 2026-09-08 with UNRESOLVED_COLUMN.
+_REQUIRED_ORDER: tuple[str, ...] = ("created_at", "actor_login")
+_OPTIONAL_ORDER: tuple[str, ...] = ("pr_draft",)
 
 
 def opened_predicate() -> Column:
@@ -22,6 +29,12 @@ def opened_predicate() -> Column:
     which does not exist yet at import time.
     """
     return (F.col("event_type") == "PullRequestEvent") & (F.col("event_action") == "opened")
+
+
+def _order_columns(events: DataFrame) -> tuple[str, ...]:
+    """The tiebreak columns this frame actually carries."""
+    present = tuple(c for c in _OPTIONAL_ORDER if c in events.columns)
+    return _REQUIRED_ORDER + present
 
 
 def earliest_opened_events(events: DataFrame) -> DataFrame:
@@ -41,7 +54,7 @@ def earliest_opened_events(events: DataFrame) -> DataFrame:
         "_rank",
         F.row_number().over(
             Window.partitionBy("repo_id", "pr_number").orderBy(
-                *(F.col(c).asc_nulls_last() for c in _EARLIEST_FIRST)
+                *(F.col(c).asc_nulls_last() for c in _order_columns(events))
             )
         ),
     )
