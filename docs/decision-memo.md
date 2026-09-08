@@ -125,8 +125,12 @@ remainder.
 
 - **Cost:** one job run, ≈$1 and ~15 minutes on the 5-VM shape, from
   Phase 4's measured runs.
-- **Change required:** `train_classifier` takes a split strategy; the
-  frame already carries `as_of_timestamp`.
+- **Change required: none — done.** `temporal_split` landed 2026-09-08
+  and `train_classifier` now uses it, mutation-tested three ways. Only
+  the paid re-run and re-registration remain.
+- **Still true as of this memo:** the registered champion `v1` was
+  trained through the *old* random split and has not been retrained, so
+  every number quoted above is still the random-split number.
 - **What it buys:** the deployment-honest number, and a direct
   measurement of how much the random split was worth.
 

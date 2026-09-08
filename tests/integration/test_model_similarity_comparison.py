@@ -8,7 +8,6 @@ test file's setup readable on its own rather than reaching across files
 for a helper only test_model_runner.py otherwise owns.
 """
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import mlflow
@@ -20,6 +19,7 @@ from almanac.model.similarity_comparison import (
     CHAMPION_AVERAGE_PRECISION,
     run_similarity_comparison,
 )
+from tests.helpers import opened_at
 
 pytestmark = [pytest.mark.spark, pytest.mark.integration]
 
@@ -48,14 +48,14 @@ def _write_fixtures(spark: SparkSession, tmp_path: Path) -> tuple[Path, Path, st
         (
             1,
             n,
-            datetime(2025, 8, 13, 9, tzinfo=UTC),
+            opened_at(n),
             "PullRequestEvent",
             "opened",
             "alice",
             None,
             False,
             None,
-            datetime(2025, 8, 13, 9, 5, tzinfo=UTC),
+            opened_at(n, minutes=5),
         )
         for n in range(1, 60)
     ]

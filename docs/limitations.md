@@ -179,14 +179,20 @@ and online serving — not about producing fresh labels.
 Open defects and gaps, each found and recorded rather than discovered by
 a reader.
 
-**The train/test split is random, not temporal — and this project's own
-design document calls that a leakage bug.** §4.5 states "Train/test must
-be split **temporally**; a random split is itself a leakage bug", and
-§5.1 adds that temporal splits must fall on whole-week boundaries because
-weekday and weekend review latency differ sharply. `train_classifier`
-uses `train_test_split(frame, test_size=0.3, random_state=42)`. Neither
-requirement is implemented, and the frame already carries
-`as_of_timestamp`, so the column needed to fix it is present.
+**The registered champion was trained on a random split, and the split
+code is fixed but the champion is not retrained.** §4.5 states
+"Train/test must be split **temporally**; a random split is itself a
+leakage bug", and §5.1 adds whole-week boundaries because weekday and
+weekend review latency differ sharply. `train_classifier` used
+`train_test_split(frame, test_size=0.3, random_state=42)` until
+2026-09-08.
+
+**The code is now correct**: `temporal_split` splits on a whole-week
+boundary, train strictly before and test at or after, mutation-tested
+three ways. **The champion is not.** `pr_review_sla_risk` v1 was
+registered on 2026-09-04 through the random split and has not been
+retrained, so every metric recorded for it — including the 0.612 PR-AUC —
+is still the random-split number.
 
 **Be precise about what this does and does not mean.** The *features* are
 point-in-time correct: `as_of_join` guarantees every row's features come
@@ -203,10 +209,10 @@ strongly autocorrelated over 92 days.
 of deployment performance, by an unmeasured margin.** The *relative*
 claim survives better than the absolute one, because the baseline was fit
 on the same split and enjoys the same advantage — "beats the baseline by
-2.15×" is far more robust than "achieves 0.612". Unfixed. The
-re-measurement costs ≈$1 and one job run, and it is the highest-value
-measurement remaining; `docs/decision-memo.md` treats it as the blocking
-item for any deployment decision.
+2.15×" is far more robust than "achieves 0.612". The re-run now costs
+only compute, ≈$1 and one job, since the code change is done; it remains
+the highest-value measurement outstanding and `docs/decision-memo.md`
+treats it as the blocking item for any deployment decision.
 
 **The served endpoint returns a class, not a probability.** `train.py`
 logs the champion with a signature inferred from `model.predict()`, so

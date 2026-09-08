@@ -17,7 +17,7 @@ stated, it is marked down rather than argued into place.
 | **`[~]`** | Partly done — the gap is stated, not glossed |
 | **`[ ]`** | Not done |
 
-**Score: 20 done, 9 partly, 3 not done, 1 not assessable.**
+**Score: 21 done, 9 partly, 2 not done, 1 not assessable** — one item moved from *not done* to *done* on 2026-09-08, because writing this reconciliation is what surfaced it.
 
 ---
 
@@ -41,9 +41,11 @@ ingestion half of this item is unmet.
 
 **`[~]` Tier 4's 3-month repo-sampled span built, with a temporal train/test split**
 The 3-month span was built and **unsampled**, which is better than the
-goal. **The temporal split was never implemented.**
-`train_test_split(random_state=42)` is a random split, which §4.5 itself
-calls "a leakage bug". See `docs/decision-memo.md`.
+goal. The temporal split was **missing when this reconciliation was first
+written** and was implemented the same day (`temporal_split`, whole-week
+boundaries, mutation-tested). Still `[~]` rather than `[x]` because **the
+registered champion has not been retrained through it** — the split code
+is correct, the model in the registry is not.
 
 **`[x]` Rerunning any single hour produces identical results — idempotency proven, not claimed**
 `replaceWhere` on partition columns for Bronze, `MERGE` for dimensions;
@@ -101,10 +103,14 @@ The full five-category `label_exclusion` taxonomy with counts —
 The baseline is itself per-segment; page 1 renders predicted vs observed
 by `is_bot_author`; §5.3 reports 32.16% vs 21.97%.
 
-**`[ ]` Temporal train/test split falls on whole-week boundaries**
-Not implemented. Not even partly — there is no temporal split at all, so
-the whole-week refinement never applied. §5.1 required it because
-weekday/weekend review latency differs sharply.
+**`[x]` Temporal train/test split falls on whole-week boundaries**
+**Implemented 2026-09-08**, after this reconciliation found it missing.
+`temporal_split` picks the whole-week boundary closest to the requested
+test size; train is strictly before it, test at or after. Mutation-tested
+three ways — random split instead of temporal, boundary on any day rather
+than Monday, and allowing an empty training side each turn tests red.
+*(Ticked for the code. The champion trained through it is Phase 8's
+first item; see the row above.)*
 
 **`[x]` Model beats a measured baseline, or the null result is documented**
 **Both happened, which is the strongest form of this item.** The
