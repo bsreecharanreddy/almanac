@@ -123,3 +123,16 @@ resource "databricks_schema" "serving_logs" {
   # can ever be captured is traffic that happened while capture was on.
   force_destroy = false
 }
+
+# Phase 7 Task 9a: the model-output surface. Separate from `models` (which holds
+# the registered model) and from the lake's feature *paths*, which stay external
+# -- this is the one feature-tier object a BI consumer queries by name.
+resource "databricks_schema" "features" {
+  catalog_name = var.model_registry_catalog
+  name         = var.predictions_schema
+  comment      = "Batch model output: pr_breach_predictions (Phase 7 Task 9a)."
+
+  # Re-derivable, unlike `models` and `serving_logs`: one scoring job run
+  # reproduces it exactly from a pinned model version and pinned inputs.
+  force_destroy = true
+}

@@ -36,6 +36,8 @@ resource "databricks_job" "score_quarter" {
     }
   }
 
+  depends_on = [databricks_schema.features]
+
   task {
     task_key        = "score"
     job_cluster_key = "score"
@@ -56,6 +58,9 @@ resource "databricks_job" "score_quarter" {
         # The same §5.3 constant the training job was given. Reused, never
         # recomputed here -- two places deriving one threshold is two thresholds.
         "--threshold-seconds", "1487",
+        # Registered, not just written: §7 page 1 queries this by name, and an
+        # unregistered path is invisible to a dashboard dataset.
+        "--register-as", "${var.model_registry_catalog}.${var.predictions_schema}.pr_breach_predictions",
       ]
     }
 

@@ -4,8 +4,8 @@
       "name": "ds_funnel",
       "displayName": "Bronze -> Silver -> Gold row funnel",
       "queryLines": [
-        "SELECT 'bronze' AS layer, count(*) AS rows_in_layer FROM almanac_dbx.bronze.events\n",
-        "UNION ALL SELECT 'silver', count(*) FROM almanac_dbx.silver.events_clean\n",
+        "SELECT 'bronze' AS layer, count(*) AS rows_in_layer FROM delta.`abfss://bronze@almanaclakekoctmh.dfs.core.windows.net/events`\n",
+        "UNION ALL SELECT 'silver', count(*) FROM almanac_dbx.silver.events\n",
         "UNION ALL SELECT 'silver_quarantine', count(*) FROM almanac_dbx.silver.events_quarantine\n",
         "UNION ALL SELECT 'gold_fact', count(*) FROM almanac_dbx.gold.fact_pull_request\n"
       ]
@@ -26,7 +26,7 @@
       "displayName": "Schema-version distribution (the 2015 break)",
       "queryLines": [
         "SELECT schema_era, date_trunc('MONTH', created_at) AS month, count(*) AS events\n",
-        "FROM almanac_dbx.silver.events_clean\n",
+        "FROM almanac_dbx.silver.events\n",
         "GROUP BY schema_era, month\n",
         "ORDER BY month\n"
       ]
