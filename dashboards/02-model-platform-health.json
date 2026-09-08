@@ -14,6 +14,9 @@
       "name": "ds_quarantine_by_rule",
       "displayName": "Quarantine rate by which rule fired",
       "queryLines": [
+        "SELECT 'ALL RULES (total quarantined)' AS rule, count(*) AS rows_failed\n",
+        "FROM almanac_dbx.silver.events_quarantine\n",
+        "UNION ALL\n",
         "SELECT rule, count(*) AS rows_failed\n",
         "FROM almanac_dbx.silver.events_quarantine\n",
         "LATERAL VIEW explode(_failed_rules) t AS rule\n",
@@ -80,256 +83,208 @@
             "name": "w1_header",
             "textbox_spec": "# Model & Platform Health\n\nThe observability page: where rows go, why they are dropped, what the schema break looks like, what runs cost, and how the served model behaves."
           },
-          "position": {
-            "x": 0,
-            "y": 0,
-            "width": 6,
-            "height": 2
-          }
+          "position": { "x": 0, "y": 0, "width": 6, "height": 2 }
         },
         {
           "widget": {
             "name": "w2_funnel",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_funnel",
                   "fields": [
-                    {
-                      "name": "layer",
-                      "expression": "`layer`"
-                    },
-                    {
-                      "name": "rows_in_layer",
-                      "expression": "`rows_in_layer`"
-                    }
+                    { "name": "layer", "expression": "`layer`" },
+                    { "name": "rows_in_layer", "expression": "`rows_in_layer`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "layer" },
+                  { "fieldName": "rows_in_layer" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 2,
-            "width": 3,
-            "height": 5
-          }
+          "position": { "x": 0, "y": 2, "width": 3, "height": 5 }
         },
         {
           "widget": {
             "name": "w3_quarantine",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_quarantine_by_rule",
                   "fields": [
-                    {
-                      "name": "rule",
-                      "expression": "`rule`"
-                    },
-                    {
-                      "name": "rows_failed",
-                      "expression": "`rows_failed`"
-                    }
+                    { "name": "rule", "expression": "`rule`" },
+                    { "name": "rows_failed", "expression": "`rows_failed`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "rule" },
+                  { "fieldName": "rows_failed" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 3,
-            "y": 2,
-            "width": 3,
-            "height": 5
-          }
+          "position": { "x": 3, "y": 2, "width": 3, "height": 5 }
         },
         {
           "widget": {
             "name": "w4_eras",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_schema_eras",
                   "fields": [
-                    {
-                      "name": "schema_era",
-                      "expression": "`schema_era`"
-                    },
-                    {
-                      "name": "month",
-                      "expression": "`month`"
-                    },
-                    {
-                      "name": "events",
-                      "expression": "`events`"
-                    }
+                    { "name": "schema_era", "expression": "`schema_era`" },
+                    { "name": "month", "expression": "`month`" },
+                    { "name": "events", "expression": "`events`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "schema_era" },
+                  { "fieldName": "month" },
+                  { "fieldName": "events" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 7,
-            "width": 6,
-            "height": 6
-          }
+          "position": { "x": 0, "y": 7, "width": 6, "height": 6 }
         },
         {
           "widget": {
             "name": "w5_runs",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_job_runs",
                   "fields": [
-                    {
-                      "name": "job_id",
-                      "expression": "`job_id`"
-                    },
-                    {
-                      "name": "run_id",
-                      "expression": "`run_id`"
-                    },
-                    {
-                      "name": "duration_seconds",
-                      "expression": "`duration_seconds`"
-                    },
-                    {
-                      "name": "result_state",
-                      "expression": "`result_state`"
-                    },
-                    {
-                      "name": "period_start_time",
-                      "expression": "`period_start_time`"
-                    }
+                    { "name": "job_id", "expression": "`job_id`" },
+                    { "name": "run_id", "expression": "`run_id`" },
+                    { "name": "duration_seconds", "expression": "`duration_seconds`" },
+                    { "name": "result_state", "expression": "`result_state`" },
+                    { "name": "period_start_time", "expression": "`period_start_time`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "job_id" },
+                  { "fieldName": "run_id" },
+                  { "fieldName": "duration_seconds" },
+                  { "fieldName": "result_state" },
+                  { "fieldName": "period_start_time" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 13,
-            "width": 6,
-            "height": 6
-          }
+          "position": { "x": 0, "y": 13, "width": 6, "height": 6 }
         },
         {
           "widget": {
             "name": "w6_predictions",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_prediction_volume",
                   "fields": [
-                    {
-                      "name": "hour",
-                      "expression": "`hour`"
-                    },
-                    {
-                      "name": "predictions",
-                      "expression": "`predictions`"
-                    },
-                    {
-                      "name": "mean_model_ms",
-                      "expression": "`mean_model_ms`"
-                    },
-                    {
-                      "name": "max_model_ms",
-                      "expression": "`max_model_ms`"
-                    },
-                    {
-                      "name": "non_200",
-                      "expression": "`non_200`"
-                    }
+                    { "name": "hour", "expression": "`hour`" },
+                    { "name": "predictions", "expression": "`predictions`" },
+                    { "name": "mean_model_ms", "expression": "`mean_model_ms`" },
+                    { "name": "max_model_ms", "expression": "`max_model_ms`" },
+                    { "name": "non_200", "expression": "`non_200`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "hour" },
+                  { "fieldName": "predictions" },
+                  { "fieldName": "mean_model_ms" },
+                  { "fieldName": "max_model_ms" },
+                  { "fieldName": "non_200" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 19,
-            "width": 3,
-            "height": 5
-          }
+          "position": { "x": 0, "y": 19, "width": 3, "height": 5 }
         },
         {
           "widget": {
             "name": "w7_score_dist",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_model_metrics",
                   "fields": [
-                    {
-                      "name": "breach_risk_bucket",
-                      "expression": "`breach_risk_bucket`"
-                    },
-                    {
-                      "name": "pull_requests",
-                      "expression": "`pull_requests`"
-                    }
+                    { "name": "breach_risk_bucket", "expression": "`breach_risk_bucket`" },
+                    { "name": "pull_requests", "expression": "`pull_requests`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "breach_risk_bucket" },
+                  { "fieldName": "pull_requests" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 3,
-            "y": 19,
-            "width": 3,
-            "height": 5
-          }
+          "position": { "x": 3, "y": 19, "width": 3, "height": 5 }
         },
         {
           "widget": {
             "name": "w8_unavailable",
             "textbox_spec": "## Two panels are deliberately absent\n\n**Feature freshness lag** and **training/serving skew** are not shown, and are not approximated. Both require Phase 6's online feature store, which was torn down at a measured idle rate of **$12.06/day** once its exit gate was demonstrated. The data to draw them does not exist and cannot be reconstructed without re-provisioning that stack, which is Phase 8's window.\n\nThey are marked rather than dropped for the same reason the Photon A/B withheld an indeterminate arm: an absent panel a reader cannot see is indistinguishable from a panel nobody thought of."
           },
-          "position": {
-            "x": 0,
-            "y": 24,
-            "width": 6,
-            "height": 4
-          }
+          "position": { "x": 0, "y": 24, "width": 6, "height": 4 }
         }
       ]
     }

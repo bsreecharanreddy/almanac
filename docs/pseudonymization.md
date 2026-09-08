@@ -63,11 +63,19 @@ documenting the removal of.
 
 Stated here rather than left implied, the same discipline `docs/lineage/` uses.
 
-1. **Image contents.** `docs/images/` holds ten screenshots and this check reads
-   only text. A console screenshot showing `Run as` or `Created by` is a real
-   leak and no regex will find it. Those are masked by hand —
+1. **Image contents.** `docs/images/` holds sixteen screenshots and this check
+   reads only text. A console screenshot showing `Run as` or `Created by` is a
+   real leak and no regex will find it. Those are masked by hand —
    `docs/findings/2026-09-06-console-evidence.md` already does — and that
    remains a manual review step at the moment a screenshot is added.
+
+   Phase 7 added a second requirement to that step: **the mask must be
+   looked at by a person after it is drawn.** The two run frames in
+   `2026-09-08-reporting-window-evidence.md` were masked by coordinates,
+   and the only automated confirmation available was that the covered
+   region had been non-uniform before and is uniform after. That proves
+   *something* was covered, never that the *right* thing was. A masked
+   screenshot is not done until someone has opened it.
 2. **A human login that looks like an ordinary word.** The check cannot
    distinguish a GitHub login from prose. It relies on the rule above being
    followed when artifacts are written, and catches only the machine-identity

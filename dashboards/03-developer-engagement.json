@@ -111,234 +111,184 @@
             "name": "w1_header",
             "textbox_spec": "# Developer Engagement\n\nActivity, retention, and how concentrated contribution is. Every panel aggregates over contributor identity and none of them lists it -- concentration is reported **by rank**, never by name (`docs/pseudonymization.md`)."
           },
-          "position": {
-            "x": 0,
-            "y": 0,
-            "width": 6,
-            "height": 2
-          }
+          "position": { "x": 0, "y": 0, "width": 6, "height": 2 }
         },
         {
           "widget": {
             "name": "w2_activation",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_activation",
                   "fields": [
-                    {
-                      "name": "activity_date",
-                      "expression": "`activity_date`"
-                    },
-                    {
-                      "name": "repos_active",
-                      "expression": "`repos_active`"
-                    },
-                    {
-                      "name": "prs_opened",
-                      "expression": "`prs_opened`"
-                    },
-                    {
-                      "name": "prs_closed",
-                      "expression": "`prs_closed`"
-                    },
-                    {
-                      "name": "issues_opened",
-                      "expression": "`issues_opened`"
-                    },
-                    {
-                      "name": "pushes",
-                      "expression": "`pushes`"
-                    }
+                    { "name": "activity_date", "expression": "`activity_date`" },
+                    { "name": "repos_active", "expression": "`repos_active`" },
+                    { "name": "prs_opened", "expression": "`prs_opened`" },
+                    { "name": "prs_closed", "expression": "`prs_closed`" },
+                    { "name": "issues_opened", "expression": "`issues_opened`" },
+                    { "name": "pushes", "expression": "`pushes`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "activity_date" },
+                  { "fieldName": "repos_active" },
+                  { "fieldName": "prs_opened" },
+                  { "fieldName": "prs_closed" },
+                  { "fieldName": "issues_opened" },
+                  { "fieldName": "pushes" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 2,
-            "width": 6,
-            "height": 6
-          }
+          "position": { "x": 0, "y": 2, "width": 6, "height": 6 }
         },
         {
           "widget": {
             "name": "w3_retention",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_retention",
                   "fields": [
-                    {
-                      "name": "cohort_week",
-                      "expression": "`cohort_week`"
-                    },
-                    {
-                      "name": "weeks_since_first",
-                      "expression": "`weeks_since_first`"
-                    },
-                    {
-                      "name": "repos_still_active",
-                      "expression": "`repos_still_active`"
-                    }
+                    { "name": "cohort_week", "expression": "`cohort_week`" },
+                    { "name": "weeks_since_first", "expression": "`weeks_since_first`" },
+                    { "name": "repos_still_active", "expression": "`repos_still_active`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "cohort_week" },
+                  { "fieldName": "weeks_since_first" },
+                  { "fieldName": "repos_still_active" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 8,
-            "width": 3,
-            "height": 6
-          }
+          "position": { "x": 0, "y": 8, "width": 3, "height": 6 }
         },
         {
           "widget": {
             "name": "w4_concentration",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_concentration",
                   "fields": [
-                    {
-                      "name": "contributor_rank",
-                      "expression": "`contributor_rank`"
-                    },
-                    {
-                      "name": "repos",
-                      "expression": "`repos`"
-                    },
-                    {
-                      "name": "mean_share_of_repo_prs",
-                      "expression": "`mean_share_of_repo_prs`"
-                    }
+                    { "name": "contributor_rank", "expression": "`contributor_rank`" },
+                    { "name": "repos", "expression": "`repos`" },
+                    { "name": "mean_share_of_repo_prs", "expression": "`mean_share_of_repo_prs`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "contributor_rank" },
+                  { "fieldName": "repos" },
+                  { "fieldName": "mean_share_of_repo_prs" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 3,
-            "y": 8,
-            "width": 3,
-            "height": 6
-          }
+          "position": { "x": 3, "y": 8, "width": 3, "height": 6 }
         },
         {
           "widget": {
             "name": "w5_bus_factor",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_bus_factor",
                   "fields": [
-                    {
-                      "name": "bus_factor",
-                      "expression": "`bus_factor`"
-                    },
-                    {
-                      "name": "repos",
-                      "expression": "`repos`"
-                    }
+                    { "name": "bus_factor", "expression": "`bus_factor`" },
+                    { "name": "repos", "expression": "`repos`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "bus_factor" },
+                  { "fieldName": "repos" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 0,
-            "y": 14,
-            "width": 3,
-            "height": 5
-          }
+          "position": { "x": 0, "y": 14, "width": 3, "height": 5 }
         },
         {
           "widget": {
             "name": "w6_time_to_merge",
             "queries": [
               {
-                "name": "main",
+                "name": "main_query",
                 "query": {
                   "datasetName": "ds_time_to_merge",
                   "fields": [
-                    {
-                      "name": "author_is_bot",
-                      "expression": "`author_is_bot`"
-                    },
-                    {
-                      "name": "merged_prs",
-                      "expression": "`merged_prs`"
-                    },
-                    {
-                      "name": "p50_hours",
-                      "expression": "`p50_hours`"
-                    },
-                    {
-                      "name": "p75_hours",
-                      "expression": "`p75_hours`"
-                    },
-                    {
-                      "name": "p90_hours",
-                      "expression": "`p90_hours`"
-                    },
-                    {
-                      "name": "p99_hours",
-                      "expression": "`p99_hours`"
-                    }
+                    { "name": "author_is_bot", "expression": "`author_is_bot`" },
+                    { "name": "merged_prs", "expression": "`merged_prs`" },
+                    { "name": "p50_hours", "expression": "`p50_hours`" },
+                    { "name": "p75_hours", "expression": "`p75_hours`" },
+                    { "name": "p90_hours", "expression": "`p90_hours`" },
+                    { "name": "p99_hours", "expression": "`p99_hours`" }
                   ],
                   "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 1,
-              "widgetType": "table"
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "author_is_bot" },
+                  { "fieldName": "merged_prs" },
+                  { "fieldName": "p50_hours" },
+                  { "fieldName": "p75_hours" },
+                  { "fieldName": "p90_hours" },
+                  { "fieldName": "p99_hours" }
+                ]
+              },
+              "data": { "queryName": "main_query" }
             }
           },
-          "position": {
-            "x": 3,
-            "y": 14,
-            "width": 3,
-            "height": 5
-          }
+          "position": { "x": 3, "y": 14, "width": 3, "height": 5 }
         },
         {
           "widget": {
             "name": "w7_limitations",
             "textbox_spec": "## Limitations -- read before drawing a conclusion\n\n**Stars are gross, not net.** GH Archive emits a `WatchEvent` on starring and nothing on unstarring, so `stars_gained` can only ever go up. It is not a net follower count.\n\n**Bots are excluded by default.** `author_is_bot` filters the concentration and bus-factor panels, because a bot opening 4,000 PRs is not a contributor. Measured 2026-09-04: bots breach the SLA *more* than humans (32.16% vs 21.97%), so including them moves every number here, not just the totals.\n\n**Commits are capped at 20 per push.** The events API truncates a push payload's commit list, so `commits_pushed` under-counts large pushes and `distinct_commits_pushed` is the safer of the two.\n\n**Time to merge is a percentile, never a mean.** The distribution is severely right-skewed -- measured p50 72s against a mean of 72,054s -- so a mean describes the tail rather than the typical PR.\n\n**This is a quarter, not all of history.** Q3 2025, 341,060,851 rows. Retention cohorts are therefore truncated at the window edge and the last cohorts look worse than they are."
           },
-          "position": {
-            "x": 0,
-            "y": 19,
-            "width": 6,
-            "height": 7
-          }
+          "position": { "x": 0, "y": 19, "width": 6, "height": 7 }
         }
       ]
     }

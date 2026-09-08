@@ -3,6 +3,12 @@
 
 # -n 4: four xdist workers, each with its own SparkSession. Tuned for a
 # local 8-core / 16 GB machine -- four Spark JVMs fit, eight would thrash.
+# "Fit" means on an otherwise idle machine: on 2026-09-08 a run with a
+# 15-minute load average of 35 gave 2 failures and 11 errors across
+# test_pipeline, test_silver_partitions and test_model_similarity_comparison,
+# every one of which passed serially, and the whole suite passed on a
+# re-run once load dropped. Treat a failure in those files as "check the
+# load" before "check the code".
 # CI keeps the plain serial `pytest` (2-core runner) in .github/workflows.
 # --durations=25: the suite is heavily back-loaded (the dbt/Gold Spark tests
 # all land last), so percent-complete predicts nothing and "it feels slow" was
