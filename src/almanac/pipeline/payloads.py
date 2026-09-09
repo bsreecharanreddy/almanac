@@ -119,6 +119,20 @@ def _repo_name() -> Column:
     )
 
 
+def _merged_from_action() -> Column:
+    """Whether a PR merged, from `action` alone -- the reduced era's only signal.
+
+    The October 2025 reduction dropped `pull_request.merged` and split closes
+    into `action='merged'` and `action='closed'` (measured 2026-09-08, n=5
+    hours; the 2025 hour carries only opened/closed/reopened). Every other
+    action stays NULL on purpose: an `opened` event says nothing about whether
+    the PR ever merged, and folding that to False would fabricate a negative
+    label for every open PR in the era.
+    """
+    action = F.col("e.payload.action")
+    return F.when(action == "merged", F.lit(True)).when(action == "closed", F.lit(False))
+
+
 def parse_events(df: DataFrame, *, json_column: str = "raw_json") -> DataFrame:
     """Bronze rows in, the raw Silver contract out; every other column survives.
 
@@ -147,7 +161,11 @@ def parse_events(df: DataFrame, *, json_column: str = "raw_json") -> DataFrame:
             F.col("e.payload.pull_request.number"),
             F.col("e.payload.issue.number"),
         ).alias("pr_number"),
-        F.col("e.payload.pull_request.merged").alias("pr_merged"),
+        # The field first: the rich era carries `merged` on a `closed` action,
+        # and deriving from the action there would read a real merge as False.
+        F.coalesce(F.col("e.payload.pull_request.merged"), _merged_from_action()).alias(
+            "pr_merged"
+        ),
         F.col("e.payload.pull_request.draft").alias("pr_draft"),
         F.col("e.payload.issue.pull_request").isNotNull().alias("issue_is_pr"),
         F.col("e.payload.size").alias("push_size"),
