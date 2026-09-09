@@ -59,13 +59,31 @@ a year later.**
 
 ## Current status
 
-**Phases 0–6 complete and merged to `main`** (Phase 6 via PR #13,
-`1cff101`). **Phase 7 (governance, reporting, reproducibility) is complete
-— 14 of 14 tasks plus an unplanned Task 15**, on branch
-`phase-7-governance`, unpushed. §9's exit gate is measured: **clone to a
+**Phases 0–7 complete and merged to `main`** (Phase 7 via PR #14,
+`62e006d`). **Phase 8 (ship) is in progress on `phase-8-ship`, unpushed** —
+Tasks 1–7 and 9 done, with the drift report, the `v1.0` tag and the
+public-flip checklist outstanding. §9's exit gate is measured: **clone to a
 green run in 4 m 28 s** against a 15-minute bar. §10 reconciles to **24
 done, 10 partly, 0 not done, 1 not assessable**
 (`docs/goal-reconciliation.md`).
+
+*(This block read "Phase 7 … on branch `phase-7-governance`, unpushed"
+through the whole of Phase 8 until 2026-09-08 — the **fifth** time a record
+in this repo was true when written and quietly stopped being true, after the
+README, this section's own earlier lapse, the §10 tally, and
+`streaming.tf`'s Task 9 comments. The positive check below is the only thing
+that catches these; "is it still accurate?" passes a stale file trivially.)*
+
+**Phase 8's paid window found four defects that a green 543-test suite could
+not**, all of them needing real data through the full stack: Gold silently
+dropped **every** reduced-era merge (`merged_true` 0 → 70,624); the serving
+endpoint was **live** on the retracted champion rather than merely pinned to
+it; a dashboard aged every PR against a horizon **340 days** wrong while
+rendering 200 healthy-looking rows; and the quarantine path fired for the
+**first time in 341M+ rows** (100 ForkEvents whose `repo` node the 2026
+archive ships as `{}`). Training/serving skew is measured at **100.00%
+agreement** across 3,459 keys, in a separate centralus stack because
+Lakebase is not offered in the main workspace's region.
 
 **Phase 7's most consequential output is a defect it found in Phase 4.**
 `train_classifier` split randomly where §4.5 requires temporally and calls
@@ -367,6 +385,22 @@ Currently present:
   narrative paragraphs or measured-number essays in code — that story
   lives in `docs/`. The Phase 0–1 modules were swept against it once in a
   dedicated pass (2026-09-02); it applies to new code from there on.
+
+- **`skills/almanac-paid-window`** — **incident-derived, and the incident is
+  a single night.** Written 2026-09-08 after a paid window in which: a
+  targeted apply hung **44 minutes** and was written up as a *vendor outage*
+  when `docs/STATUS.md` had said for two days that Lakebase is not offered in
+  that region; dashboard screenshots were about to be captured from a panel
+  that rendered **200 healthy-looking rows** against a horizon 340 days
+  wrong; and a teardown verified once reported two dashboards still `ACTIVE`
+  that a re-read showed were propagation lag. Five gates: read the record
+  before spending, pre-flight offline, capture perishable evidence **before**
+  teardown *and verify what you are about to capture*, verify teardown
+  independently **then again**, and do not kill a hung create blindly. The
+  mechanisable half is `almanac.infra.lakebase_window`, whose `check_region`
+  refuses an unsupported region before terraform is invoked — its message
+  names the *symptom*, because an unsupported region does not fail cleanly,
+  it hangs and looks exactly like an outage.
 
 Deliberately deferred until earned, with the trigger that would justify
 each:

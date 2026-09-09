@@ -31,6 +31,10 @@ deletes its own evidence is not a retraction.
   corrected first: the −97% PR-volume claim was not a small-sample error
   as initially written, but a **non-stationary** quantity re-quoted as
   current.
+- **The quarantine path fired for the first time in 341M+ rows** — 100
+  ForkEvents whose `repo` node the 2026 archive ships as an empty object.
+  Quarantined not dropped, `_failed_rules` analysable by rule, and the split
+  conserves: bronze−silver moved 62 → 162, being 62 dedup plus exactly 100.
 - Repository made public; branch protection set to `deletion` +
   `non_fast_forward` only.
 
@@ -98,8 +102,11 @@ deletes its own evidence is not a retraction.
 ## Phase 1 — Bronze and Silver
 
 - Config-driven runner, idempotent writes, quarantine by rule.
-- **Zero of 341M events were ever quarantined** — a result that reads as a
-  broken panel and is not.
+- **Zero of 341M Q3 2025 events were ever quarantined** — a result that reads
+  as a broken panel and is not. *(Phase 8 fired it for real: 100 ForkEvents
+  in the 2026 window, whose `repo` node the reduced era ships as `{}`. The
+  mechanism's first firing on real data, and the source's fault, not the
+  parser's.)*
 
 ## Phase 0 — exploration
 

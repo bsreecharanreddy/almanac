@@ -272,3 +272,64 @@ read the day after or reported as unmeasured.
   that makes the drift story, and by labels needing ~21h to resolve
   (p90 first response 76,533s). The recent window is **scored, not
   trained on**.
+
+---
+
+## Task 9 — One command for the Lakebase window, and the region guard that would have saved 44 minutes
+
+**Added 2026-09-08, after Task 7's window, at the user's request.** Not
+anticipatory: the trigger fired the same night, and CLAUDE.md's rule for
+`.claude/` tooling is that it gets written once a specific lesson has
+already cost something.
+
+**Why.** `almanac.infra.window` gives one guarded command up and down for
+the **westus3 reporting** window. The **centralus Lakebase** stack has a
+README and nothing else, so Task 7 hand-ran roughly ten steps — two-stage
+apply, deploy wheel/script/config, create the secret scope, run the job,
+capture evidence, targeted `force_destroy` apply, destroy, verify — with
+four traps that exist only because Phase 6 hit them. Prose that must be
+followed exactly, in order, with money running, is a script.
+
+**Not an LLM agent.** Infrastructure lifecycle needs determinism, and the
+failure mode of an agent doing teardown is one that *believes* it
+destroyed something. Every teardown check that mattered on 2026-09-08 was
+a hard assertion; the one soft judgement made that night — "this is a
+vendor outage" — was wrong.
+
+**Do.**
+
+1. **`check_region` first, because it is the incident.** A targeted apply
+   of `databricks_database_instance` from the westus3 module hung **44
+   minutes**: Lakebase names 19 supported regions and `westus3` is not
+   among them. The guard refuses *before* terraform is invoked, and its
+   message names the symptom — a hang plus "temporarily unavailable"
+   against a healthy control API reads exactly like an outage.
+2. **Two-stage `up`.** `terraform apply` cannot run cold here: the
+   `databricks` provider is configured from a workspace URL that does not
+   exist until the workspace does, so the data sources fail to resolve on
+   a first plan. Stage 1 is the Azure layer, stage 2 the rest.
+3. **Guarded `down`.** Reuse `window.py`'s existing pure checks rather
+   than restating them — `check_sync_plan` already generalises the
+   `force_destroy` trap, `check_destroy_plan` already refuses a destroy
+   that creates, and `survivors` already refuses to trust an exit code.
+   The destroy **count** is reported before it is applied.
+
+**Reuse, do not duplicate.** The guards are pure functions over
+`PlannedChange` and already take their targets as a parameter. A second
+copy of them is the same-fact-in-two-places failure this repo has now
+recorded four times.
+
+**Done when.** TDD, RED watched, mutation-tested. `check_region` refuses
+`westus3` and admits `centralus`, proven by test. The full suite green.
+
+**Also in this task.**
+
+- **`.claude/skills/almanac-paid-window`** — the judgement a guard cannot
+  carry: read `docs/STATUS.md` before provisioning (the 44 minutes),
+  capture perishable evidence *before* teardown (billing lags ~24h and the
+  workspace id is unrecoverable after), and verify teardown independently
+  **then re-verify**, since the first sweep on 2026-09-08 showed two
+  dashboards still `ACTIVE` that were propagation lag.
+- **Story-bank entry** for the night, in the gist. The runbook stays in
+  the repo: a procedure in the gist would be the same duplication the
+  guard rule above exists to prevent.
