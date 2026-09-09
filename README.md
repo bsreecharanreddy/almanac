@@ -75,14 +75,8 @@ real name.)*
 ---
 
 > **Status: Phases 0–7 complete and merged. Phase 8 (ship) in progress.**
-> The full medallion has run on a real quarter — **341,060,851 rows**, 92 of
-> 92 days, zero missing hours, for a measured **$11.96** — with a live
-> serving endpoint, three AI/BI dashboards, and every billable resource torn
-> down afterwards.
->
-> Phase by phase, led by what each one *found*:
-> **[`CHANGELOG.md`](CHANGELOG.md)**. Task granularity and the verification
-> log: **[`docs/STATUS.md`](docs/STATUS.md)**.
+> Phase by phase, each led by what it *found*: [`CHANGELOG.md`](CHANGELOG.md).
+> Task granularity and the verification log: [`docs/STATUS.md`](docs/STATUS.md).
 
 
 **No number in this README is quoted unless it was measured.** Where
