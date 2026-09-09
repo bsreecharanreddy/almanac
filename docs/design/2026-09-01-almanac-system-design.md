@@ -1771,6 +1771,25 @@ turning Sep 24 from a cliff into a planning input.
 | **7 — Governance, BI, docs** | Nov 9–22 | OpenLineage, contracts enforced in CI, ~~3 Power BI pages~~ → **3 AI/BI dashboards (§4.7)**, ADRs, limitations, decision memo, postmortem. Second bounded paid window for the final live demo. | A stranger clones and runs locally in <15 min |
 | **8 — Ship** | Nov 23 | Tag `v1.0`. Stop. | — |
 
+> **Amended 2026-09-09 — the project continues past Phase 8.** The row
+> above is left exactly as written, because it was correct and remains a
+> correct description of `v1.0`: that release is tagged, immutable, and
+> clonable with nothing agent-shaped in it. What changed is the project's
+> *scope*, not that release. **Phases 9 and 10 add an agent layer** —
+> a typed read-only tool surface over the existing feature platform, a
+> gateway, a bounded agent loop, and a grounding verifier that mechanically
+> enforces §5's *an LLM never produces a number that a decision depends on*,
+> which this repo has stated since day one and never enforced. Shipping as
+> **`v1.1.0`**: nothing in the existing interfaces breaks, so semver rather
+> than a major bump. Authority is
+> `docs/design/2026-09-09-almanac-agent-layer-design.md`.
+>
+> This note exists because the alternative was to build Phase 9 while this
+> table still said the project ended at Phase 8 — the **eighth** instance of
+> the stale-record failure `CLAUDE.md` keeps counting, and the first one
+> that would have been committed knowingly.
+
+
 **Only Phases 1 and 2 are deadline-bound.** Everything from Phase 3 on is
 schedule-flexible, because it runs on local compute or on cheap bounded
 paid windows. If anything slips, it must slip *there* — never into the
