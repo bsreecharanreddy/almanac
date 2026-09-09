@@ -28,6 +28,13 @@ PUBLISHED_GLOBS: tuple[str, ...] = (
     # unreachable because the surfaces above stop at docs and terraform.
     "src/**/*.py",
     "tests/**/*.py",
+    # The agent tooling is tracked, so it is published too, and it reads
+    # like a private notebook -- which is exactly why it needs scanning
+    # rather than trusting. Clean when added; the point is that the next
+    # thing written into it is checked.
+    ".claude/**/*.md",
+    ".claude/**/*.sh",
+    ".claude/**/*.json",
 )
 
 # Two characters is not an identity, it is a false-positive generator: a

@@ -59,20 +59,38 @@ a year later.**
 
 ## Current status
 
-**Phases 0–7 complete and merged to `main`** (Phase 7 via PR #14,
-`62e006d`). **Phase 8 (ship) is in progress on `phase-8-ship`, unpushed** —
-Tasks 1–7 and 9 done, with the drift report, the `v1.0` tag and the
-public-flip checklist outstanding. §9's exit gate is measured: **clone to a
-green run in 4 m 28 s** against a 15-minute bar. §10 reconciles to **24
-done, 10 partly, 0 not done, 1 not assessable**
-(`docs/goal-reconciliation.md`).
+**The project is complete and tagged `v1.0`.** Every phase is merged to
+`main`: Phase 7 via PR #14, Phase 8 via PR #16, and a pre-tag PII fix via
+PR #17. **The history was then rewritten** (`git filter-repo`, all 199
+commits, three identifier strings stripped), so every SHA written down
+before 2026-09-09 no longer resolves — including the ones in this file.
+§9's exit gate is measured: **clone to a green run in 4 m 28 s** on a cold
+`uv` cache against a 15-minute bar. §10 reconciles to **24 done, 10 partly,
+0 not done, 1 not assessable** (`docs/goal-reconciliation.md`).
 
-*(This block read "Phase 7 … on branch `phase-7-governance`, unpushed"
-through the whole of Phase 8 until 2026-09-08 — the **fifth** time a record
-in this repo was true when written and quietly stopped being true, after the
-README, this section's own earlier lapse, the §10 tally, and
-`streaming.tf`'s Task 9 comments. The positive check below is the only thing
-that catches these; "is it still accurate?" passes a stale file trivially.)*
+*(This block read "Phase 8 … unpushed" through the merge of Phase 8 itself,
+and `docs/STATUS.md`'s Current position read "Phases 0–6 are complete"
+through the whole of Phase 8 — the **sixth and seventh** times a record in
+this repo was true when written and quietly stopped being true, after the
+README, this section's own two earlier lapses, the §10 tally, and
+`streaming.tf`'s Task 9 comments. Seven instances is no longer a run of bad
+luck; it is the predictable behaviour of any hand-maintained status line,
+and the only thing that has ever caught one is the positive check below —
+"what changed today?", never "is it still accurate?", which a stale file
+passes trivially.)*
+
+**The last defect found was in the guard against defects of its own kind.**
+`pseudonymity.py` exists to fail the build when an actor identifier reaches
+a published artifact, and it carried a contributor's machine name in its
+own docstring. Its surfaces listed docs, dashboards, terraform and
+`.gitignore` but not `src/` or `tests/`, in a repo that had already gone
+public. **The check was not broken — every line of it worked, aimed at the
+wrong files.** A control with the wrong scope does not fail; it passes,
+cleanly and forever, and its green result reads as evidence of absence.
+The readiness checklist already carried the item that would have caught it
+("confirm it covers every surface that is about to become public"), and the
+repo went public with that box unticked: the gap was an unrun control, not
+a missing one.
 
 **Phase 8's paid window found four defects that a green 543-test suite could
 not**, all of them needing real data through the full stack: Gold silently
@@ -345,7 +363,14 @@ Currently present:
   from **two** regions (wrong; centralus and westus3 offer the SKU, and
   the error nearly triggered a serverless rewrite of design doc §8.1).
   Both were ~90 seconds of extra measurement from being caught, and both
-  were stated as conclusions before that measurement ran. Its gate 1
+  were stated as conclusions before that measurement ran. **A third landed
+  2026-09-09**: "all 375 commits authored by the GitHub noreply address"
+  was written into a STATUS row, a checklist, a PR body and the story bank.
+  The repo has **199** commits; 375 was the count of identity *fields*
+  (`%ae` plus `%ce`) across all refs. The conclusion was right and the
+  number counting it was not — gate 1 is *state what the `n` is actually
+  over*, and this was an `n` over the wrong unit entirely. Caught while
+  re-measuring before the history rewrite, and corrected in place. Its gate 1
   ("state the actual `n`, along the dimension you are generalizing over")
   is the part that addresses the failure; gates 2 and 3 codify the
   already-standing web-validation and where-it-gets-written rules rather

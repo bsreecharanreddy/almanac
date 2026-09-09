@@ -74,7 +74,7 @@ real name.)*
 
 ---
 
-> **Status: Phases 0–7 complete and merged. Phase 8 (ship) in progress.**
+> **Status: complete and tagged `v1.0`.** All nine phases merged.
 > Phase by phase, each led by what it *found*: [`CHANGELOG.md`](CHANGELOG.md).
 > Task granularity and the verification log: [`docs/STATUS.md`](docs/STATUS.md).
 
@@ -195,6 +195,26 @@ came out at **13.84 GB gz per billed cluster-hour**, which made the full
 Q3 2025 quarter affordable at 17.2% of the credit. The rule was written to
 bind in both directions; it bound upward, from one month to a quarter.
 
+## What it does not do
+
+Stated here rather than left for a reader to discover. The full list, with
+upgrade paths, is [`docs/limitations.md`](docs/limitations.md).
+
+- **Streaming stops at Silver.** The live path feeds the online feature
+  store, not Gold. Gold is filled from the archive, which is the complete
+  source; the streaming path exists to prove streaming semantics, not to
+  be the only writer.
+- **`is_draft` is unavailable in the reduced era**, so it is reported as
+  unknown rather than `False`. Recovering it needs a REST enrichment that
+  would read current state into a point-in-time feature — deferred for
+  leakage reasons, not effort.
+- **A recent window can be scored but not trained on.** The schema break
+  that makes the drift story also breaks the label, and labels need ~21 h
+  to resolve. The model is trained on Q3 2025 and scored forward.
+- **The live feed captures ~7% of real event volume** — a politeness
+  interval honoured deliberately, which is why the correctness proof for
+  exactly-once lives in a replay harness rather than in the feed.
+
 ## Stack
 
 | Layer | Choice |
@@ -232,11 +252,13 @@ docker/             containerized Spark + Delta, matching CI
 
 ```bash
 uv sync --all-extras --dev
-make check-fast   # ruff + mypy --strict + the 292 tests that need no SparkSession
+make check-fast   # ruff + mypy --strict + the 340 tests that need no SparkSession
 ```
 
 **Clone to a green run is 4 m 28 s, measured** on a fresh clone with a
 cold `uv` cache — 1 s to clone, 75 s to sync, 192 s for `check-fast`.
+Re-measured 2026-09-09 at **80 s** with the cache warm. Both are against a
+15-minute gate; the cold number is the one worth quoting.
 
 Then, when you want the whole thing:
 
