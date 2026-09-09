@@ -144,10 +144,25 @@ artifact, and a PSI over a dead column is noise dressed as a measurement.
 `is_draft` is the real case — populated on every rich-era PR, null on
 every reduced-era row — and its stated response is concrete: the champion
 reads that feature, so it cannot score the window at all; refuse to serve
-rather than re-baseline. **Skew: not built.** **Visible: no** — the two
-dashboard panels still ship *visibly marked unavailable*, because the
-dependency is Phase 6's online store, torn down at a measured $12.06/day
-idle. So the measurement exists and runs in CI; the surfacing does not.
+rather than re-baseline.
+
+**Skew: measured** (2026-09-08) — **100.00% exact agreement**, 1,916 repo
+keys and 1,543 actor keys, on all four feature columns, with the offline
+side read over SQL and the served side over a **direct Postgres
+connection** rather than through the client that wrote it. The finding
+carries its own caveat: this design publishes the same table the offline
+side reads, so agreement is *likely* — it proves the publish path faithful,
+not a re-implemented serving path.
+
+**Visible: still no**, and now for a stated reason rather than an absent
+one. The two panels remain *marked unavailable* because an online store
+bills purely for existing, and this one had to live in a **separate
+centralus stack** — Lakebase is not offered in the main workspace's region.
+The panel text now carries the measured number and points at the finding,
+which is the honest form of an absent panel: not "we could not", but "we
+did, here is the figure, and here is why it is not plotted here."
+
+Still `[~]` rather than `[x]`: the surfacing genuinely does not exist.
 
 **`[x]` Streaming path handles late arrival and duplicates correctly**
 **After a real defect and its fix.** The original watermark silently

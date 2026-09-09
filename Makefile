@@ -1,5 +1,5 @@
 .PHONY: test test-fast test-all lint fmt typecheck check check-fast fixtures dbt \
-	silver-fixture lineage window-up window-down coverage
+	silver-fixture lineage window-up window-down lakebase-up lakebase-down coverage
 
 # -n 4: four xdist workers, each with its own SparkSession. Tuned for a
 # local 8-core / 16 GB machine -- four Spark JVMs fit, eight would thrash.
@@ -90,6 +90,22 @@ window-up:
 
 window-down:
 	uv run python -m almanac.infra.window down --apply
+
+# The Lakebase stack, which is a *second* root module in centralus because
+# Lakebase is not offered in westus3 and a project inherits its workspace's
+# region. `lakebase-up` refuses an unsupported region before terraform is
+# invoked at all -- targeting the westus3 instance instead cost 44 minutes on
+# 2026-09-08, because an unsupported region does not fail, it hangs.
+#
+# Between the two stages `lakebase-up` runs, the wheel, scripts and config
+# must be deployed into the NEW workspace and the token put in its secret
+# scope: secret scopes are per-workspace and nothing carries over.
+# See infra/terraform-lakebase/README.md.
+lakebase-up:
+	uv run python -m almanac.infra.lakebase_window up --apply
+
+lakebase-down:
+	uv run python -m almanac.infra.lakebase_window down --apply
 
 # §10's coverage figure. The scope lives in pyproject.toml's
 # [tool.coverage.run], so this and CI cannot disagree about what is measured.

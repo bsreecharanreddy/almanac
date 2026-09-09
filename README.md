@@ -52,8 +52,8 @@ is the artifact, and `make check-fast` reproduces the local half in
 
 | | |
 |---|---|
-| ![Review SLA risk dashboard](docs/images/phase7-dashboard-review-sla-risk.png) | ![Model and platform health](docs/images/phase7-dashboard-model-platform-health.png) |
-| **Page 1 — the intervention queue**, ranked by predicted breach risk, with a calibration curve monotonic across all ten deciles. | **Page 2 — model and platform health**, including the panels that ship *marked unavailable* rather than faked. |
+| ![Review SLA risk dashboard](docs/images/phase7-dashboard-review-sla-risk.png) | ![Model and platform health](docs/images/phase8-dashboard-model-platform-health.png) |
+| **Page 1 — the intervention queue**, ranked by predicted breach risk, with a calibration curve monotonic across all ten deciles. | **Page 2 — model and platform health**: both schema eras side by side, the quarantine panel firing for the first time in 341M+ rows, and the two panels that ship *marked unavailable* rather than faked. |
 | ![Unity Catalog lineage](docs/images/phase2-unity-catalog-lineage.png) | ![Model serving endpoint](docs/images/phase4-model-serving-endpoint.png) |
 | **Column-level lineage** across the medallion, published with the edges the catalog cannot see stated on it. | **The serving endpoint**, live, with measured warm and cold latency. |
 
