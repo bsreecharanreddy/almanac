@@ -242,20 +242,47 @@ read the day after or reported as unmeasured.
 
 ## Exit gate
 
-- [ ] The champion's temporal-split score is measured and published,
-      whatever it is, and the old number corrected in place
-- [ ] `pr_merged` populated for the reduced era, from `action`, TDD
-- [ ] The −97% claim corrected in place, with its new `n`, naming the
-      repeated failure mode
-- [ ] The spine fan-out fixed, with the failing test that proves it
-- [ ] A degraded window is **refused**, watched failing
-- [ ] Drift reported across all three kinds, with a stated response
-- [ ] The medallion has run end to end over a window chosen this phase
-- [ ] Training/serving skew measured, not assumed absent
-- [ ] Phase 6 console evidence captured against a fresh instance
-- [ ] Everything billable torn down, verified four independent ways
-- [ ] `v1.0` tagged
-- [ ] Full `make check` green before the push
+- [x] The champion's temporal-split score is measured and published,
+      whatever it is, and the old number corrected in place -- **0.612 ->
+      0.4661**, optimistic by 24%, run `817800814439176`. The winning
+      *config* changed too (`default` -> `is_unbalance`).
+- [x] `pr_merged` populated for the reduced era, from `action`, TDD --
+      and proven on real data in the window: **220,952** rows populated
+      that were NULL across the entire era before.
+- [x] The −97% claim corrected in place, with its new `n`, naming the
+      repeated failure mode -- and the first draft of the correction was
+      itself corrected: non-stationarity, not a small sample.
+- [x] The spine fan-out fixed, with the failing test that proves it. A
+      follow-up was needed: the tiebreak required a column its callers do
+      not pass.
+- [x] A degraded window is **refused**, watched failing. The gate also
+      predicted the real window: **35.1%** PR share from four sampled
+      hours against **35.09%** measured over the full day in Silver.
+- [~] Drift reported over the real windows, with a stated response -- but
+      across **two** kinds, not three. `almanac.model.drift` emits
+      `covariate` and `schema`; there is no `semantic` kind, and the
+      2026-09-09 run proves it by labelling everything one of the two.
+      The semantic change is real and visible in the numbers; the module
+      cannot tell it apart from a distribution shift. Stated, not met.
+- [x] The medallion has run end to end over a window chosen this phase --
+      1,867,891 events landed **alongside** Q3 2025's untouched 3,794,314.
+      It found a Gold defect nothing offline could: every reduced-era
+      merge was dropped (`merged_true` 0 -> 70,624).
+- [x] Training/serving skew measured, not assumed absent -- **100.00%
+      exact agreement** across 3,459 keys, offline over SQL against served
+      over a direct Postgres connection. Its own caveat is in the finding.
+- [ ] Phase 6 console evidence captured against a fresh instance. **Not
+      done.** The centralus stack was live for ~35 minutes on 2026-09-08
+      and the console was never captured in it; the stack is destroyed.
+      Needs a short future window or stays uncaptured, said plainly.
+- [x] Everything billable torn down, verified four independent ways --
+      twice (westus3 window, centralus stack). The fourth check is the one
+      the separate root module exists for: westus3 untouched by a destroy
+      run in centralus.
+- [ ] `v1.0` tagged. Deliberately last: §4.8 decision 6 puts it after the
+      window, and it should not be cut on an unmerged branch.
+- [x] Full `make check` green before the push -- **556 passed in 50:27**,
+      ruff + ruff format + `mypy --strict` clean (2026-09-09).
 
 ---
 
