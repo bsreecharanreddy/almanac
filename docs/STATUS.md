@@ -228,6 +228,63 @@ Every other figure in the docs remains bracketed or absent by design.
 
 ## Next
 
+**Phase 9 — the agent layer.** Branch `phase-9-agent-layer`, plan
+`docs/plans/2026-09-09-phase-9-agent-layer-plan.md`, twelve tasks, target
+`v1.1.0`.
+
+Task 1 is feature contributions over the registered champion. It comes
+first because everything in Phase 10 rests on it, and because it closes a
+promise design doc §6 made and never built: "top feature contributions"
+from the score endpoint, which exists **nowhere** in `src/` or `tests/`.
+
+Tasks 2–10 are local and free. Task 11 is the only provisioned step, and
+it provisions nothing — the serving endpoint is already `READY` and
+scaled to zero on champion **v2**, and 11 chat foundation-model endpoints
+are pre-provisioned at zero idle cost. Task 12 closes out the three
+reader-facing artifacts.
+
+The one ordering constraint that matters: **Task 8, the model gateway,
+lands before Task 10, the agent.** A default fallback policy absorbs a
+4xx, so building the agent first risks recording every transcript from a
+model nobody chose, with nothing saying so.
+
+---
+
+## Phases 3–5, as recorded at the time
+
+> **Banner added 2026-09-09.** Everything below was filed under `## Next`
+> and was **written as the current position of Phases 3, 4 and 5**. It
+> stopped being next somewhere around Phase 5 and was never revised, so
+> the heading promised the future while the text described the past — the
+> **ninth** instance of this file's own recurring failure, and the first
+> found in a heading rather than a sentence. Found while opening Phase 9.
+>
+> **The text is preserved exactly as written and is not edited to look
+> correct.** That is the same rule Phase 8 Task 8 applied to the findings
+> docs that published `0.612`: rewriting a dated record to match what is
+> now true destroys the evidence a retraction depends on. What follows the
+> banner is the supersession list; the narrative after it is untouched.
+
+**Superseded since it was written:**
+
+| As written below | What is true now |
+|---|---|
+| "`terraform destroy` has not run" | It ran. Verified three independent ways on 2026-09-09 — terraform state, resource listing, and billing, where every `US_CENTRAL` SKU stops at exactly `2026-09-09T03:00:00Z`. Idle rate **$0.00/day**. `docs/findings/2026-09-09-final-billing-read.md` |
+| "Live UC `TIMESERIES` registration is unverified" | Exercised in Phase 6. `publish_table` demands exactly that constraint, and two feature tables were published to a Lakebase store and served from Postgres. |
+| "0.612 vs. 0.285", champion **v1** | The re-score on a temporal split reads **0.4661** against a **0.2650** baseline, a **1.76x** lift, registered as **v2** with `@champion` moved. `0.612` was the random-split number, optimistic by **24%**, and the winning *configuration* changed too. `docs/findings/2026-09-08-champion-rescored-temporal-split.md` |
+| "The online store stays deferred per §4.4a" | Built in Phase 6. Two online feature tables published to a Lakebase store and served from Postgres; training/serving skew measured at **100.00%** agreement across **3,459** keys. |
+| "≈$33.50 of the $184 credit" | Correct for those four jobs at the time, and a partial total. The final read is `docs/findings/2026-09-09-final-billing-read.md`. |
+
+**Still correct, with one qualifier:** the serving-endpoint latencies
+below (p50 **263.5 ms**, p95 **376.8 ms**, cold start **51.96 s**) were
+measured against champion **v1**. The endpoint now serves **v2**. They are
+not retracted — nothing has re-measured them — but they are v1 numbers and
+should be quoted as such.
+
+**Not superseded:** the four carried-forward items from Phase 1 at the end
+of this section are still open and still non-blocking.
+
+
 **Phase 3 (offline feature platform) is done — 8 of 8 tasks, exit gate
 verified.** `docs/plans/2026-09-03-phase-3-feature-platform-plan.md`
 executed task by task (`d25619b` spine → `9264459` as-of join → `dc92a45`
@@ -547,3 +604,4 @@ actual result was, including failures.
 | 2026-09-09 | Post-`v1.0` -- the readiness checklist closed out, and its own prediction checked | Pinned repos read back through the GraphQL `pinnedItems` API rather than trusted to the UI; public/badge/protection re-verified **after** the force-push, because the rewrite required toggling enforcement off and the restore is the step most likely to be skipped; the `v1.0` tag confirmed from a fresh clone of the public remote, not from the local repo that created it | **21 of 22 boxes resolved, and the checklist's own prediction held.** It warned that the sibling flip *"surfaced two items during the pass that were not in its original list; expect the same"* -- this pass surfaced **three**: the pseudonymity guard's surfaces excluding `src/` and `tests/`, the identical gap in `.claude/` found by asking where else the argument reached, and two miscounted numbers ("375 commits" for 199, "164 hits" for 166). All three recorded rather than absorbed, which was the instruction. **One box is left unticked on purpose**: the `system.billing.usage` idle read needs a SQL warehouse started, and starting one to tick a box is spending money to tidy a document. The Azure credit *balance* is marked partial for a different reason -- `az consumption` returns the string `'None'` for every cost field on this subscription, so it is named as unobtainable rather than estimated. `v1.0` is annotated, points at `44abc3b`, and both repos are pinned. |
 | 2026-09-09 | Post-`v1.0` -- the deferred billing read, and an idle rate that is now zero | `system.billing.usage` joined to `system.billing.list_prices` on the price validity window; warehouse started for the read and confirmed `STOPPED` after; the teardown claim checked against `max(usage_end_time)` **per SKU** rather than against daily totals, which is the column that distinguishes a live resource from pre-teardown hours | **The last open checklist item, closed on an explicit decision to spend for it.** **$101.79 of Databricks DBUs across 8 billed days** (2026-09-02 -> 09-09), peaking at **$25.46** on the Phase 5 embeddings day. **The current idle rate is $0.00/day**: nothing had drawn a DBU in **over 8 hours** at the time of the read. This does *not* retract the $12.06/day quoted in six places -- that measured the Lakebase instance *while running* and is still correct about it; the two measure different states, and the wording was corrected before it became a false retraction. **Billing is an independent third confirmation of the centralus teardown**, after terraform state and the resource listing: every `US_CENTRAL` SKU stops at exactly `2026-09-09T03:00:00Z`, including the Lakebase instance's own `PREMIUM_DATABASE_SERVERLESS_COMPUTE`, with nothing in the twelve hours since. **The daily total would have read as a live resource and the per-SKU last-seen is what settles it** -- $1.19 of centralus charges are dated 09-09 and are entirely the hours before teardown. And the serving endpoint, deliberately left up, has drawn nothing since 09-08 23:48Z: `scale_to_zero` **measured** rather than believed, which is the distinction this checklist line was written to force. One incidental observation at **n = 1**: records timestamped 07:00Z were readable at 15:16Z, so the lag on this read was at most ~8 h against the ~24 h assumed -- noted, not generalized from a single day. `docs/findings/2026-09-09-final-billing-read.md`. **Every checklist box is now resolved.** |
 | 2026-09-09 | Phase 9 opened -- design doc, plan, and the stopping point it moves | Gate 2 live validation against primary sources, not recall: MCP spec revision and `mcp` PyPI release, `pydantic-ai` PyPI release, LightGBM `pred_contrib` semantics, Databricks pay-per-token model list and retirement policy, Anthropic's own support article on subscription auth; the workspace itself read back with `databricks serving-endpoints list --profile almanac` rather than a docs table; `grep -rn "shap|contribution|pred_contrib|importance" src/ tests/` over the whole tree | **Three findings, each with a fix in the plan, and the second only appeared because the first was checked.** (1) `databricks-claude-sonnet-5` returns **400** for `temperature`/`top_p`/`top_k`. (2) The first draft claimed `pydantic-ai` *sends* `ModelSettings` by default; it does not, unset settings are omitted -- but checking that surfaced the real defect: `FallbackModel` triggers on any `ModelAPIError` **including 4xx**, so one stray agent-level `temperature` would 400 every primary call, fall back, and **succeed** -- every response silently from a model nobody chose, and Phase 10 would score it. Fixed by restricting `fallback_on` to transient conditions and recording which model answered on every call. (3) The docs table omits `databricks-claude-sonnet-5` while the endpoint reports `READY` here; fixed by a preflight against the live API, same shape as `lakebase_window.check_region`. **Measured, not assumed**: feature contributions exist **nowhere** in `src/` or `tests/` (n = the whole tree), so design doc section 6's *top feature contributions* was promised and never built -- it is Task 1. **The window is far cheaper than assumed**: `almanac-pr-review-sla-risk` is `READY`, `Scaled to zero`, on champion **v2**, and **11** chat foundation-model endpoints are already provisioned at zero idle cost, so nothing in Phase 9 applies infrastructure. **Section 9's Phase 8 row is amended in place, not rewritten** -- it was correct and still describes `v1.0` accurately; what changed is scope. Building Phase 9 while that table still said the project ended at Phase 8 would have been the **eighth** instance of the stale-record failure `CLAUDE.md` counts, and the first committed knowingly. |
+| 2026-09-09 | The `## Next` section, stale since Phase 5 -- found while opening Phase 9 | Every claim in the section checked against the current record rather than rewritten from memory: the teardown against `docs/findings/2026-09-09-final-billing-read.md`, the champion against the live registry read earlier the same day (`entity_version` **2**), the PR-AUC against `docs/findings/2026-09-08-champion-rescored-temporal-split.md`, the online store and the `TIMESERIES` constraint against Phase 6's own rows in this file | **The ninth instance, and the first found in a heading rather than a sentence.** The section was filed under `## Next` and described Phases 3-5 as the current position; it stopped being next around Phase 5 and was never revised, so the heading promised the future while the text described the past. **Every negative check passes on it** -- nothing in the prose was false when written -- which is exactly why the positive check is the only one that catches this class. **Fixed without editing the record**: the narrative is preserved verbatim under a heading that says what it is, behind a dated banner and a supersession table, the same rule Phase 8 Task 8 applied to the findings docs that published `0.612`. Five claims superseded (teardown ran; `TIMESERIES` exercised via Phase 6's `publish_table`; **0.612 -> 0.4661** on v2, not v1; the online store was built, not deferred; the credit figure was partial). **One kept with a qualifier rather than retracted**: the serving latencies (p50 **263.5 ms**, p95 **376.8 ms**, cold start **51.96 s**) are real but were measured against champion **v1**, and nothing has re-measured them on v2. `## Next` now carries Phase 9. |
