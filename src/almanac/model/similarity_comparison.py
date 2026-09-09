@@ -24,13 +24,18 @@ from almanac.model.train import (
 )
 from almanac.spark import active_or_local_session
 
-# Measured 2026-09-04 (docs/findings/2026-09-04-classification-model-
-# serving-measured.md): the currently-registered @champion's own
-# average_precision. The gate this task exists to check against -- not
-# read live from the registry, since this project already states it as a
-# specific, documented fact rather than a moving target this comparison
-# would otherwise have to fetch.
-CHAMPION_AVERAGE_PRECISION = 0.612
+# The registered @champion's own average_precision, re-measured 2026-09-08
+# on a temporal split (docs/findings/2026-09-08-champion-rescored-temporal-
+# split.md, run 817800814439176). Stated here rather than read live from
+# the registry: this project documents it as a specific fact, not a moving
+# target this comparison would have to fetch.
+#
+# It was 0.612 until that re-score. That figure came from a random split
+# and is retracted -- and because `train_classifier` now splits temporally,
+# BOTH sides of this gate are temporal, which is the only reason the
+# comparison means anything. Phase 5's measured 0.5332 predates the fix and
+# is a random-split number: it must not be read against this bar.
+CHAMPION_AVERAGE_PRECISION = 0.4661
 
 
 @dataclass(frozen=True)

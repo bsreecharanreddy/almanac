@@ -1,5 +1,11 @@
 # Almanac
 
+[![CI](https://github.com/bsreecharanreddy/almanac/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bsreecharanreddy/almanac/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/bsreecharanreddy/almanac/branch/main/graph/badge.svg)](https://codecov.io/gh/bsreecharanreddy/almanac)
+![coverage gate](https://img.shields.io/badge/gate-%E2%89%A585%25%20enforced-blue)
+![python](https://img.shields.io/badge/python-3.12%2B-blue)
+![mypy](https://img.shields.io/badge/mypy-strict-blue)
+
 An **ML platform for work-queue risk**: work items arrive in a queue, some
 breach their service expectation, and a model predicts which ones early
 enough for a human to intervene.
@@ -10,183 +16,68 @@ real schema break — not because this project is about GitHub. The same
 architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
-> **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1
-> (Bronze + Silver) complete — 7 of 7, exit gate verified and merged.
-> Phase 2 (Gold + the Azure burn) — 9 of 9 tasks, and the burn is done.
-> Phase 3 (offline feature platform) — 8 of 8 tasks. Phase 4 (model +
-> MLflow) — 13 of 13 tasks: a measured regression null result, reframed to
-> classification (§5.3), a real non-null result registered live in Unity
-> Catalog, and a live serving endpoint with measured warm latency and a
-> measured cold start (51.96 s). Phase 5 (semantic layer + vector search)
-> complete. Phase 6 (streaming ingest + online feature store) — 10 of 10
-> tasks, exit gate demonstrated against the live GitHub feed and the
-> billable stack torn down. Phase 7 (governance, reporting,
-> reproducibility) — 14 of 14 tasks: UC column lineage published with its
-> own blind spots, contracts enforced on the feature and streaming
-> surfaces, three AI/BI dashboards demonstrated against the real quarter
-> and then torn down, eight ADRs, limitations, a decision memo with a
-> stated confidence level, and a postmortem.**
-> **Phase 7 found a defect in Phase 4 that changes what this project
-> claims about its own model:** the train/test split was random where
-> §4.5 requires a temporal one — by the design doc's own words, *"a
-> random split is itself a leakage bug"*. The features remain
-> point-in-time correct and the leakage suite is not wrong about what it
-> tests — it checks that each row's features precede that row's own
-> `as_of`, which held. It tested one axis; the bug was on another. **The
-> code is fixed** (`temporal_split`, whole-week boundaries, mutation-tested
-> three ways) — but **the champion has not been retrained**, so the
-> recorded **0.612 PR-AUC is still the random-split number** and is
-> optimistic by an unmeasured margin. Re-scoring it is the first Phase 8
-> item. Recorded in [`docs/limitations.md`](docs/limitations.md) and
-> [`docs/decision-memo.md`](docs/decision-memo.md); the review checklist it
-> produced is `.claude/skills/almanac-leakage-review/`.
-> **The full medallion has run on a real quarter of the firehose:**
-> Q3 2025, 92 of 92 days, 2,208 hourly files, **341,060,851 rows**,
-> 165.987 GB gz, **zero missing hours**, for **$11.96** — 38% of the
-> estimate and 6.5% of the credit. Gold then built over that quarter for
-> **$0.78**, 23 of 23 dbt nodes green, including point-in-time
-> correctness, row conservation and referential integrity to `dim_repo`
-> **at 341M-row scale** rather than on fixtures. Measured throughput is
-> published per layer — **32.89 GB gz per billed cluster-hour** for
-> Bronze + Silver together, **2.4x better** than Phase 1's Bronze-only
-> calibration, which resolved a pre-registered risk in the opposite
-> direction to the one it was written for.
-> **Bronze → Silver runs end to end** on both committed fixtures — era
-> normalization, cross-hour dedup, null-safe quality rules and a
-> conserving quarantine split — alongside the ingestion edge, local Spark
-> + Delta, CI, cloud infrastructure and the declarative source contract
-> (242 tests). **Gold's Kimball layer:** `dim_repo` (SCD2 on repo identity — a rename closes the old
-> row and opens exactly one current row, case-only renames detected, a
-> double rename yields three versions); `fact_pull_request`, an
-> event-native accumulating snapshot carrying the **§5.1 label** —
-> `time_to_first_response_seconds`, the first response from someone other
-> than the PR author, with every PR either labelled or carrying a stated
-> reason it is not (draft, right-censored, author unobserved); and
-> `agg_repo_daily`, the daily activity mart — "stars gained" not a running
-> total, commit volume from `payload.size` not the 20-capped array. Every
-> fact column comes from the event stream, never the `payload.pull_request`
-> object October 2025 gutted; the two consumer models carry **enforced
-> column contracts** and a `relationships` check to `dim_repo`, both proven
-> to fail the build by a break-it test. All three verified against real
-> multi-run lifecycles, not one build. The **GitHub REST API second
-> source** is built and tested (never against the live network) — and
-> §4.5a's "a new source onboards via YAML alone, zero new Python" claim is
-> **falsified and the failure accounted for**: a file mirror would pass it,
-> a paginated, authenticated, rate-limited API took ~120 lines of Python.
-> The **Photon A/B** ran three replicate pairs and is published including
-> the part that did not come out: Silver **2.14x** and Gold **1.38x**, and
-> Bronze **withheld as indeterminate** — re-running an identical arm varies
-> by up to 30% here, which is larger than the ~15% effect being tested, so
-> a single run produced opposite verdicts on two occasions. The harness was
-> fixed to refuse the question rather than answer it. The decision it
-> informs is **do not enable Photon**: break-even on its DBU multiplier
-> lands at 1.55–2.16 against a multiplier of roughly 2x, so it is a wash,
-> and the real lever is Bronze's single-threaded gzip at 64% of execution.
-> **Phase 3 built the offline feature platform, still no model.** Three
-> v1 feature groups — `author_activity`, `repo_activity`, `pr_static` —
-> computed Silver-native (never a read of `fact_pull_request` or
-> `agg_repo_daily`, per §3.1's peer-of-Gold rule), joined onto a spine via
-> a hand-rolled point-in-time `as_of_join` rather than Databricks Feature
-> Engineering or Feast. Every table also gets a Unity Catalog
-> `TIMESERIES` primary key via plain DDL for governance/lineage only —
-> the join itself stays hand-owned. The centerpiece invariant is tested
-> directly, not just inferred from the join's own boundary test: pinning
-> a Delta version reproduces a feature vector byte-for-byte after a
-> later, point-in-time-valid append changes the live answer. Online
-> store and vector index stay deferred to Phase 4/5 on purpose. **Live UC
-> registration against a real Databricks target is still unverified** —
-> the SQL is unit-tested, execution is deferred to Phase 3's cloud
-> verification step.
-> **Phase 4 trained a model and measured it against a baseline for real,
-> on the real quarter.** The first attempt — LightGBM regression on the
-> ten v1 features, predicting time-to-first-response directly — scored
-> `model_mae` **108,890 s** against a naive median-per-segment
-> `baseline_mae` **71,917 s**: worse, not better, a genuine null result
-> driven by the trainable population's severely right-skewed response
-> time (median 72 s, mean 20 h, max 92 days), which a default
-> squared-error objective handles poorly. §5.1's own gate — no model
-> registers, no endpoint deploys, unless it measurably beats the
-> baseline — held and did exactly what it exists to do; the result is
-> recorded, not quietly patched into a different number
-> (`docs/findings/2026-09-04-model-serving-measured.md`).
-> **Reframed to classification (§5.3)** — predict SLA breach/no-breach
-> against the measured p75 threshold (1,487 s) instead of the raw
-> duration — and re-measured for real on the same quarter:
-> `LGBMClassifier` beat a per-segment breach-rate baseline by more than
-> 2x on PR-AUC (**0.612 vs. 0.285**, `roc_auc` 0.828), across a real
-> comparison sweep of two hyperparameter configs rather than one shot.
-> The gate fired for real this time and registered the winner in Unity
-> Catalog (`almanac_dbx.models.pr_review_sla_risk` v1, `@champion`
-> alias) — the **first live UC registration in this project** — which
-> surfaced a real defect no local test had caught: `mlflow.lightgbm.
-> log_model` was never called with a `signature`, invisible against a
-> `file://` MLflow store but fatal against UC's registry; fixed and
-> closed with a local regression test asserting every logged model
-> carries one, so a future run can't hit it blind
-> (`docs/findings/2026-09-04-classification-model-serving-measured.md`).
-> **The serving endpoint is live and fully measured, cold start
-> included.** `databricks_model_serving.pr_review_sla_risk` reached
-> `READY` in 8m27s; 20 real invocations against the model's actual
-> signature measured **warm latency p50 263.5 ms, p95 376.8 ms**. After
-> a genuine ~43-minute idle gap — confirmed live that Databricks scales
-> to zero at 30 minutes, not assumed — one real request measured
-> **cold start at 51.96 s**, with three immediate follow-ups back to
-> sub-second confirming it wasn't a fluke
-> (`docs/findings/2026-09-04-serving-endpoint-measured.md`). Real-scale
-> running of the feature platform also surfaced and fixed the same
-> O(N²) bot-author join blow-up in two places (`compute_author_activity`'s
-> self-join, and `as_of_join` itself, the feature platform's own core
-> primitive — 11.7 PiB of intermediate on one join at real scale) and a
-> local-vs-cloud divergence in where dbt materialises Gold.
-> Planning Phase 2 found **two defects in that committed, CI-green Phase
-> 1 code** — Silver overwrote its whole table on every file, and read the
-> raw archive rather than Bronze. Both were invisible at a sample size of
-> one file, which is all Silver had been run against. **Both are now
-> fixed** (Phase 2 Task 1), and recorded rather than quietly repaired,
-> because the interesting part is *why the tests passed*. Task 2 hit the
-> same shape a third time: with an ephemeral metastore, dbt rebuilds every
-> model from scratch and still reports success. It was **reproduced
-> deliberately before being fixed** — two consecutive runs, two
-> `CREATE OR REPLACE` commits, no `MERGE`, correct row counts throughout.
-> Task 3 found a fourth: a relative `--silver-path` resolved against the
-> wrong directory on a non-`default` schema, registering a metastore
-> table that pointed at nothing Silver ever wrote — caught because the
-> registration was exercised against real data rather than trusted from
-> the DDL reading correctly.
-> **Phase 5 shipped the semantic layer and vector search**; see
-> [`docs/STATUS.md`](docs/STATUS.md) for its task-level record.
-> **Phase 6 made the platform live.** A poller reads GitHub's public
-> Events API on its advertised interval, lands raw JSONL, and a
-> Structured Streaming job builds streaming Silver and two online feature
-> tables that are published to a **Lakebase** online store and served from
-> Postgres. The exit gate was demonstrated end to end rather than
-> asserted: across two live windows, **84 repos had their served feature
-> values change**, 684 were added and none lost — one repo went from
-> `events_prior_24h=11` to `18` because of events polled 25 minutes after
-> the first value was read out of Lakebase. Offline↔online consistency was
-> checked against the raw feed rather than the pipeline's own account of
-> itself: **4,925/4,925 repos and 3,721/3,721 actors**, zero duplicates in
-> 6,801 events. **Freshness is reported decomposed**, because most of it
-> is not ours: end-to-end p50 **561 s**, of which GitHub's own feed delay
-> is **302 s (54%)** and only **121 s** is pipeline work. Live capture is
-> **8.5–8.9%** of the archive's 155–162K events/hour — the public feed is
-> a sample, not a firehose.
-> **The live window falsified four things this repo had written down**,
-> which is the more useful result: the feed is not REDUCED_V3-only (a 2021
-> event arrived mid-window); `publish_table` does not create its catalog,
-> which must be a *standard* catalog and needs its schema pre-created; and
-> `dropDuplicatesWithinWatermark` handled late events by **discarding**
-> them, costing 161 repos in the run whose checkpoint had a watermark to
-> restore. That last one is fixed — dedup moved to an insert-only Delta
-> `MERGE` on `event_id`, leaving the stream stateless — and the others are
-> corrected in place with the runs that disproved them.
-> The ephemeral Lakebase stack was **torn down** at a measured idle rate of
-> **0.852 DBU/hour — $12.06/day** — read the day after, since
-> `system.billing.usage` lags and cannot be queried during the window it
-> measures. The whole experiment cost $3.69 in DBUs, and a stopped instance
-> was confirmed to bill **nothing**, not merely less.
-> [`docs/STATUS.md`](docs/STATUS.md) is the authoritative record, updated
-> in the same commit as the work it describes.
+---
+
+## In sixty seconds
+
+**Built solo, start to finish** — design docs, infrastructure, pipelines,
+model, serving, dashboards, and the write-ups of what went wrong.
+
+**341,060,851 real events** ingested across a real schema break, for a
+**measured $11.96**. A point-in-time-correct feature store, a model
+measured at **0.4661 PR-AUC** against a 0.2650 baseline, a live serving
+endpoint with **measured cold start (51.96 s)** and warm **p50 263.5 ms**,
+and three AI/BI dashboards demonstrated against the real quarter.
+
+**88% coverage** on transformation and feature logic, gated at 85% in CI.
+**Clone to a green run: 4 m 28 s**, measured on a cold cache.
+
+Three decisions that carry the project:
+
+- **Point-in-time correctness is enforced, not asserted.** Every feature
+  computed `as_of` T reads only events with `created_at < T`, and the
+  invariant is stated so it can be tested: the same `as_of` must produce a
+  byte-identical vector from the same Delta version, a year later.
+- **A baseline shipped before the model, and the first result was a null
+  one.** LightGBM lost to a per-segment median by 51% on the regression
+  target. That is published, not buried — then reframed to classification,
+  where it wins by a measured margin.
+- **The project found a leakage bug in its own registered champion.**
+  The train/test split was random where the design requires temporal.
+  Fixed, re-scored, and the inflated number retracted in public: **0.612 →
+  0.4661**, optimistic by 24%. The leakage suite was green throughout and
+  was not wrong — it tested one axis, and the bug was on another.
+
+**No persistent public demo.** The serving endpoint scales to zero and
+needs Databricks auth; everything billable is torn down between sessions
+on purpose, and the cost of each teardown is measured. The evidence below
+is the artifact, and `make check-fast` reproduces the local half in
+4 m 28 s from a fresh clone.
+
+### What it looks like
+
+| | |
+|---|---|
+| ![Review SLA risk dashboard](docs/images/phase7-dashboard-review-sla-risk.png) | ![Model and platform health](docs/images/phase8-dashboard-model-platform-health.png) |
+| **Page 1 — the intervention queue**, ranked by predicted breach risk, with a calibration curve monotonic across all ten deciles. | **Page 2 — model and platform health**: both schema eras side by side, the quarantine panel firing for the first time in 341M+ rows, and the two panels that ship *marked unavailable* rather than faked. |
+| ![Unity Catalog lineage](docs/images/phase2-unity-catalog-lineage.png) | ![Model serving endpoint](docs/images/phase4-model-serving-endpoint.png) |
+| **Column-level lineage** across the medallion, published with the edges the catalog cannot see stated on it. | **The serving endpoint**, live, with measured warm and cold latency. |
+
+![Job run history, including the failures](docs/images/phase8-demo-window-run-history.png)
+
+**The run history, failures included.** Two `RunExecutionError`s sit in the
+same view as the successes, because a portfolio that only shows green is
+not evidence of anything. The `["--start","202…"]` parameters on the
+backfill row are the demo window being run against a chosen date rather
+than a hardcoded one. *(The `Run as` column is redacted — it carried a
+real name.)*
+
+---
+
+> **Status: Phases 0–7 complete and merged. Phase 8 (ship) in progress.**
+> Phase by phase, each led by what it *found*: [`CHANGELOG.md`](CHANGELOG.md).
+> Task granularity and the verification log: [`docs/STATUS.md`](docs/STATUS.md).
+
 
 **No number in this README is quoted unless it was measured.** Where
 something is still unknown, it says so.
@@ -224,7 +115,7 @@ flowchart LR
   subgraph ml[ML platform]
     R[Model registry<br/>MLflow · @champion alias]
     E[Model Serving<br/>scale-to-zero]
-    P[Batch scoring<br/>7,320,196 rows · probabilities]
+    P[Batch scoring<br/>one row per PR · probabilities]
     V[Vector Search<br/>pre-computed embeddings]
     O[Lakebase online store<br/>Postgres · low-latency serving]
   end
@@ -232,6 +123,8 @@ flowchart LR
   subgraph gov[Governance]
     CT[Data contracts<br/>fail the build, not a doc]
     LN[UC column lineage<br/>blind spots published on it]
+    WC[Window characterization<br/>a degraded window is refused]
+    DR[Offline drift<br/>schema drift reported before covariate]
   end
 
   GHA --> B
@@ -250,11 +143,14 @@ flowchart LR
   CT -.-> S
   CT -.-> F
   LN -.-> G
+  WC -.-> B
+  F -.-> DR
+  DR -.-> R
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
   classDef gone fill:#fff3cd,stroke:#d39e00,color:#000,stroke-dasharray:2 2
-  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN done
+  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN,WC,DR done
   class API todo
   class V,O,BI gone
 ```
@@ -362,16 +258,55 @@ make window-down    # gone, confirmed from state rather than from an exit code
 Tests run offline against committed fixtures. Anything touching the
 network is marked and excluded from the default run.
 
-## Design
+## Design and the paper trail
 
 [`docs/design/2026-09-01-almanac-system-design.md`](docs/design/2026-09-01-almanac-system-design.md)
 is the authoritative architecture, phasing, and scope document.
+
+| | |
+|---|---|
+| [`CHANGELOG.md`](CHANGELOG.md) | phase-by-phase history, including what turned out wrong |
+| [`docs/STATUS.md`](docs/STATUS.md) | the verification log, at task granularity |
+| [`docs/limitations.md`](docs/limitations.md) | what this does **not** do, written before anyone had to find out |
+| [`docs/decision-memo.md`](docs/decision-memo.md) | ship / don't-ship, with a stated confidence level and a prediction that was later scored |
+| [`docs/adr/`](docs/adr/) | eight decisions, each citing the measurement that settled it |
+| [`docs/goal-reconciliation.md`](docs/goal-reconciliation.md) | every stated goal checked against the artifact that would prove it |
+| [`docs/findings/`](docs/findings/) | the measurements themselves, each with its `n` and its method |
+| [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md) | one real incident, written up properly |
+
+## Who should look at what
+
+- **ML platform / MLOps** — the feature platform (`src/almanac/features/`)
+  and its leakage suite, then
+  [`2026-09-08-champion-rescored-temporal-split.md`](docs/findings/2026-09-08-champion-rescored-temporal-split.md):
+  a leakage bug found in this project's own registered champion, and the
+  published number retracted because of it.
+- **Data engineering** — `src/almanac/pipeline/` for the medallion and the
+  three schema eras, `dbt/` for Gold, and
+  [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md)
+  for a real incident written up properly.
+- **Hiring managers, 5 minutes** — [In sixty seconds](#in-sixty-seconds)
+  above, then [`docs/decision-memo.md`](docs/decision-memo.md): a
+  ship/don't-ship call with a stated confidence level and a prediction that
+  was later scored against what actually happened.
+- **Anyone checking whether the claims hold** —
+  [`docs/goal-reconciliation.md`](docs/goal-reconciliation.md) marks every
+  stated goal done / partly / not done against the artifact that would
+  prove it, and [`docs/limitations.md`](docs/limitations.md) says what this
+  does not do.
+
+`CLAUDE.md` is instructions for AI coding assistants working in this repo,
+not a document for a human evaluating the project.
 
 ## Why the name
 
 An almanac is a book of tables indexed by date — you look up what was true
 on a given day — *and* a book of forecasts. Those are the two pillars of
 this system: point-in-time historical lookup, and prediction.
+
+## License
+
+MIT.
 
 ---
 

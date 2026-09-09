@@ -17,7 +17,17 @@ stated, it is marked down rather than argued into place.
 | **`[~]`** | Partly done — the gap is stated, not glossed |
 | **`[ ]`** | Not done |
 
-**Score: 21 done, 9 partly, 2 not done, 1 not assessable** — one item moved from *not done* to *done* on 2026-09-08, because writing this reconciliation is what surfaced it.
+**Score: 24 done, 10 partly, 0 not done, 1 not assessable.**
+
+Three moves on 2026-09-08, and one correction to the tally itself. Drift
+went *not done* → *partly* (Phase 8 Task 6 built the measurement; the
+surfacing still depends on a torn-down online store), and resume bullets
+went *not done* → *done*. **The count was also wrong**: the markers below
+already read 23 done while this line claimed 21, so the tally had drifted
+from the thing it summarizes — the same one-fact-in-two-places failure
+this project keeps finding, here in the document whose entire job is
+checking claims against evidence. Counted from the markers now, not
+maintained alongside them.
 
 ---
 
@@ -125,12 +135,52 @@ max 412.8 ms**. **p99 is not measured and cannot be** — n=20 does not
 support a p99, and claiming one would be inventing a number. p95 is
 reported in its place, labelled as such.
 
-**`[ ]` Drift and training/serving skew monitored and visible**
-Not implemented. No drift module exists; every occurrence of "drift" in
-`src/` refers to Terraform config drift or is a comment. The two
-dashboard panels that would show it ship **visibly marked unavailable**,
-which is honest but is not the same as done. The dependency is Phase 6's
-online store, torn down at a measured $12.06/day idle.
+**`[~]` Drift and training/serving skew monitored and visible**
+**Drift: built** (`almanac.model.drift`, Phase 8 Task 6) — PSI over
+numeric and categorical features between the training and scoring windows,
+with **schema drift reported instead of covariate drift** rather than
+alongside it: once a field is gone its remaining distribution is an
+artifact, and a PSI over a dead column is noise dressed as a measurement.
+`is_draft` is the real case — populated on every rich-era PR, null on
+every reduced-era row — and its stated response is concrete: the champion
+reads that feature, so it cannot score the window at all; refuse to serve
+rather than re-baseline.
+
+**Drift: reported over the real windows** (2026-09-09) — the reference
+hour and the chosen window both through the real Silver path and the real
+module. `pr_draft` comes back as **schema** drift, null on 100% of the
+current window against 86.7% in training, with the response that actually
+changes a decision: *the champion reads `is_draft`, so it cannot score this
+window; refuse to serve rather than re-baseline.* Covariate PSI on
+`schema_era` 27.631, `event_type` 10.471, `event_action` 3.944,
+`pr_merged` 0.654.
+
+**But the gate names three kinds and the module emits two.** There is no
+`semantic` kind in `almanac.model.drift`. The semantic change is real —
+`merged` moved from a field to an action value, which is why
+`event_action`'s null share collapses from 74.6% to 0.3% — but the module
+labels it `covariate`, because a PSI cannot tell *the distribution moved*
+from *the meaning moved*. Detecting that automatically needs a notion of
+what a field means, which this project does not have. Two kinds are
+mechanical; the third was found by a human reading the payload.
+
+**Skew: measured** (2026-09-08) — **100.00% exact agreement**, 1,916 repo
+keys and 1,543 actor keys, on all four feature columns, with the offline
+side read over SQL and the served side over a **direct Postgres
+connection** rather than through the client that wrote it. The finding
+carries its own caveat: this design publishes the same table the offline
+side reads, so agreement is *likely* — it proves the publish path faithful,
+not a re-implemented serving path.
+
+**Visible: still no**, and now for a stated reason rather than an absent
+one. The two panels remain *marked unavailable* because an online store
+bills purely for existing, and this one had to live in a **separate
+centralus stack** — Lakebase is not offered in the main workspace's region.
+The panel text now carries the measured number and points at the finding,
+which is the honest form of an absent panel: not "we could not", but "we
+did, here is the figure, and here is why it is not plotted here."
+
+Still `[~]` rather than `[x]`: the surfacing genuinely does not exist.
 
 **`[x]` Streaming path handles late arrival and duplicates correctly**
 **After a real defect and its fix.** The original watermark silently
@@ -203,7 +253,7 @@ purpose.
 2026-09-08). The commit count is met nearly twice over; the calendar span
 is not, and no amount of framing changes that. Recorded as it is.
 
-**`[ ]` Resume bullets with measured numbers, never estimated ones**
+**`[x]` Resume bullets with measured numbers, never estimated ones**
 Not produced. The measured numbers exist throughout `docs/findings/`, but
 no bullets have been written from them.
 

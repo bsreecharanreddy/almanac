@@ -183,3 +183,50 @@ def test_every_data_widget_carries_a_renderable_spec(path: Path) -> None:
         assert spec["data"]["queryName"] == queries[0]["name"], (
             f"{name}: spec.data.queryName does not name this widget's query"
         )
+
+
+def _horizon_body(query: str) -> str:
+    """The text inside `horizon AS ( ... )`, comments stripped.
+
+    Paren-matched rather than split on the first `)`: both the explanation
+    and `max(f.opened_at)` contain parentheses, and a naive split truncates
+    the block before the table name this test exists to find.
+    """
+    code = "\n".join(line for line in query.splitlines() if not line.strip().startswith("--"))
+    start = code.index("horizon AS (") + len("horizon AS (")
+    depth = 1
+    for offset, char in enumerate(code[start:]):
+        depth += (char == "(") - (char == ")")
+        if depth == 0:
+            return code[start : start + offset]
+    raise AssertionError("unbalanced parentheses in the horizon CTE")
+
+
+def test_the_risk_horizon_is_scoped_to_the_scored_population() -> None:
+    """An unscoped `max(opened_at)` breaks the moment Gold holds two windows.
+
+    Page 1 ages each PR against a horizon. That horizon read
+    `max(opened_at)` over the whole fact table, which was correct only while
+    Gold and the predictions covered the same period. Phase 8 Task 7 landed
+    2026-09-05 beside Q3 2025, and predictions cover only the older window --
+    so the horizon jumped to 340 days past the newest PR the panel can rank
+    and inflated every age by ~490,000 minutes.
+
+    Measured live: `fact` horizon 2026-09-05T23:59:57, `scored` horizon
+    2025-09-30T23:59:54. The panel still returned 200 healthy-looking rows,
+    which is the entire reason this is a test and not a code review note.
+    """
+    dashboard = load(DASHBOARDS / "01-review-sla-risk.json")
+    horizons = [
+        "".join(ds["queryLines"])
+        for ds in dashboard["datasets"]
+        if "horizon AS" in "".join(ds["queryLines"])
+    ]
+    assert horizons, "page 1 no longer defines a horizon"
+
+    for query in horizons:
+        assert "pr_breach_predictions" in _horizon_body(query), (
+            "the horizon must come from the scored population; an unscoped "
+            "max(opened_at) over fact_pull_request silently ages every row "
+            "against a window that carries no predictions"
+        )
