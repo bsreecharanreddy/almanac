@@ -150,6 +150,11 @@ max-complexity = 10
 # independently -- store, source table, online table, publish mode. Naming
 # them at the call site is what makes a publish readable (Phase 6, Task 7).
 "src/almanac/stream/online_store.py" = ["PLR0913"]
+# get_features is the same I/O-boundary shape as build_training_frame
+# above, one layer up: the session and the typed request, plus one
+# keyword-only argument per independently-pinnable Delta source (Phase 9,
+# Task 3).
+"src/almanac/agent/tools.py" = ["PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"
