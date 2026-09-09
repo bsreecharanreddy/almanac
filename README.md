@@ -1,5 +1,11 @@
 # Almanac
 
+[![CI](https://github.com/bsreecharanreddy/almanac/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bsreecharanreddy/almanac/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/bsreecharanreddy/almanac/branch/main/graph/badge.svg)](https://codecov.io/gh/bsreecharanreddy/almanac)
+![coverage gate](https://img.shields.io/badge/gate-%E2%89%A585%25%20enforced-blue)
+![python](https://img.shields.io/badge/python-3.12%2B-blue)
+![mypy](https://img.shields.io/badge/mypy-strict-blue)
+
 An **ML platform for work-queue risk**: work items arrive in a queue, some
 breach their service expectation, and a model predicts which ones early
 enough for a human to intervene.
@@ -446,11 +452,39 @@ is the authoritative architecture, phasing, and scope document.
 | [`docs/findings/`](docs/findings/) | the measurements themselves, each with its `n` and its method |
 | [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md) | one real incident, written up properly |
 
+## Who should look at what
+
+- **ML platform / MLOps** — the feature platform (`src/almanac/features/`)
+  and its leakage suite, then
+  [`2026-09-08-champion-rescored-temporal-split.md`](docs/findings/2026-09-08-champion-rescored-temporal-split.md):
+  a leakage bug found in this project's own registered champion, and the
+  published number retracted because of it.
+- **Data engineering** — `src/almanac/pipeline/` for the medallion and the
+  three schema eras, `dbt/` for Gold, and
+  [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md)
+  for a real incident written up properly.
+- **Hiring managers, 5 minutes** — [In sixty seconds](#in-sixty-seconds)
+  above, then [`docs/decision-memo.md`](docs/decision-memo.md): a
+  ship/don't-ship call with a stated confidence level and a prediction that
+  was later scored against what actually happened.
+- **Anyone checking whether the claims hold** —
+  [`docs/goal-reconciliation.md`](docs/goal-reconciliation.md) marks every
+  stated goal done / partly / not done against the artifact that would
+  prove it, and [`docs/limitations.md`](docs/limitations.md) says what this
+  does not do.
+
+`CLAUDE.md` is instructions for AI coding assistants working in this repo,
+not a document for a human evaluating the project.
+
 ## Why the name
 
 An almanac is a book of tables indexed by date — you look up what was true
 on a given day — *and* a book of forecasts. Those are the two pillars of
 this system: point-in-time historical lookup, and prediction.
+
+## License
+
+MIT.
 
 ---
 

@@ -1,0 +1,30 @@
+# Codecov mirrors the gate that already exists in pyproject.toml
+# (`fail_under = 85`) rather than inventing a second, different threshold.
+# Two places holding one number is the failure this repo has logged six
+# times; if the gate moves, it moves in both.
+coverage:
+  status:
+    project:
+      default:
+        target: 85%
+        threshold: 1%
+    # Patch coverage is deliberately informational, not blocking. A phase
+    # here often lands docs, a dbt model or a Terraform guard alongside the
+    # Python, and failing a PR because a .sql file has no unit test would
+    # train people to ignore the check.
+    patch:
+      default:
+        informational: true
+
+# The badge and the report should describe the same thing the gate does:
+# transformation and feature logic, not the whole tree.
+# Mirrors [tool.coverage.run] source in pyproject.toml.
+ignore:
+  - "tests/**"
+  - "scripts/**"
+  - "infra/**"
+  - "dbt/**"
+
+comment:
+  layout: "condensed_header, diff, flags, files"
+  require_changes: true

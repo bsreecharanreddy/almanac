@@ -107,7 +107,13 @@ jobs:
   # about what passes.
   coverage:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    # Was pull_request-only. A Codecov badge reads the DEFAULT BRANCH, so a
+    # job that never runs on `main` would leave the badge permanently
+    # "unknown" -- the dynamic equivalent of the hardcoded number it
+    # replaced. Now both: PRs get the coverage delta comment, `main` gets
+    # the number the badge renders.
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
@@ -135,4 +141,25 @@ jobs:
       # Serial, like the `check` job: a 2-core runner gains nothing from
       # xdist, and the parallel run is what made the streaming tests' hang
       # guard fire on budget alone.
-      - run: uv run pytest -m "not network" --cov --cov-report=term
+      # xml alongside term: `term` is for a human reading the log, `xml` is
+      # what Codecov parses. Keeping both means the log stays readable if
+      # the upload is ever removed.
+      - run: uv run pytest -m "not network" --cov --cov-report=term --cov-report=xml
+
+      # Codecov's tokenless upload covers only fork -> public-upstream PRs,
+      # so a push to this repo needs CODECOV_TOKEN (checked against their
+      # own docs 2026-09-08, not assumed from "it's a public repo").
+      #
+      # Guarded on the secret existing rather than `fail_ci_if_error: false`:
+      # a step that silently no-ops is the failure mode this repo keeps
+      # writing postmortems about. Absent token -> step is skipped and says
+      # so. Present token -> a failed upload fails the build.
+      - name: Upload coverage to Codecov
+        # env, not secrets, in the condition: a step cannot read its own
+        # `env:` block from its `if`, and `secrets` is not available in a
+        # job-level `if` at all. Job-level env is the pattern that works.
+        if: ${{ env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: true
