@@ -146,6 +146,24 @@ every reduced-era row — and its stated response is concrete: the champion
 reads that feature, so it cannot score the window at all; refuse to serve
 rather than re-baseline.
 
+**Drift: reported over the real windows** (2026-09-09) — the reference
+hour and the chosen window both through the real Silver path and the real
+module. `pr_draft` comes back as **schema** drift, null on 100% of the
+current window against 86.7% in training, with the response that actually
+changes a decision: *the champion reads `is_draft`, so it cannot score this
+window; refuse to serve rather than re-baseline.* Covariate PSI on
+`schema_era` 27.631, `event_type` 10.471, `event_action` 3.944,
+`pr_merged` 0.654.
+
+**But the gate names three kinds and the module emits two.** There is no
+`semantic` kind in `almanac.model.drift`. The semantic change is real —
+`merged` moved from a field to an action value, which is why
+`event_action`'s null share collapses from 74.6% to 0.3% — but the module
+labels it `covariate`, because a PSI cannot tell *the distribution moved*
+from *the meaning moved*. Detecting that automatically needs a notion of
+what a field means, which this project does not have. Two kinds are
+mechanical; the third was found by a human reading the payload.
+
 **Skew: measured** (2026-09-08) — **100.00% exact agreement**, 1,916 repo
 keys and 1,543 actor keys, on all four feature columns, with the offline
 side read over SQL and the served side over a **direct Postgres
