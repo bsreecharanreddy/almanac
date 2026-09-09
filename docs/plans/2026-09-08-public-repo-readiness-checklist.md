@@ -148,8 +148,10 @@ art]**.
 
 ## 3. GitHub account and profile
 
-- [ ] **Pinned repositories** — no public API; done through the UI.
-      **[prior art]**
+- [x] **Pinned repositories** — no public API; done through the UI.
+      **[prior art]** Done 2026-09-09 and verified through the GraphQL
+      API rather than trusted to the UI: `pinnedItems` returns 2,
+      `almanac` and `canopica`.
 - [x] **Profile README** — updated 2026-09-08 (`8e5c5fa`). It had said
       Almanac was *"in early implementation, and private until a model
       serves"*, which was the same stale-record failure this repo has now
@@ -227,12 +229,29 @@ art]**.
 
 ## Definition of done
 
-- [ ] Every checkbox above resolved — **done, or explicitly decided and
+- [x] Every checkbox above resolved — **done, or explicitly decided and
       recorded**, never silently skipped. The sibling flip surfaced two
       items during the pass that were not in its original list; expect the
       same and record them rather than absorbing them.
-- [ ] `docs/STATUS.md` updated in the same commit as the flip itself, per
-      standing discipline.
-- [ ] Repo is public, CI badge renders signed-out, branch protection
-      active in the `deletion` + `non_fast_forward` shape.
-- [ ] `v1.0` tag is visible and points at the commit Phase 8 closed on.
+      **It surfaced three, and the prediction was right.** (1) The
+      pseudonymity guard's surfaces excluded `src/` and `tests/`, so it
+      could not see the hostname in its own docstring; (2) the same gap
+      held for `.claude/`, found by asking where else the argument
+      reached; (3) two quoted numbers were miscounts — "375 commits"
+      (identity fields, not commits; the repo has 199) and "164
+      commit-file hits" (166). All three recorded, none absorbed.
+      **Two items remain open by decision, not oversight**, each stating
+      why in place: the `system.billing.usage` idle read needs a SQL
+      warehouse started, and the Azure credit *balance* is unobtainable
+      from `az` on this subscription.
+- [x] `docs/STATUS.md` updated in the same commit as the flip itself, per
+      standing discipline. Held for every commit in the sequence.
+- [x] Repo is public, CI badge renders signed-out, branch protection
+      active in the `deletion` + `non_fast_forward` shape. All four
+      re-verified 2026-09-09 *after* the force-push, because the rewrite
+      required toggling enforcement off and the restore is the step most
+      likely to be skipped.
+- [x] `v1.0` tag is visible and points at the commit Phase 8 closed on:
+      annotated, `44abc3b`, confirmed present in a fresh clone of the
+      public remote rather than read back from the local repo that
+      created it.
