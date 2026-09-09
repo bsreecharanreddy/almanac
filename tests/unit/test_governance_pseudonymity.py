@@ -17,15 +17,28 @@ from almanac.governance.pseudonymity import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_a_planted_email_is_caught() -> None:
-    found = scan_text("contact me at real.person@gmail.com please", identifiers=[])
+def _planted(text: str) -> str:
+    """Assemble a fixture address at runtime.
 
-    assert [(f.rule, f.match) for f in found] == [("email", "real.person@gmail.com")]
+    This file became a scanned surface on 2026-09-09, so a literal address in
+    it would be caught by the gate at the bottom -- correctly. Machine names
+    below stay literal: that rule reads the running host, so a synthetic name
+    can never match it.
+    """
+    return text.replace("(at)", "@")
+
+
+def test_a_planted_email_is_caught() -> None:
+    found = scan_text(_planted("contact me at real.person(at)gmail.com please"), identifiers=[])
+
+    assert [(f.rule, f.match) for f in found] == [("email", _planted("real.person(at)gmail.com"))]
 
 
 def test_a_planted_machine_identifier_is_caught() -> None:
     """The exact shape that cost a 126-commit history rewrite in Phase 6."""
-    found = scan_text("Sree <sree@Chris-MacBook-Pro.local>", identifiers=["Chris-MacBook-Pro"])
+    found = scan_text(
+        _planted("Ada <ada(at)Adas-MacBook-Pro.local>"), identifiers=["Adas-MacBook-Pro"]
+    )
 
     assert any(f.rule == "local-identifier" for f in found)
 
@@ -49,9 +62,9 @@ def test_the_pseudonymous_commit_address_is_allowed() -> None:
 
 
 def test_an_identifier_only_matches_a_whole_word() -> None:
-    """`sree` must not fire on `streets` or `Sreenivasan`."""
-    assert scan_text("the streets of Sreenivasan", identifiers=["sree"]) == []
-    assert scan_text('owner = "sree"', identifiers=["sree"]) != []
+    """`ada` must not fire on `adamant` or `Adamson`."""
+    assert scan_text("the adamant Adamson", identifiers=["ada"]) == []
+    assert scan_text('owner = "ada"', identifiers=["ada"]) != []
 
 
 def test_the_published_surfaces_include_the_readme_and_docs() -> None:
@@ -61,6 +74,20 @@ def test_the_published_surfaces_include_the_readme_and_docs() -> None:
     assert "README.md" in names
     assert "STATUS.md" in names
     assert len(published_files(REPO_ROOT)) > 40
+
+
+def test_the_published_surfaces_include_source_and_tests() -> None:
+    """A public repo publishes its code, and the globs stopped short of it.
+
+    A machine name sat in `pseudonymity.py`'s own docstring and another in this
+    file, both invisible to the gate below because the surfaces ended at docs
+    and terraform -- the same miss as the .gitignore comment, one layer up, in
+    the module that exists to prevent it.
+    """
+    names = {p.relative_to(REPO_ROOT).as_posix() for p in published_files(REPO_ROOT)}
+
+    assert "src/almanac/governance/pseudonymity.py" in names
+    assert "tests/unit/test_governance_pseudonymity.py" in names
 
 
 def test_a_ci_service_account_is_not_treated_as_an_identity() -> None:
@@ -76,7 +103,7 @@ def test_a_ci_service_account_is_not_treated_as_an_identity() -> None:
 
 def test_a_personal_login_is_still_an_identity() -> None:
     """The exclusion must not swallow the case the check exists for."""
-    assert "nymisha" in local_identifiers(hostname="host-abc", login="nymisha")
+    assert "ada" in local_identifiers(hostname="host-abc", login="ada")
 
 
 def test_no_published_artifact_carries_an_identity() -> None:
