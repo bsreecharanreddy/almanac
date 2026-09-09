@@ -74,11 +74,15 @@ art]**.
 
 - [ ] **Pinned repositories** — no public API; done through the UI.
       **[prior art]**
-- [ ] **Profile README** — a `<username>/<username>` repo already exists
-      from the sibling project's flip; add Almanac rather than creating
-      one.
-- [ ] **Bio** — needs `gh auth refresh -s user` before the API accepts it.
-      **[prior art]**
+- [x] **Profile README** — updated 2026-09-08 (`8e5c5fa`). It had said
+      Almanac was *"in early implementation, and private until a model
+      serves"*, which was the same stale-record failure this repo has now
+      logged five times, on the most public artifact of all. Every number
+      in the replacement was grepped against the repo before pushing.
+- [x] **Bio** — updated 2026-09-08 and read back from the API rather than
+      trusted to the write's exit code. The `[prior art]` note said this
+      needs `gh auth refresh -s user` first; it did not, because the token
+      already carried the `user` scope. Checked before re-authenticating.
 
 ---
 
