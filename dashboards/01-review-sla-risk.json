@@ -5,7 +5,7 @@
       "displayName": "Unresolved PRs by predicted breach risk",
       "queryLines": [
         "WITH horizon AS (\n",
-        "  SELECT max(opened_at) AS as_of FROM almanac_dbx.gold.fact_pull_request\n",
+        "  -- The SCORED population's own horizon, not the fact table's. Gold\n  -- now holds two disjoint windows (Phase 8 Task 7 landed 2026-09-05\n  -- beside Q3 2025) and predictions cover only the older one, so an\n  -- unscoped max(opened_at) sat 340 days past the newest PR this panel\n  -- can rank and inflated every minutes_open_at_horizon by ~490,000.\n  -- It still returned 200 healthy-looking rows, which is why it has a test.\n  SELECT max(f.opened_at) AS as_of\n  FROM almanac_dbx.features.pr_breach_predictions p\n  JOIN almanac_dbx.gold.fact_pull_request f\n    ON f.repo_id = p.repo_id AND f.pr_number = p.pr_number\n",
         ")\n",
         "SELECT p.repo_id, p.pr_number, p.breach_risk, p.is_bot_author,\n",
         "       f.opened_at,\n",
@@ -70,7 +70,7 @@
         {
           "widget": {
             "name": "w1_header",
-            "textbox_spec": "# Review SLA Risk\n\nWhich open pull requests are most likely to breach the **1,487 s** review-latency expectation (§5.3's measured p75), ranked so a human can intervene while it still matters.\n\n**Scores are batch, not live.** The serving endpoint returns a class, not a probability, so these come from `almanac.model.score` over the historical quarter using the same registered champion. Age is measured to the data's own horizon (the latest `opened_at` in Gold), not wall-clock. The quarter is historical, so a wall-clock age would read the same large number for every row. See `docs/limitations.md`."
+            "textbox_spec": "# Review SLA Risk\n\nWhich open pull requests are most likely to breach the **1,487 s** review-latency expectation (§5.3's measured p75), ranked so a human can intervene while it still matters.\n\n**Scores are batch, not live.** The serving endpoint returns a class, not a probability, so these come from `almanac.model.score` over the historical quarter using the same registered champion. Age is measured to the data's own horizon -- the latest `opened_at` among *scored* PRs, not the latest in Gold, which since Phase 8 Task 7 also holds an unscored 2026 window -- never wall-clock. The quarter is historical, so a wall-clock age would read the same large number for every row. See `docs/limitations.md`."
           },
           "position": { "x": 0, "y": 0, "width": 6, "height": 3 }
         },
