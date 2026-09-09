@@ -57,6 +57,15 @@ is the artifact, and `make check-fast` reproduces the local half in
 | ![Unity Catalog lineage](docs/images/phase2-unity-catalog-lineage.png) | ![Model serving endpoint](docs/images/phase4-model-serving-endpoint.png) |
 | **Column-level lineage** across the medallion, published with the edges the catalog cannot see stated on it. | **The serving endpoint**, live, with measured warm and cold latency. |
 
+![Job run history, including the failures](docs/images/phase8-demo-window-run-history.png)
+
+**The run history, failures included.** Two `RunExecutionError`s sit in the
+same view as the successes, because a portfolio that only shows green is
+not evidence of anything. The `["--start","202…"]` parameters on the
+backfill row are the demo window being run against a chosen date rather
+than a hardcoded one. *(The `Run as` column is redacted — it carried a
+real name.)*
+
 ---
 
 > **Status: Phase 0 (Exploration) complete — 9 of 9 tasks. Phase 1

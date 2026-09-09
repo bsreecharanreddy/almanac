@@ -36,7 +36,13 @@ known_prs as (
 lifecycle_and_reviews as (
 
     select silver.* from silver
-    where (event_type = 'PullRequestEvent' and event_action in ('opened', 'closed'))
+    -- 'merged' is the reduced era's close: it replaced the rich era's
+    -- pull_request.merged FIELD with a distinct ACTION, so a PR that merged
+    -- after Oct 2025 never emits 'closed' at all. Measured on 2026-09-05:
+    -- 204,748 'merged' rows against 16,204 'closed', where the 2025 reference
+    -- day carries only {opened, closed, reopened}. Filtering on the rich era's
+    -- vocabulary dropped every reduced-era merge before Gold could see it.
+    where (event_type = 'PullRequestEvent' and event_action in ('opened', 'closed', 'merged'))
        or event_type in ('PullRequestReviewEvent', 'PullRequestReviewCommentEvent')
 
 ),
@@ -72,7 +78,11 @@ select
     pr_draft,
     case
         when event_type = 'PullRequestEvent' and event_action = 'opened' then 'opened'
-        when event_type = 'PullRequestEvent' and event_action = 'closed' then 'closed'
+        -- Both spellings of a close collapse to one kind, so every
+        -- downstream branch (closed_at, merged, is_censored, the label)
+        -- stays era-agnostic rather than each learning the difference.
+        when event_type = 'PullRequestEvent'
+             and event_action in ('closed', 'merged') then 'closed'
         when event_type = 'PullRequestReviewEvent' then 'review'
         when event_type = 'PullRequestReviewCommentEvent' then 'review_comment'
         when event_type = 'IssueCommentEvent' then 'issue_comment'

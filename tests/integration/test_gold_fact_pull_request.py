@@ -454,3 +454,43 @@ def test_label_is_stable_when_a_later_response_arrives(
     row = _one(_fact(spark, gold_paths["warehouse"]), 920, 1)
     assert row["first_response_at"] == epoch(first), "a later response must not move the label"
     assert row["time_to_first_response_seconds"] == 2 * 3600
+
+
+def test_a_reduced_era_merge_closes_the_pr(
+    spark: SparkSession, gold_paths: dict[str, Path], empty_quarantine: None
+) -> None:
+    """The reduced era closes a PR with `action='merged'`, not `action='closed'`.
+
+    Measured on the real 2026-09-05 window (Phase 8 Task 7): 204,748 rows
+    carry `action='merged'` and `int_pr_events` filtered every one of them
+    out, because it read the rich era's vocabulary -- whose actions are only
+    {opened, closed, reopened}. Gold showed 250,068 PRs for the window with
+    `merged_true = 0`.
+
+    `merged` is not just a column here: `closed_at` comes from the same
+    branch, so dropping it leaves the PR looking permanently open and
+    `is_censored` true, which is the label rather than an attribute.
+    """
+    c_open = datetime(2026, 9, 5, 9, 0, tzinfo=UTC)
+    c_merge = datetime(2026, 9, 5, 15, 0, tzinfo=UTC)
+
+    _append_silver(
+        spark,
+        gold_paths["clean_path"],
+        [
+            _event(
+                900, 1, c_open, T0, event_type="PullRequestEvent", action="opened", actor="alice"
+            ),
+            # No pr_draft: the reduced era does not carry it. No `closed` row
+            # either -- in this era the merge IS the close.
+            _event(
+                900, 1, c_merge, T0, event_type="PullRequestEvent", action="merged", merged=True
+            ),
+        ],
+    )
+    _build_gold(gold_paths)
+
+    row = _one(_fact(spark, gold_paths["warehouse"]), 900, 1)
+    assert row["closed_at"] == epoch(c_merge), "a reduced-era merge is a close"
+    assert row["merged"] is True
+    assert row["is_censored"] is False, "a merged PR is not still open"
