@@ -44,18 +44,32 @@ art]**.
       cost field as the literal string `'None'` for this subscription, so
       the figure needs the portal or the Cost Management API. **Not
       quoted, because it was not measured** — that is the rule, and an
-      estimate here would break it on the last day.
+      estimate here would break it on the last day. *(2026-09-09: the
+      Databricks half is now known, **$101.79** of DBUs across 8 billed
+      days. That is still not the credit balance — Azure-side VM, storage
+      and network charges bill separately and are precisely what the CLI
+      will not return.)*
       Position restated: credit expiry is a budget, not a wall. Nothing in
       the repo depends on the credit surviving; every billable resource is
       torn down and the remaining storage is a deliberate, stated choice.
-- [ ] **Re-read the idle rates the day after the Phase 8 window.**
+- [x] **Re-read the idle rates the day after the Phase 8 window.**
       `system.billing.usage` lags ~24h and cannot be queried during the
       window it measures.
-      **Still open, deliberately.** The lag has now passed (window
-      2026-09-08, read due 2026-09-09), but the query needs a SQL
-      warehouse started, which is real spend. Left for an explicit
-      decision rather than incurred unprompted at the close-out. Nothing
-      else is blocked on it: teardown is independently verified above.
+      **Done 2026-09-09 on an explicit decision to spend for it**
+      (`docs/findings/2026-09-09-final-billing-read.md`). Warehouse
+      started, four queries, stopped and confirmed `STOPPED`.
+      **The current idle rate is $0.00/day.** This does *not* retract the
+      $12.06/day quoted elsewhere: that measured the Lakebase instance
+      while it was running, and remains correct about that. The two
+      measure different states.
+      Nothing had drawn a DBU in **over 8 hours** at the time of the read.
+      Total Databricks spend across the project: **$101.79** over 8 billed
+      days, peaking at $25.46 on the Phase 5 embeddings day. Billing is
+      also an independent **third** confirmation of the centralus
+      teardown: every `US_CENTRAL` SKU stops at exactly
+      `2026-09-09T03:00:00Z` and shows nothing since. And the serving
+      endpoint, deliberately left up, has drawn nothing since 09-08
+      23:48Z — `scale_to_zero` measured rather than believed.
 
 ---
 
