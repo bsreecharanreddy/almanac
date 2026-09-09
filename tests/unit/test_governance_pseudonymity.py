@@ -90,6 +90,21 @@ def test_the_published_surfaces_include_source_and_tests() -> None:
     assert "tests/unit/test_governance_pseudonymity.py" in names
 
 
+def test_the_published_surfaces_include_the_agent_tooling() -> None:
+    """`.claude/` is tracked and public, and reads like a private notebook.
+
+    Added the same day as the `src/`+`tests/` widening: enumerating surfaces
+    by hand is exactly the mechanism that missed those two, and `.claude/`
+    was the next directory the same argument reached. Clean when checked --
+    this closes the gap before it costs something, not after.
+    """
+    names = {p.relative_to(REPO_ROOT).as_posix() for p in published_files(REPO_ROOT)}
+
+    assert "CLAUDE.md" in names
+    assert any(n.startswith(".claude/skills/") for n in names), "skills unscanned"
+    assert any(n.startswith(".claude/hooks/") for n in names), "hooks unscanned"
+
+
 def test_a_ci_service_account_is_not_treated_as_an_identity() -> None:
     """CI is where this check matters most, and it broke there first.
 

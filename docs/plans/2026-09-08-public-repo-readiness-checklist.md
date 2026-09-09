@@ -17,19 +17,45 @@ art]**.
 
 ## 0. Time-sensitive — do these now, not at the end
 
-- [ ] **Nothing billable is running.** `terraform state list` in both root
+- [x] **Nothing billable is running.** `terraform state list` in both root
       modules. `databricks_model_serving.pr_review_sla_risk` **is
       currently up** — it scales to zero and drew zero DBUs on 09-07, so
       it is not costing anything idle, but "believed to scale to zero" and
       "measured at zero" are different claims and only the second one goes
       in a README.
-- [ ] **Azure credit expiry 2026-09-24.** Confirm the balance and whether
+      **Verified 2026-09-09, five ways.** centralus state list: empty.
+      westus3 state: workspace + storage only (deliberate — it holds the
+      341M-row quarter). SQL warehouse: `STOPPED`. All clusters:
+      `TERMINATED`. Vector Search endpoints: none. And the serving
+      endpoint reports `deployment_state_message: "Scaled to zero"` on
+      **v2** — the measured claim, not the believed one, and v2 confirms
+      the retracted champion is no longer served.
+- [~] **Azure credit expiry 2026-09-24.** Confirm the balance and whether
       anything still draws on it. Design doc records "credit expiry is a
       budget, not a wall" — restate the position rather than discovering
       it.
+      **Half answered 2026-09-09, and the half that is missing is named.**
+      Subscription `bscr-az-portfolio` is `Enabled`. *What still draws on
+      it*: 1,198 usage records over Sep 1–9, across Compute (836), Storage
+      (214), Databricks (115), network (32) and EventGrid (1) — consistent
+      with the workspace and storage account being deliberately left up to
+      hold the 341M-row quarter, with all compute terminated. *The
+      balance*: *not obtained.* `az consumption usage list` returns every
+      cost field as the literal string `'None'` for this subscription, so
+      the figure needs the portal or the Cost Management API. **Not
+      quoted, because it was not measured** — that is the rule, and an
+      estimate here would break it on the last day.
+      Position restated: credit expiry is a budget, not a wall. Nothing in
+      the repo depends on the credit surviving; every billable resource is
+      torn down and the remaining storage is a deliberate, stated choice.
 - [ ] **Re-read the idle rates the day after the Phase 8 window.**
       `system.billing.usage` lags ~24h and cannot be queried during the
       window it measures.
+      **Still open, deliberately.** The lag has now passed (window
+      2026-09-08, read due 2026-09-09), but the query needs a SQL
+      warehouse started, which is real spend. Left for an explicit
+      decision rather than incurred unprompted at the close-out. Nothing
+      else is blocked on it: teardown is independently verified above.
 
 ---
 
@@ -43,7 +69,10 @@ art]**.
       the dashboard screenshots and run captures in `docs/images/` were
       masked by hand.
       **Run 2026-09-09, and it found three things.** Clean: commit
-      *metadata* (all 375 commits authored by the GitHub noreply address),
+      *metadata* (every author and committer identity is a GitHub noreply
+      address — 199 commits, 198 + 1 dependabot by author, 181 + 18 by
+      committer; this line first said "all 375 commits", which was the
+      count of identity *fields*, not commits, corrected same night),
       commit *messages*, notebooks (there are none), and secrets/tokens
       (none of any shape). Images spot-checked at **n = 4 of 18** — the
       lineage dialog plus every run-history view, i.e. the only ones
@@ -64,27 +93,56 @@ art]**.
       mutations caught. The item was written correctly and left unticked
       while the repo went public; **the checklist named the gap and not
       running it is what let it through.**
-- [ ] **Every number still traces to its measurement.** The standing rule
+- [~] **Every number still traces to its measurement.** The standing rule
       is that nothing unmeasured is ever quoted. The −97% correction
       (Phase 8 Task 3) is the known instance; check for siblings.
-- [ ] **`docs/limitations.md` reads as current**, including the champion's
+      **A sibling was found, in this checklist.** "All 375 commits
+      authored by the GitHub noreply address" counted identity *fields*
+      (`%ae` + `%ce` across all refs), not commits; the repo has **199**.
+      Corrected in place here, in `docs/STATUS.md`, and in the story bank.
+      A second was found in the README the same pass: *Running it* said
+      **292** non-Spark tests where the suite has **340**. Marked partial
+      rather than done, because "checked for siblings" is not a finite
+      task and two turned up in a single evening's reading.
+- [x] **`docs/limitations.md` reads as current**, including the champion's
       re-scored number and whatever Phase 8 Task 7 did or did not deliver.
-- [ ] **README's "honest limitations" is a section, not a footnote**, and
+      Verified 2026-09-09: §7 carries the correction block with
+      `0.612 → 0.4661` and run `817800814439176`.
+- [x] **README's "honest limitations" is a section, not a footnote**, and
       states the streaming-to-Gold gap, the `is_draft` ceiling, and the
       window-characterization constraint in plain terms.
+      **Added 2026-09-09 as *What it does not do*** — four bullets naming
+      exactly those three plus the ~7% capture rate, then the link. Kept
+      to 20 lines on purpose: the same night's README work cut a 182-line
+      essay for being unreadable, so satisfying this item with prose would
+      have undone that.
 
 ---
 
 ## 2. The demo — what a stranger can actually see
 
-- [ ] **Decide what "the demo" is for a signed-out visitor.** Everything
+- [x] **Decide what "the demo" is for a signed-out visitor.** Everything
       billable is torn down by design, so the artifact is the captured
       evidence, not a live endpoint. Say that explicitly rather than
       letting a reader expect a URL.
-- [ ] **Screenshots render in the README for a signed-out viewer** —
-      relative paths, not workspace links.
-- [ ] **`make check-fast` on a fresh clone still meets §9's gate.**
+      **Decided: there is no live demo, and that is the correct answer for
+      this project rather than a shortfall.** A portfolio system whose own
+      cost discipline says "`terraform destroy` between working sessions"
+      would contradict itself by leaving an endpoint up to be clicked. The
+      evidence is the 18 committed console captures, the measured numbers
+      with their run ids, and a clone-to-green path a reader can run
+      locally in minutes. The README's *Running it* section is the demo.
+- [x] **Screenshots render in the README for a signed-out viewer** —
+      relative paths, not workspace links. Verified 2026-09-09: all six
+      README image references are repo-relative `docs/images/...` paths.
+- [x] **`make check-fast` on a fresh clone still meets §9's gate.**
       Measured 4m28s on 2026-09-08; re-measure after Phase 8's changes.
+      **Re-measured 2026-09-09** on a fresh clone of the *rewritten*
+      remote: **80 s** with a warm `uv` cache, 339 tests passing, lint and
+      `mypy --strict` clean. Not comparable to the 4m28s figure, which was
+      cold-cache and stays the number worth quoting; dependencies moved
+      only by one lock-only transitive bump (cryptography 49→50) in
+      between. Both are far inside the 15-minute gate.
 
 ---
 
@@ -106,25 +164,36 @@ art]**.
 
 ## 4. Interview material
 
-- [ ] **Final story-bank regeneration**, covering Phase 8 and the flip
-      itself.
-- [ ] **Keep the gist. Do not delete it.** Sibling precedent, decided
+- [~] **Final story-bank regeneration**, covering Phase 8 and the flip
+      itself. Story 64 added 2026-09-09 (the guard that could not see the
+      file it lives in), read back and verified, gist confirmed still
+      secret. The §5 architecture walkthrough still ends at Phase 7 and
+      wants a Phase 8 section — partial, and said so.
+- [x] **Keep the gist. Do not delete it.** Sibling precedent, decided
       explicitly. `.claude/story-bank-gist-id` stays gitignored — verified
       untracked 2026-09-08.
-- [ ] **Confirm the gist is still secret**, not public, after the repo
-      flip.
+- [x] **Confirm the gist is still secret**, not public, after the repo
+      flip. Verified 2026-09-09 via the API: `public=false`.
 
 ---
 
 ## 5. Loose ends needing an explicit decision
 
-- [ ] **`.claude/` and `CLAUDE.md` go public as-is.** Already tracked —
+- [x] **`.claude/` and `CLAUDE.md` go public as-is.** Already tracked —
       hooks, `settings.json`, and four skills. The sibling project faced
       the same question and **committed them for real** rather than
       discarding: they are genuine in-use tooling and they document how
       the work was actually done. Re-read them for anything that reads as
       a private note.
-- [ ] **Branch protection: `deletion` + `non_fast_forward` only.**
+      **Re-read 2026-09-09: 9 tracked files, nothing private**, and the
+      two files that would be (`settings.local.json`,
+      `story-bank-gist-id`) are gitignored, confirmed by
+      `git status --ignored`. **And `.claude/` was then added to the
+      pseudonymity guard's surfaces** — it was tracked, public, and
+      unscanned, which is the identical gap that had just been found for
+      `src/`. Clean when checked; the point is that the next thing written
+      into it is checked too, rather than re-read by hand.
+- [x] **Branch protection: `deletion` + `non_fast_forward` only.**
       **[prior art, and the important one.]** The sibling flip tried
       `required_status_checks` scoped to its always-run jobs and it
       **hard-deadlocked direct pushes** — a required check cannot exist
@@ -132,16 +201,27 @@ art]**.
       push was rejected. Do not repeat it. Note that `ci.yml`'s own
       comment already anticipates branch protection becoming available the
       moment this repo goes public.
-- [ ] **CI on a public repo.** The full suite is ~50 min on a 2-core
+- [x] **CI on a public repo.** The full suite is ~50 min on a 2-core
       hosted runner. Confirm it stays inside free-tier minutes for a
       public repo, and that the `paths-ignore` and `concurrency` behaviour
       is unchanged.
-- [ ] **The CI badge renders for a signed-out viewer** — `200` to an
+      **Confirmed 2026-09-09.** GitHub-hosted runners are unlimited for
+      public repositories, so the ~50 min suite costs time and not money —
+      the constraint that shaped `paths-ignore` no longer binds, and it is
+      kept anyway because a docs-only push still should not re-run a suite
+      it cannot affect. Both behaviours unchanged and verified by reading
+      `ci.yml`: `push` filters `docs/**`, `README.md`, `CLAUDE.md`;
+      `pull_request` is deliberately unfiltered so a docs-only PR still
+      reports a status; `concurrency` cancels superseded runs per ref.
+      Observed three times tonight, each self-inflicted by pushing into a
+      live run.
+- [x] **The CI badge renders for a signed-out viewer** — `200` to an
       unauthenticated request, checked for both the badge and the repo
-      page. **[prior art]**
-- [ ] **Repo visibility itself** — `gh repo edit --visibility public
+      page. **[prior art]** Verified 2026-09-09: CI badge and the codecov
+      badge both `200` unauthenticated.
+- [x] **Repo visibility itself** — `gh repo edit --visibility public
       --accept-visibility-change-consequences`, last, after everything
-      above.
+      above. Done; confirmed `PUBLIC` with 20 topics and a description.
 
 ---
 

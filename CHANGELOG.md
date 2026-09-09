@@ -7,7 +7,12 @@ Every number here is measured. Where one was later found wrong, it is
 corrected **in place with the original kept**, because a retraction that
 deletes its own evidence is not a retraction.
 
-## Unreleased — Phase 8 (ship)
+## v1.0 — Phase 8 (ship), 2026-09-09
+
+Tagged after the history rewrite described in the last two entries below.
+**Every SHA cited in entries before this one predates that rewrite** and no
+longer resolves; they are left as written, because the record of what was
+true at the time is the point of keeping them.
 
 - **The champion was re-scored on a temporal split and the published
   number went down.** `0.612 → 0.4661` PR-AUC against a baseline that also
@@ -37,6 +42,20 @@ deletes its own evidence is not a retraction.
   conserves: bronze−silver moved 62 → 162, being 62 dedup plus exactly 100.
 - Repository made public; branch protection set to `deletion` +
   `non_fast_forward` only.
+- **The pseudonymity guard could not see the file it lives in.** The check
+  that fails the build on an actor identifier in a published artifact had
+  a contributor's machine name in its own docstring, and a second in its
+  test. Its surfaces stopped at docs, dashboards, terraform and
+  `.gitignore` — `src/` and `tests/` were never scanned, in a repo that
+  had already gone public. The control was not buggy; it was pointed at
+  the wrong files, and a control with the wrong scope passes cleanly and
+  forever. The checklist already carried the item that would have caught
+  it, unticked.
+- **History rewritten before the tag.** `git filter-repo` over all **199**
+  commits stripped three identifier strings, verified from a fresh clone
+  of the public remote at **0 hits**, with the tip tree hash unchanged —
+  the rewrite touched history and not one current file. Author and
+  committer identities, dates and messages preserved.
 
 ## Phase 7 — governance, reporting, reproducibility (PR #14, `62e006d`)
 
