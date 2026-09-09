@@ -35,17 +35,35 @@ art]**.
 
 ## 1. Content and documentation pass
 
-- [ ] **PII sweep across the whole history, not the tip.** This repo has
+- [~] **PII sweep across the whole history, not the tip.** This repo has
       already paid for this once: a commit trailer leaked a machine name
       containing a personal name and took a `git filter-repo` rewrite over
       **126 commits** to remove (recorded in `.gitignore`). Sweep commit
       messages, docs, notebooks, fixtures, and **the committed images** —
       the dashboard screenshots and run captures in `docs/images/` were
       masked by hand.
-- [ ] **Actor logins.** Phase 7 Task 8 built a check that fails the build
+      **Run 2026-09-09, and it found three things.** Clean: commit
+      *metadata* (all 375 commits authored by the GitHub noreply address),
+      commit *messages*, notebooks (there are none), and secrets/tokens
+      (none of any shape). Images spot-checked at **n = 4 of 18** — the
+      lineage dialog plus every run-history view, i.e. the only ones
+      carrying a `Run as` column — all masked, avatar redacted. **Not**
+      clean: a contributor hostname in `pseudonymity.py`, a second in its
+      test, and a personal email unredacted in history, at **164
+      commit-file hits** (58 + 34 + 72). Tip fixed this commit; the
+      `filter-repo` rewrite is the remaining half and blocks `v1.0`.
+- [x] **Actor logins.** Phase 7 Task 8 built a check that fails the build
       on an actor identifier in a published artifact. Confirm it covers
       every surface that is about to become public, including the ADRs and
       findings written after it landed.
+      **It did not, and this line is why the gap is now closed.** The
+      check's surfaces stopped at docs, dashboards, terraform and
+      `.gitignore` — `src/` and `tests/` were never scanned, so the guard
+      could not see the hostname sitting in its own docstring. Widened to
+      `src/**/*.py` + `tests/**/*.py` on 2026-09-09, RED watched, three
+      mutations caught. The item was written correctly and left unticked
+      while the repo went public; **the checklist named the gap and not
+      running it is what let it through.**
 - [ ] **Every number still traces to its measurement.** The standing rule
       is that nothing unmeasured is ever quoted. The −97% correction
       (Phase 8 Task 3) is the known instance; check for siblings.
