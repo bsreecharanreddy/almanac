@@ -1,12 +1,30 @@
 # Phase 6 (design doc §4.6): the live event stream and the Lakebase online
 # store it feeds.
 #
-# Authored here but not applied until Task 9. The online store is the only
-# resource in this repo that bills purely for existing -- Databricks documents
-# that "Lakebase scale-to-zero is not supported" -- so it is created for a
-# bounded window and destroyed at the end of it, and this file ships that
-# teardown story rather than deferring it (§11, "teardown ships with
-# provisioning"; Phase 5's Vector Search endpoint is the incident behind it).
+# !! databricks_database_instance.online_store IN THIS FILE CANNOT BE APPLIED.
+# This module's workspace is in westus3, and Lakebase names 19 supported
+# regions of which westus3 is not one; a Lakebase project inherits its
+# workspace's region and cannot be moved. Task 9 measured that on 2026-09-06
+# and relocated the whole online-store stack to `infra/terraform-lakebase/`
+# (centralus, its own state). See docs/findings/2026-09-06-lakebase-region-
+# and-sku-constraints.md.
+#
+# The resource is left here rather than deleted because the streaming JOB and
+# landing volume below are still this module's, and the job's publish stage
+# names the store. But `terraform plan` will happily report "1 to add" for it
+# and then hang: the create returns "temporarily unavailable", then times out,
+# while every other API answers instantly. That is exactly what it looks like
+# when a region does not support the service, and it reads like an outage.
+# It cost 44 minutes on 2026-09-08 to rediscover, because this comment did not
+# exist and the ones below still described Task 9 as future work.
+#
+# Authored here but not applied in Task 9 -- see the region note above. The
+# online store is the only resource in this repo that bills purely for
+# existing -- Databricks documents that "Lakebase scale-to-zero is not
+# supported" -- so it is created for a bounded window and destroyed at the
+# end of it, and this file ships that teardown story rather than deferring
+# it (§11, "teardown ships with provisioning"; Phase 5's Vector Search
+# endpoint is the incident behind it).
 
 # The poller writes with plain pathlib (`Path.write_text`, `Path.replace`), so
 # this cannot be an abfss:// URI -- the same constraint backfill_staging_dir
