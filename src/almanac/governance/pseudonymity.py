@@ -22,6 +22,12 @@ PUBLISHED_GLOBS: tuple[str, ...] = (
     # first run of this check found a hostname in a .gitignore comment written
     # the same day -- in the rule that existed to stop that hostname leaking.
     ".gitignore",
+    # And it publishes its code, which is the surface a reviewer opens first.
+    # Added 2026-09-09 after the same miss recurred one layer up: a machine
+    # name sat in this module's own docstring, and another in its test, both
+    # unreachable because the surfaces above stop at docs and terraform.
+    "src/**/*.py",
+    "tests/**/*.py",
 )
 
 # Two characters is not an identity, it is a false-positive generator: a
@@ -70,8 +76,8 @@ def local_identifiers(*, hostname: str | None = None, login: str | None = None) 
     Derived, never committed. A denylist of personal identifiers would have to
     contain the very strings it exists to keep out of the repo, so this reads
     them from the host instead: the hostname (which cost this project a
-    126-commit history rewrite when `REDACTED-HOSTNAME` reached a commit
-    trailer) and the OS login.
+    126-commit history rewrite when a contributor's machine name reached a
+    commit trailer) and the OS login.
 
     `hostname` / `login` are injected by tests only, so the exclusion below can
     be exercised without a second machine -- the same reason `RestSession`
