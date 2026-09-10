@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 
 from almanac.agent.bounded_agent import load_transcript
-from almanac.agent.grounding import NumberCheck, check_numbers, literals, numeric_leaves, verify
+from almanac.agent.grounding import (
+    NumberCheck,
+    answer_and_returns,
+    check_numbers,
+    literals,
+    numeric_leaves,
+)
 
 _LIVE = (
     Path(__file__).parents[1] / "fixtures" / "transcripts" / "2026-09-10-live-predict-explain.json"
@@ -59,14 +65,14 @@ def test_a_fabricated_number_is_unmatched_and_makes_the_run_ungrounded() -> None
 
 
 def test_the_live_transcript_grounds_every_number_it_states() -> None:
-    """Task 3 only checks numbers -- and every number in the window's answer came
-    from a tool. The false claim in it is Task 4's relationship check, not this.
+    """Every number in the window's answer came from a tool -- the false *claim*
+    in it is Task 4's relationship check, not this one's.
     """
-    trace = verify(load_transcript(_LIVE))
+    answer, returns = answer_and_returns(load_transcript(_LIVE))
+    checks = check_numbers(answer, returns)
 
-    assert trace.numbers, "the answer states numbers"
-    assert all(c.source != "unmatched" for c in trace.numbers)
-    assert trace.verdict == "grounded"
-    assert any(c.field_path.endswith("breach_risk") for c in trace.numbers if c.field_path)
+    assert checks, "the answer states numbers"
+    assert all(c.source != "unmatched" for c in checks)
+    assert any(c.field_path.endswith("breach_risk") for c in checks if c.field_path)
     # the score is stated to fewer digits than predict returned
-    assert any(c.literal == "0.003826" and c.source == "rounded" for c in trace.numbers)
+    assert any(c.literal == "0.003826" and c.source == "rounded" for c in checks)

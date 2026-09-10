@@ -191,6 +191,86 @@ def check_numbers(answer: str, tool_returns: Sequence[tuple[str, object]]) -> li
     return checks
 
 
+# A closed, small set on purpose. A claim of one of these types must trace to the
+# field that type means -- not merely to some field with the right number. The
+# window's "trained on Delta versions 92" is the reason: 92 was real, and it
+# traced to the versions the tools *read*, not to what the champion trained on.
+# An unrecognized claim shape is not failed; its numbers still go through
+# `check_numbers`, and the trace records that no relationship rule applied.
+_CLAIM_RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    (
+        "training_provenance",
+        "training_data_delta_versions",
+        re.compile(r"train(?:ed|ing)\b[^.]*?\bversions?\s+(\d+)", re.IGNORECASE),
+    ),
+    (
+        "read_provenance",
+        "read_delta_versions",
+        re.compile(r"\b(?:read|reading|as of)\b[^.]*?\bversions?\s+(\d+)", re.IGNORECASE),
+    ),
+    (
+        "model_version",
+        "model_version",
+        re.compile(r"\b(?:model|champion)\b[^.]*?\bversion\s+(\d+)", re.IGNORECASE),
+    ),
+    (
+        "score",
+        "breach_risk",
+        re.compile(r"\b(?:breach risk|score)\b[^.]*?\bis\s+(\d*\.?\d+)", re.IGNORECASE),
+    ),
+    (
+        "baseline",
+        "baseline",
+        re.compile(r"\bbaseline\b[^.]*?\bis\s+(-?\d*\.?\d+)", re.IGNORECASE),
+    ),
+)
+
+# The tool whose return carries each required field, for the "you never called it"
+# message. Only fields that come from exactly one tool need an entry.
+_SUBSTANTIATING_TOOL = {
+    "training_data_delta_versions": "versions",
+    "baseline": "explain",
+}
+
+
+def check_claims(answer: str, tool_returns: Sequence[tuple[str, object]]) -> list[ClaimCheck]:
+    """One `ClaimCheck` per typed claim in the answer: did its number trace to the *right* field."""
+    values = [
+        (path, number)
+        for tool, content in tool_returns
+        for path, number in numeric_leaves(content, tool)
+    ]
+    checks: list[ClaimCheck] = []
+    for claim_type, required_field, pattern in _CLAIM_RULES:
+        for match in pattern.finditer(answer):
+            literal = match.group(1)
+            on_required = [v for path, v in values if required_field in path]
+            traced = any(_classify(literal, v) is not None for v in on_required)
+            checks.append(
+                ClaimCheck(
+                    claim=" ".join(match.group(0).split()),
+                    claim_type=claim_type,
+                    required_field=required_field,
+                    traced=traced,
+                    detail=None if traced else _why_untraced(literal, required_field, values),
+                )
+            )
+    return checks
+
+
+def _why_untraced(literal: str, required_field: str, values: Sequence[tuple[str, float]]) -> str:
+    if not any(required_field in path for path, _ in values):
+        tool = _SUBSTANTIATING_TOOL.get(required_field)
+        called = f" -- call `{tool}`" if tool else ""
+        return f"no tool in this run returned `{required_field}`{called}"
+    elsewhere = next((path for path, v in values if _classify(literal, v) is not None), None)
+    return (
+        f"{literal} traced to `{elsewhere}`, not `{required_field}`"
+        if elsewhere
+        else f"{literal} traced to nothing"
+    )
+
+
 def answer_and_returns(transcript: Sequence[ModelMessage]) -> tuple[str, list[tuple[str, object]]]:
     """The final answer text, and every tool return in the run, in call order."""
     answer = ""
@@ -209,14 +289,20 @@ def answer_and_returns(transcript: Sequence[ModelMessage]) -> tuple[str, list[tu
 
 
 def verify(transcript: Sequence[ModelMessage]) -> GroundingTrace:
-    """The run's answer against its tool returns. Ungrounded if any number is unmatched."""
+    """The run's answer against its tool returns.
+
+    Ungrounded if a number is unmatched (Task 3) or a typed claim's number
+    traced to the wrong field, or to none (Task 4).
+    """
     answer, returns = answer_and_returns(transcript)
     numbers = check_numbers(answer, returns)
+    claims = check_claims(answer, returns)
     failures = [
         f"{c.literal} appears in no tool return" for c in numbers if c.source == "unmatched"
-    ]
+    ] + [f"{c.claim!r}: {c.detail}" for c in claims if not c.traced]
     return GroundingTrace(
         verdict="ungrounded" if failures else "grounded",
         numbers=numbers,
+        claims=claims,
         failures=failures,
     )
