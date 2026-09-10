@@ -17,7 +17,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validat
 from almanac.model.train import FEATURE_COLUMNS
 
 
-class _Strict(BaseModel):
+class Strict(BaseModel):
     """Every schema's base: no default hides a missing field, no surprise field passes silently."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -39,32 +39,32 @@ def _tz_aware(value: datetime) -> datetime:
 AsOf = Annotated[datetime, AfterValidator(_tz_aware)]
 
 
-class EntityKey(_Strict):
+class EntityKey(Strict):
     """The work item every tool call is about -- the same key `PREDICTIONS_CONTRACT` is keyed on."""
 
     repo_id: int
     pr_number: int
 
 
-class FeatureProvenance(_Strict):
+class FeatureProvenance(Strict):
     """Which Delta version of each table read produced these feature values. No model involved."""
 
     delta_versions: dict[str, int] = Field(min_length=1)
 
 
-class ModelProvenance(_Strict):
+class ModelProvenance(Strict):
     """Which registered model version, reading which Delta versions, produced this number."""
 
     model_version: str = Field(min_length=1)
     delta_versions: dict[str, int] = Field(min_length=1)
 
 
-class GetFeaturesInput(_Strict):
+class GetFeaturesInput(Strict):
     entity: EntityKey
     as_of: AsOf
 
 
-class GetFeaturesResult(_Strict):
+class GetFeaturesResult(Strict):
     """`features` is exactly `FEATURE_COLUMNS` -- refused, not realigned, on any other shape.
 
     A value may be `None`: a reduced-era window (design doc S4.2) genuinely
@@ -88,12 +88,12 @@ class GetFeaturesResult(_Strict):
         return self
 
 
-class PredictInput(_Strict):
+class PredictInput(Strict):
     entity: EntityKey
     as_of: AsOf
 
 
-class PredictResult(_Strict):
+class PredictResult(Strict):
     """A served score. `breach_risk` is a probability, `score.py`'s own unit -- not a logit."""
 
     status: Literal["scored"] = "scored"
@@ -104,7 +104,7 @@ class PredictResult(_Strict):
     provenance: ModelProvenance
 
 
-class Refusal(_Strict):
+class Refusal(Strict):
     """No number, ever, in place of one the champion cannot honestly produce (design doc S4.2).
 
     Structured so an agent narrates it without inventing prose to fill the gap:
@@ -126,7 +126,7 @@ PredictOutput = Annotated[PredictResult | Refusal, Field(discriminator="status")
 Direction = Literal["increases_risk", "decreases_risk"]
 
 
-class Contribution(_Strict):
+class Contribution(Strict):
     """One feature's pull on the prediction, from `model.contributions.contribution_frame`."""
 
     feature: str
@@ -146,13 +146,13 @@ class Contribution(_Strict):
         return self
 
 
-class ExplainInput(_Strict):
+class ExplainInput(Strict):
     entity: EntityKey
     as_of: AsOf
     top_k: int = Field(default=5, gt=0)
 
 
-class ExplainResult(_Strict):
+class ExplainResult(Strict):
     """Task 1's contributions as structured rows -- feature, contribution, direction, baseline."""
 
     status: Literal["explained"] = "explained"
@@ -167,7 +167,7 @@ class ExplainResult(_Strict):
 ExplainOutput = Annotated[ExplainResult | Refusal, Field(discriminator="status")]
 
 
-class VersionsResult(_Strict):
+class VersionsResult(Strict):
     """What is actually live, read from the registry -- never inferred from config (Phase 8)."""
 
     registered_model_name: str = Field(min_length=1)

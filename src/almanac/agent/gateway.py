@@ -10,9 +10,10 @@ from typing import Any, Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from almanac.agent.mcp_server import TOOL_NAMES, tool_payload
+from almanac.agent.schemas import Strict
 
 Outcome = Literal["ok", "refused", "failed"]
 
@@ -25,10 +26,8 @@ class ToolRefusedError(Exception):
     """
 
 
-class AuditRecord(BaseModel):
+class AuditRecord(Strict):
     """One call as the log keeps it: what was asked, what came back, how long it took."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     # Defaulted rather than passed, so the three places that write a record
     # cannot disagree about which clock stamps it.
