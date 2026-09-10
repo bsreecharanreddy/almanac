@@ -19,9 +19,10 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.tools import Tool
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from almanac.agent.gateway import AuditLog, ToolGateway
+from almanac.agent.grounding import GroundingTrace, verify
 from almanac.agent.model_gateway import AuditedModel, answering_model
 from almanac.agent.schemas import Strict
 
@@ -65,7 +66,26 @@ class Incomplete(Strict):
     transcript: list[ModelMessage]
 
 
-AgentOutcome = Annotated[Answered | Incomplete, Field(discriminator="status")]
+class Ungrounded(Strict):
+    """A verified answer that would not ground -- kept for the record, not to rely on.
+
+    `answer_grounded` handed the model the verifier's failed rows and one more
+    turn, and the retry still did not verify. `answer` is the last thing it said;
+    `grounding` is why it fails. A structured refusal, the shape `predict`'s drift
+    refusal already has -- an ungroundable answer is a typed result, not a thing
+    that ships.
+    """
+
+    status: Literal["ungrounded"] = "ungrounded"
+    question: str
+    answer: str
+    grounding: GroundingTrace
+    retries: int
+    tools_called: list[str]
+    transcript: list[ModelMessage]
+
+
+AgentOutcome = Annotated[Answered | Incomplete | Ungrounded, Field(discriminator="status")]
 
 
 async def gateway_tools(server: MCPServer, gateway: ToolGateway) -> list[Tool[Any]]:
@@ -129,6 +149,81 @@ async def answer(
         tools_called=tools_called(messages),
         transcript=list(messages),
     )
+
+
+# Handed to the model verbatim on the one retry, ahead of the verifier's own
+# failure rows. It names the move, not the fix: call the tool that would
+# substantiate the claim, or drop the number.
+_RETRY_PROMPT = (
+    "Your previous answer did not verify against the tools called in this run:\n"
+    "{failures}\n"
+    "You have one more turn. Call the tool that would substantiate the claim, or "
+    "restate the answer using only numbers a tool returned. State no number you "
+    "cannot point to a tool return for."
+)
+
+
+async def answer_grounded(
+    agent: Agent[None, str], question: str, *, turn_limit: int = DEFAULT_TURN_LIMIT
+) -> AgentOutcome:
+    """A bounded run whose answer is verified against its own tool returns.
+
+    An answer that does not ground gets exactly one more turn, the verifier's
+    failed rows handed back as the observation. If it still does not ground the
+    run ends `Ungrounded`. The retry spends a budgeted turn -- it is not a free
+    one -- so the Phase 9 bound still holds across both attempts.
+    """
+    first = await answer(agent, question, turn_limit=turn_limit)
+    if not isinstance(first, Answered):
+        return first
+    trace = verify(first.transcript)
+    if trace.grounded:
+        return first
+
+    try:
+        result = await agent.run(
+            _retry_prompt(trace),
+            message_history=first.transcript,
+            usage=RunUsage(requests=_model_requests(first.transcript)),
+            usage_limits=UsageLimits(request_limit=turn_limit),
+        )
+    except UsageLimitExceeded:
+        return Ungrounded(
+            question=question,
+            answer=first.answer,
+            grounding=trace,
+            retries=1,
+            tools_called=first.tools_called,
+            transcript=first.transcript,
+        )
+
+    messages = result.all_messages()
+    retried = verify(messages)
+    if retried.grounded:
+        return Answered(
+            question=question,
+            answer=result.output,
+            model=answering_model(_final_response(messages)),
+            tools_called=tools_called(messages),
+            transcript=list(messages),
+        )
+    return Ungrounded(
+        question=question,
+        answer=result.output,
+        grounding=retried,
+        retries=1,
+        tools_called=tools_called(messages),
+        transcript=list(messages),
+    )
+
+
+def _retry_prompt(trace: GroundingTrace) -> str:
+    return _RETRY_PROMPT.format(failures="\n".join(f"- {failure}" for failure in trace.failures))
+
+
+def _model_requests(transcript: Sequence[ModelMessage]) -> int:
+    """Model requests the run has already spent -- one response per request."""
+    return sum(isinstance(message, ModelResponse) for message in transcript)
 
 
 def tools_called(messages: Sequence[ModelMessage]) -> list[str]:
