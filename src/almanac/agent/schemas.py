@@ -104,11 +104,13 @@ class PredictResult(_Strict):
     provenance: ModelProvenance
 
 
-class PredictRefusal(_Strict):
-    """No score, ever, in place of one the champion cannot honestly produce (design doc S4.2).
+class Refusal(_Strict):
+    """No number, ever, in place of one the champion cannot honestly produce (design doc S4.2).
 
     Structured so an agent narrates it without inventing prose to fill the gap:
-    which feature is missing, and why -- never a number.
+    which feature is missing, and why -- never a number. Shared by `predict`
+    and `explain` because they refuse on the same fact, not merely on similar
+    ones: a feature the champion reads is null in this window.
     """
 
     status: Literal["refused"] = "refused"
@@ -119,7 +121,7 @@ class PredictRefusal(_Strict):
     provenance: FeatureProvenance
 
 
-PredictOutput = Annotated[PredictResult | PredictRefusal, Field(discriminator="status")]
+PredictOutput = Annotated[PredictResult | Refusal, Field(discriminator="status")]
 
 Direction = Literal["increases_risk", "decreases_risk"]
 
@@ -153,12 +155,16 @@ class ExplainInput(_Strict):
 class ExplainResult(_Strict):
     """Task 1's contributions as structured rows -- feature, contribution, direction, baseline."""
 
+    status: Literal["explained"] = "explained"
     entity: EntityKey
     as_of: AsOf
     baseline: float
     contributions: list[Contribution]
     top_k: int = Field(gt=0)
     provenance: ModelProvenance
+
+
+ExplainOutput = Annotated[ExplainResult | Refusal, Field(discriminator="status")]
 
 
 class VersionsResult(_Strict):

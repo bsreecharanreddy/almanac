@@ -18,8 +18,8 @@ from almanac.agent.schemas import (
     GetFeaturesResult,
     ModelProvenance,
     PredictOutput,
-    PredictRefusal,
     PredictResult,
+    Refusal,
     VersionsResult,
 )
 from almanac.model.train import FEATURE_COLUMNS
@@ -82,7 +82,7 @@ def test_predict_result_round_trips_through_json() -> None:
 
 
 def test_predict_refusal_round_trips_and_carries_no_score() -> None:
-    refusal = PredictRefusal(
+    refusal = Refusal(
         entity=ENTITY,
         as_of=AS_OF,
         missing_feature="is_draft",
@@ -119,7 +119,7 @@ def test_predict_output_union_discriminates_on_status() -> None:
     )
 
     assert isinstance(scored, PredictResult)
-    assert isinstance(refused, PredictRefusal)
+    assert isinstance(refused, Refusal)
 
 
 def test_explain_result_round_trips_and_direction_is_derived_from_sign() -> None:
