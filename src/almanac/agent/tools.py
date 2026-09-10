@@ -1,6 +1,6 @@
-"""Tools 1-3: point-in-time features, the champion's score, and the
-contributions behind it -- each read through the platform's own path rather
-than a parallel implementation.
+"""The four tools: point-in-time features, the champion's score, the
+contributions behind it, and what produced them -- each read through the
+platform's own path rather than a parallel implementation.
 
 Design doc S6 calls `get_features` "the demo that carries the interview":
 two calls at different `as_of` values on the same entity return different
@@ -8,11 +8,14 @@ vectors, and each is exactly what the real training-time join would have
 produced. `predict` and `explain` are S4.2's recorded response to Phase 8's
 drift finding, executable for the first time: a reduced-era window gets a
 structured refusal naming the missing feature, never a fabricated number.
+`versions` reads the registry back rather than inferring it from config.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import hashlib
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol
 
 import pandas as pd
 from delta.tables import DeltaTable
@@ -33,14 +36,23 @@ from almanac.agent.schemas import (
     PredictOutput,
     PredictResult,
     Refusal,
+    VersionsResult,
 )
 from almanac.features.assemble import assemble_training_set
 from almanac.features.spine import build_pr_opened_spine
 from almanac.model import drift
 from almanac.model.contributions import BASELINE_COLUMN, ContributionModel, contribution_frame
 from almanac.model.dataset import FEATURE_TABLE_NAMES, feature_pins, read_delta
+from almanac.model.registry import CHAMPION_ALIAS
 from almanac.model.score import ProbabilityModel, positive_class_probability
 from almanac.model.train import FEATURE_COLUMNS
+
+# MLflow's Spark autologging tag: newline-separated `path=...,version=N,format=delta`
+# entries, one per input the run read. `mlflow.spark.autologging` owns the name.
+SPARK_DATASOURCE_TAG = "sparkDatasourceInfo"
+
+# MLflow ellipsizes any tag value beyond this, losing whole entries off the end.
+_TRUNCATION_MARKER = "..."
 
 
 def get_features(
@@ -228,6 +240,84 @@ def _refusal_for(fetched: GetFeaturesResult) -> Refusal | None:
         reason=offending.response,
         provenance=fetched.provenance,
     )
+
+
+class ModelRegistry(Protocol):
+    """The two `MlflowClient` reads `versions` makes, so the live client is injected."""
+
+    def get_model_version_by_alias(self, name: str, alias: str) -> Any: ...
+
+    def get_run(self, run_id: str) -> Any: ...
+
+
+def feature_set_version(columns: Sequence[str]) -> str:
+    """A version of the contracted feature set that moves when the set does.
+
+    Order is part of the identity, not incidental: `positive_class_probability`
+    indexes `predict_proba` by position, so a reordered set is a different
+    vector even when its membership is unchanged.
+    """
+    return hashlib.sha256("\n".join(columns).encode()).hexdigest()[:12]
+
+
+FEATURE_SET_VERSION = feature_set_version(FEATURE_COLUMNS)
+
+
+def versions(
+    registry: ModelRegistry, *, registered_model_name: str, alias: str = CHAMPION_ALIAS
+) -> VersionsResult:
+    """What is live, read back from the registry rather than inferred.
+
+    Phase 8 found the serving endpoint answering on the retracted v1 while
+    the alias had already moved to v2, so a config-derived answer here would
+    have been confidently wrong and nothing would have said so.
+    """
+    model_version = registry.get_model_version_by_alias(registered_model_name, alias)
+    run = registry.get_run(model_version.run_id)
+
+    tag = run.data.tags.get(SPARK_DATASOURCE_TAG)
+    if not tag:
+        raise ValueError(
+            f"run {model_version.run_id} carries no {SPARK_DATASOURCE_TAG} tag, so the "
+            "Delta versions it trained on cannot be reported; Spark autologging was "
+            "not active for that run"
+        )
+
+    return VersionsResult(
+        registered_model_name=registered_model_name,
+        model_version=str(model_version.version),
+        training_run_id=str(model_version.run_id),
+        training_data_delta_versions=_delta_versions_from_tag(tag, run_id=model_version.run_id),
+        feature_set_version=FEATURE_SET_VERSION,
+    )
+
+
+def _delta_versions_from_tag(tag: str, *, run_id: str) -> dict[str, int]:
+    """Parse MLflow's datasource tag, refusing anything it cannot answer exactly."""
+    if tag.endswith(_TRUNCATION_MARKER):
+        raise ValueError(
+            f"the {SPARK_DATASOURCE_TAG} tag on run {run_id} is truncated, so entries are "
+            "missing from the end; partial provenance reported as complete is worse than "
+            "none, because it still looks checkable"
+        )
+
+    versions_by_path: dict[str, int] = {}
+    for line in tag.splitlines():
+        fields = dict(part.split("=", 1) for part in line.split(",") if "=" in part)
+        path, version = fields.get("path"), fields.get("version")
+        # A non-Delta source carries no version at all; it has no Delta version
+        # to report and must not take the rest of the answer down with it.
+        if path is None or version is None:
+            continue
+        parsed = int(version)
+        if versions_by_path.get(path, parsed) != parsed:
+            raise ValueError(
+                f"{path} appears at two versions ({versions_by_path[path]} and {parsed}) "
+                f"on run {run_id}; there is no single version the champion trained on"
+            )
+        versions_by_path[path] = parsed
+
+    return versions_by_path
 
 
 def _resolved_version(spark: SparkSession, path: str, pinned: int | None) -> int:
