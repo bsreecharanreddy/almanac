@@ -59,6 +59,21 @@ a year later.**
 
 ## Current status
 
+**Phase 9, the agent layer, is complete on branch `phase-9-agent-layer`,
+targeting `v1.1.0`.** Four read-only tools over MCP, a tool gateway and a
+model gateway in front of them, and a bounded agent — additive and
+read-only, so `v1.0` stays tagged where it was and everything below remains
+true of what it describes. **Its paid window found that neither configured
+model can serve the agent in this workspace**: every Claude endpoint
+returns 403 for a Databricks-set rate limit of 0 while reporting `READY`,
+and the fallback's replies do not parse. Llama 3.3 70B answered once,
+recorded as a substitute. **Every number in that answer came from a tool,
+and one claim did not** — "trained on" a Delta version the tools only read.
+That is the first real case for Phase 10's grounding verifier, and the
+reason it has to check what a number is claimed to be, not only where it
+came from. The window's cost is owed: `system.billing.usage`, on or after
+2026-09-11 (`docs/findings/2026-09-10-agent-layer-window.md`).
+
 **The project is complete and tagged `v1.0`.** Every phase is merged to
 `main`: Phase 7 via PR #14, Phase 8 via PR #16, and a pre-tag PII fix via
 PR #17. **The history was then rewritten** (`git filter-repo`, all 199
@@ -148,6 +163,7 @@ See §9 of the design doc for the full table and its gates. At a glance:
 | 6 | Wk 10–11 | Streaming: live poller, late arrival, exactly-once, online store |
 | 7 | Wk 12–13 | Governance, lineage, contracts in CI, BI, docs |
 | 8 | Wk 13 | Tag `v1.0`. Stop. |
+| 9 | After `v1.0` | Agent layer: four read-only tools over MCP, two gateways, a bounded agent — `v1.1.0` |
 
 ## Data engineering patterns — non-negotiable
 

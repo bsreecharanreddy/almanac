@@ -381,21 +381,56 @@ still accurate?", which a stale file passes trivially.
 
 ## Exit gate
 
-- [ ] Contributions sum to the prediction; off-by-one mutation-tested
-- [ ] Four tools, structured returns, schemas defined once
-- [ ] `as_of` at two timestamps returns different vectors, earlier one leakage-clean
-- [ ] A reduced-era window returns a structured refusal naming the feature
-- [ ] `versions()` matches the live registry, read back not inferred
-- [ ] MCP client lists and calls all four tools
-- [ ] No write path exists, enforced structurally and mutation-tested
-- [ ] Every tool call and every model choice appears in the audit log
-- [ ] Sonnet 5 requests carry no sampling parameters, asserted on the request
-- [ ] Fallback tested on four failure shapes; the 400 does **not** fall back
-- [ ] Preflight refuses a missing endpoint, naming what is available
-- [ ] Turn bound enforced; hitting it yields a structured incomplete result
-- [ ] Real tables and the live endpoint exercised in one window
-- [ ] Token cost reconciled against `system.serving.endpoint_usage`
-- [ ] Teardown verified twice
+Marked against evidence at close-out, 2026-09-10, not from memory.
+
+- [x] Contributions sum to the prediction; off-by-one mutation-tested --
+      Task 1, against a real `LGBMClassifier`; five mutations, all killed.
+- [x] Four tools, structured returns, schemas defined once -- Tasks 2-6;
+      the MCP envelope that nests union returns under `result` is unwrapped
+      in exactly one place (Task 7).
+- [x] `as_of` at two timestamps returns different vectors, earlier one
+      leakage-clean -- and on real data in the window: three features moved
+      between one hour and twenty-four, and the earlier instant recomputed
+      **byte-identical**.
+- [~] A reduced-era window returns a structured refusal naming the feature
+      -- on real data both scoring tools refused a 2026 entity, but naming
+      `bot_events_to_date`, because the repo was first seen in 2026 and the
+      feature tables cover Q3 2025. That demonstrates coverage, not the
+      `is_draft` drift this row is about; the isolated cause is proven only
+      on the local fixture. `n = 1`. Stated, not met.
+- [x] `versions()` matches the live registry, read back not inferred --
+      champion v2 and its training run, the same pair
+      `model-versions get-by-alias` returned independently.
+- [x] MCP client lists and calls all four tools -- Task 7, over the
+      protocol, against Delta tables rather than stubs.
+- [x] No write path exists, enforced structurally and mutation-tested --
+      Task 8's allow-list: a write-capable tool registered on the server
+      never ran.
+- [x] Every tool call and every model choice appears in the audit log --
+      per request since Task 11, which found the per-run record spanning
+      both tool calls (212.4 s, about 7.4 s of it the model) and blind to a
+      mid-run fallback. Verified locally, not live.
+- [x] Sonnet 5 requests carry no sampling parameters, asserted on the
+      request -- on the wire body. Sonnet 5 itself never answered here.
+- [x] Fallback tested on four failure shapes; the 400 does **not** fall
+      back -- and held live: the 403 raised the primary's refusal without
+      consulting the fallback.
+- [x] Preflight refuses a missing endpoint, naming what is available --
+      though the window showed `READY` is not callable: every Claude
+      endpoint passed preflight and refused every request.
+- [x] Turn bound enforced; hitting it yields a structured incomplete result
+      -- tested at the boundary, one request either side.
+- [~] Real tables and the live endpoint exercised in one window -- run 5
+      read the real feature store and answered through a live
+      foundation-model endpoint, but that endpoint was the Llama
+      substitute, and the tools scored with the champion loaded in process
+      from `@champion` rather than through `almanac-pr-review-sla-risk`.
+- [ ] Token cost reconciled against `system.serving.endpoint_usage` --
+      **not done, and cannot be here**: the table has no rows in this
+      workspace, and the gateway keeps no token count. `system.billing.usage`
+      is read on or after 2026-09-11.
+- [x] Teardown verified twice -- after the last run, at 14:24:47Z and
+      14:29:07Z: no live clusters, no active runs, warehouse stopped.
 - [ ] Full `make check` green before the push
 
 ---

@@ -74,7 +74,9 @@ real name.)*
 
 ---
 
-> **Status: complete and tagged `v1.0`.** All nine phases merged.
+> **Status: `v1.0` tagged, all nine phases merged.** A tenth, the agent
+> layer, is complete on branch `phase-9-agent-layer` and targets `v1.1.0`;
+> everything below this line describes `v1.0` and remains true of it.
 > Phase by phase, each led by what it *found*: [`CHANGELOG.md`](CHANGELOG.md).
 > Task granularity and the verification log: [`docs/STATUS.md`](docs/STATUS.md).
 
@@ -127,6 +129,13 @@ flowchart LR
     DR[Offline drift<br/>schema drift reported before covariate]
   end
 
+  subgraph agent[Agent layer · read-only]
+    MCP[MCP server<br/>four tools · schemas defined once]
+    TG[Tool gateway<br/>allow-list · append-only audit]
+    MG[Model gateway<br/>capability records<br/>a 4xx never falls back]
+    AG[Bounded agent<br/>turn limit · replayable transcripts]
+  end
+
   GHA --> B
   API --> B
   B --> S
@@ -146,11 +155,15 @@ flowchart LR
   WC -.-> B
   F -.-> DR
   DR -.-> R
+  F --> MCP
+  R --> MCP
+  MCP --> TG --> AG
+  MG --> AG
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
   classDef gone fill:#fff3cd,stroke:#d39e00,color:#000,stroke-dasharray:2 2
-  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN,WC,DR done
+  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN,WC,DR,MCP,TG,MG,AG done
   class API todo
   class V,O,BI gone
 ```
@@ -194,6 +207,16 @@ span was derived from a calibration run rather than chosen up front. It
 came out at **13.84 GB gz per billed cluster-hour**, which made the full
 Q3 2025 quarter affordable at 17.2% of the credit. The rule was written to
 bind in both directions; it bound upward, from one month to a quarter.
+
+**The agent layer's paid window (Phase 9, not part of `v1.0`) measured
+something similar for foundation models.** Neither configured endpoint
+could serve the agent in this workspace — every Claude endpoint returns
+403 for a Databricks-set rate limit of 0 while reporting `READY`, and the
+configured fallback's replies don't parse — so `READY` is not the same
+claim as callable, and only a real request reveals the difference. A
+substitute model answered instead, and its one live answer put every
+number through a tool call and still misstated what one of them meant.
+Full write-up: [`docs/findings/2026-09-10-agent-layer-window.md`](docs/findings/2026-09-10-agent-layer-window.md).
 
 ## What it does not do
 

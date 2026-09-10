@@ -6,8 +6,8 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase 9 (agent layer) is open on branch `phase-9-agent-layer`. Eleven of
-twelve tasks are done.** Task 1 (`almanac/model/contributions.py`), Task 2
+**Phase 9 (agent layer) is complete on branch `phase-9-agent-layer` —
+twelve of twelve tasks — and not yet merged.** Task 1 (`almanac/model/contributions.py`), Task 2
 (`almanac/agent/schemas.py`), Tasks 3–6 (`almanac/agent/tools.py`'s
 `get_features`, `predict`, `explain` and `versions` — the full four-tool
 surface), Task 7 (`almanac/agent/mcp_server.py`, those four tools over
@@ -25,7 +25,8 @@ cannot be parsed. Its first live transcript is committed and replays for
 free. **What it cost is not known yet**: `system.billing.usage` lags, so it
 is read on or after 2026-09-11, and the plan's token reconciliation cannot
 run here at all (`docs/findings/2026-09-10-agent-layer-window.md`). Task 12
-is not started. Design doc at
+closed out the reader-facing artifacts and marked the plan's exit gate
+against evidence. Design doc at
 `docs/design/2026-09-09-almanac-agent-layer-design.md`, plan at
 `docs/plans/2026-09-09-phase-9-agent-layer-plan.md`. Target is
 **`v1.1.0`**: the agent layer is strictly additive and strictly
@@ -250,11 +251,14 @@ Every other figure in the docs remains bracketed or absent by design.
 `docs/plans/2026-09-09-phase-9-agent-layer-plan.md`, twelve tasks, target
 `v1.1.0`.
 
-**Task 12 is next: the close-out.** The window's findings doc already
-exists. What is left is `README.md` — its status line, and the architecture
-diagram's agent layer, drawn but not yet committed — `CLAUDE.md`'s current
-status, the story-bank gist, the exit gate marked against evidence, and the
-full `make check` before the phase's one push.
+**What is left of Phase 9 is its PR.** The branch goes up as one push for
+one PR, the way `phase-6-streaming` did. **Correction to what this section
+said before Phase 10 was planned:** it read "`v1.1.0` is tagged after the
+merge," which is Phase 8's rule for a phase that is its own release and
+does not hold here — the design doc's own header states
+`**Scope:** Phases 9 and 10, shipping as v1.1.0`. Phase 9 merges to `main`
+untagged; `v1.1.0` is tagged once Phase 10 also lands. Caught while
+planning Phase 10, before the merge it would have mis-tagged — not after.
 
 **One read is owed after the phase closes: the window's cost.**
 `system.billing.usage` for workspace `7405615444091260`, on or after

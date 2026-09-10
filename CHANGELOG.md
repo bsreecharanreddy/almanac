@@ -7,6 +7,49 @@ Every number here is measured. Where one was later found wrong, it is
 corrected **in place with the original kept**, because a retraction that
 deletes its own evidence is not a retraction.
 
+## Phase 9 — the agent layer, 2026-09-10 (targets `v1.1.0`, not yet released)
+
+Strictly additive and strictly read-only: nothing under it changed, and
+`v1.0` stays tagged where it was.
+
+- **Four tools, one contract.** `get_features`, `predict`, `explain` and
+  `versions`, typed once in `schemas.py`, served over MCP, and called only
+  through an allow-list gateway that records every call. Per-feature
+  contributions, promised by design doc §6 and never built, now exist and
+  are served by `explain`.
+- **The refusal reached a second tool before it could matter.** A window
+  missing a feature the champion reads is refused by `predict` — and by
+  `explain`, which would otherwise have published a contribution for a
+  feature that does not exist: the same fabrication, through the
+  explanation path.
+- **A fallback that falls back only on a transient failure.** The
+  framework's default routes any API error, 4xx included, to the fallback
+  model, which would let every answer come from a model nobody chose.
+  Tested on four failure shapes, then held live: a permanent 403 raised the
+  primary's own refusal without consulting the fallback.
+- **The paid window took five runs.** The tools held on the real feature
+  store: `versions()` matched the live registry, point-in-time held at two
+  instants with a byte-identical recompute, and the same score —
+  **0.0038260014552166737** — came back on three separate clusters. Both
+  scoring tools refused a real 2026 entity, but on feature-table coverage
+  rather than the `is_draft` drift the design predicted (`n = 1`).
+- **Neither configured model can serve the agent in this workspace.**
+  Every Claude endpoint returns 403 for a Databricks-set rate limit of 0
+  while reporting `READY`, and `gpt-oss-120b` replies in a shape
+  `OpenAIChatModel` cannot parse. Llama 3.3 70B answered once, recorded in
+  the evidence as a substitute.
+- **Every number in that answer came from a tool; one claim did not.** It
+  said the model was trained on the Delta version the tools *read* — v92,
+  where the champion trained on v91. The transcript is committed as the
+  first real case for Phase 10's grounding verifier.
+- **The audit record timed the wrong thing.** The model's one record per
+  run read **212.4 s**, of which about 7.4 s was the model: it spanned both
+  tool calls and named only the last model to answer. Now one record per
+  request, mutation-tested six ways.
+- **Cost not yet known.** `system.billing.usage` is read on or after
+  2026-09-11, and the token reconciliation the plan asked for cannot run in
+  a workspace whose `system.serving.endpoint_usage` has never had a row.
+
 ## v1.0 — Phase 8 (ship), 2026-09-09
 
 Tagged after the history rewrite described in the last two entries below.

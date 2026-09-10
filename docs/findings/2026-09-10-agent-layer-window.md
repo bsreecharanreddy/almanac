@@ -88,6 +88,16 @@ neither Phase 8 nor this window built. The mechanism itself is proven on the
 isolated cause by the local fixture, where `is_draft` is the only difference
 between the two entities.
 
+### What the tools did not go through
+
+`predict` and `explain` scored with the champion loaded in process from
+Unity Catalog at `@champion`, not through the serving endpoint the plan
+names, `almanac-pr-review-sla-risk`. `explain` reads contributions from the
+native booster (`pred_contrib`), and one model object keeps the two tools'
+numbers consistent with each other. So this window says nothing about what
+that endpoint serves: `versions()` read the registry alias, and the
+endpoint's own served version was not checked here.
+
 ## What the agent did on real data
 
 Run `693835076571838`, agent only: the tool demonstrations were already
