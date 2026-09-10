@@ -39,6 +39,10 @@ class AuditRecord(BaseModel):
     latency_ms: float = Field(ge=0)
     result: dict[str, Any] | None = None
     reason: str | None = None
+    # Which model answered, on a model call. Read back from the response rather
+    # than inferred from config, because with a fallback in the chain the
+    # configured primary is a guess (model_gateway.py).
+    model: str | None = None
 
 
 class AuditLog:
