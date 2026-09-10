@@ -24,6 +24,9 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from almanac.agent.bounded_agent import load_transcript
+from almanac.agent.grounding import write_trace
+
 _DIRECTION_FLIP = ("decrease the risk of breach", "increase the risk of breach")
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
@@ -279,11 +282,21 @@ def _build_flipped_transcript() -> None:
     print(f"wrote tests/fixtures/transcripts/{_FLIPPED}")
 
 
+def _write_grounding_traces() -> None:
+    """A `<stem>.grounding.json` beside each committed transcript -- Task 9's per-run record."""
+    for name in (_LIVE, _FLIPPED):
+        transcript_path = _TRANSCRIPTS / name
+        trace_path = transcript_path.with_suffix(".grounding.json")
+        write_trace(load_transcript(transcript_path), trace_path)
+        print(f"wrote tests/fixtures/transcripts/{trace_path.name}")
+
+
 def main() -> None:
     _GOLDEN.mkdir(parents=True, exist_ok=True)
     _build_flipped_transcript()
     for entry in _ENTRIES:
         _write(entry)
+    _write_grounding_traces()
 
 
 if __name__ == "__main__":

@@ -21,13 +21,14 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from almanac.agent.bounded_agent import (
-    Answered,
-    answer,
+    Incomplete,
+    answer_grounded,
     build_agent,
     gateway_tools,
     save_transcript,
 )
 from almanac.agent.gateway import AuditLog, ToolGateway, allow_list
+from almanac.agent.grounding import write_trace
 from almanac.agent.mcp_server import ScoringModel, TablePaths, ToolContext, build_server
 from almanac.agent.model_gateway import (
     FALLBACK_ENDPOINT,
@@ -355,9 +356,10 @@ def _run_agent(
             f"{entity.repo_id} as of {as_of.isoformat()}, and which features drive it? "
             "Report the model version and the Delta versions behind your answer."
         )
-        outcome = run_blocking(lambda: answer(agent, question))
-        if isinstance(outcome, Answered):
+        outcome = run_blocking(lambda: answer_grounded(agent, question))
+        if not isinstance(outcome, Incomplete):
             save_transcript(config.evidence_dir / "transcript.json", outcome.transcript)
+            write_trace(outcome.transcript, config.evidence_dir / "transcript.grounding.json")
 
         return {
             "question": question,

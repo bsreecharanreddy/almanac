@@ -98,3 +98,15 @@ def test_the_committed_window_transcript_is_the_known_bad_fixture() -> None:
 
     assert not result.passes
     assert "ungrounded" in result.reasons
+
+
+def test_the_gate_is_this_offline_pytest_step_not_a_separate_ci_job() -> None:
+    """Design S6's gate -- "a deliberately hallucinated number fails CI" -- is the
+    committed known-bad fixtures failing `evaluate_golden` in the normal `pytest -m
+    "not network"` step. No endpoint, no replay harness beyond `load_transcript`,
+    no new workflow job. Marking one `passes: true` turns this suite red.
+    """
+    known_bad = [e for e in _entries() if not e["expect"]["passes"]]
+    assert known_bad, "the gate needs a committed hallucination to fail on"
+    for entry in known_bad:
+        assert not evaluate_golden(_transcript(entry), entry["requires_tools"]).passes

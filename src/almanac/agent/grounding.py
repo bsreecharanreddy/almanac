@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Iterator, Sequence
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -387,3 +388,14 @@ def verify(transcript: Sequence[ModelMessage]) -> GroundingTrace:
         directions=directions,
         failures=failures,
     )
+
+
+def write_trace(transcript: Sequence[ModelMessage], path: Path) -> GroundingTrace:
+    """Verify `transcript` and write the trace beside it (`<stem>.grounding.json`).
+
+    One per agent run -- design S6 Task 7. The machine-readable record of why a
+    build went red, next to the transcript it went red on.
+    """
+    trace = verify(transcript)
+    path.write_text(trace.model_dump_json(indent=2) + "\n")
+    return trace
