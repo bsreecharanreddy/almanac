@@ -180,26 +180,26 @@ the verifier has to allow for without allowing everything.
 
 The rule, stated so it can be tested:
 
-- A literal `x` in the answer is grounded by a tool value `v` if `x == v`
-  exactly, **or** if `v` rounds to `x` at the number of significant
-  figures `x` is written to (`round(v, sig=len(x))`), **or** if `x` is
-  `v` truncated at a decimal place. No tolerance band beyond
-  representational rounding — `0.0038` grounds `0.003826`, `0.004` does
-  not ground `0.0038`.
+- A literal `x` written to `d` decimal places is grounded by a tool value
+  `v` if `x == v` exactly, **or** if `f"{v:.{d}f}" == x` (a rounding),
+  **or** if `v` truncated at `d` equals `x`. A rounding or truncation
+  match additionally requires `x` to carry **at least two significant
+  digits** — so `0.0038` grounds `0.003826`, but `0.004` (one significant
+  digit) does not ground `0.0038`. No tolerance band beyond that.
 - Integers match exactly. A version number, a `top_k`, a `pr_number`
   never rounds.
-- Numbers inside a quoted feature name (`prior_pr_count`) are not
-  literals.
+- Numbers inside a quoted span (a feature name may carry a digit) and
+  echoed timestamps (`as_of` is neither computed nor rounded) are removed
+  before extraction. A percentage literal is tried against `v` and `v*100`.
 
 Numbers are extracted by regex over the answer text. Tool values are
-walked from the typed tool-call results recorded in the transcript —
-every leaf of every `GetFeaturesResult`, `ExplainResult`, `PredictResult`,
-`VersionsResult` in the run.
+walked as every numeric leaf — including numeric strings like
+`model_version` `"2"` — of every tool return recorded in the transcript.
 
-**Test:** table-driven over the rounding rule — exact, rounded-ok,
-rounded-too-far, truncated, integer-exact, integer-off-by-one,
-number-in-a-name. The live transcript's `0.003826` grounds; a fabricated
-`0.005` does not.
+**Test:** table-driven over the rule — exact, rounded-ok, rounded-too-far
+(one significant digit), truncated, integer-exact, integer-off-by-one,
+number-in-a-name, percentage. The live transcript's `0.003826` grounds as
+*rounded*; a fabricated `0.5` does not.
 
 ---
 
