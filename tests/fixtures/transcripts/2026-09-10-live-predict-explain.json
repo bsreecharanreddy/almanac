@@ -70,7 +70,7 @@
           "unit": "probability_of_breach",
           "provenance": {
             "model_version": "2",
-            "delta_versions": {
+            "read_delta_versions": {
               "events": 92,
               "author_activity": 0,
               "repo_activity": 0,
@@ -176,7 +176,7 @@
           "top_k": 5,
           "provenance": {
             "model_version": "2",
-            "delta_versions": {
+            "read_delta_versions": {
               "events": 92,
               "author_activity": 0,
               "repo_activity": 0,

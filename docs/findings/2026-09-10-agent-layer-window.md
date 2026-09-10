@@ -126,15 +126,17 @@ It made **three** model requests and **two** tool calls -- `predict`, then
 - **One claim in it is false, and it is attached to correct numbers.**
   "Trained on Delta versions 92": the champion trained on `events/clean`
   **v91**, per `versions()` in the same evidence. 92 is the version the two
-  tools *read*. `ModelProvenance`'s own docstring says so -- "which registered
-  model version, reading which Delta versions" -- but a docstring does not
-  travel in a tool result. What the model saw was
-  `{"model_version": "2", "delta_versions": {...}}`, which reads naturally as
-  the model's own training data. It never called `versions`, the one tool
-  that returns training versions, so nothing in its context could have
-  corrected it. **The rule the instructions state -- every number from a
-  tool -- held. The relationship claimed around the number did not.**
-  `n = 1` answer.
+  tools *read*. `ModelProvenance`'s docstring said as much at the time --
+  "which registered model version, reading which Delta versions" -- but a
+  docstring does not travel in a tool result. What the model saw was
+  `{"model_version": "2", "delta_versions": {...}}`, and that key reads
+  naturally as the model's own training data. It never called `versions`,
+  the one tool that returns training versions, so nothing in its context
+  could have corrected it. **The rule the instructions state -- every number
+  from a tool -- held. The relationship claimed around the number did not.**
+  `n = 1` answer. *(Phase 10 Task 1 renamed the field to
+  `read_delta_versions` so the tool result now says what it is versions of;
+  the verifier is the enforcement, this is the cause.)*
 - **The substitute is on the record, not hidden.** The evidence carries
   `"substitute_for": "databricks-claude-sonnet-5"` beside the endpoint that
   answered. The audit log and the transcript both name
@@ -146,6 +148,11 @@ It made **three** model requests and **two** tool calls -- `predict`, then
   `tests/unit/test_agent_live_transcript.py` replays it through the agent for
   free. It is the first real fixture Phase 10's grounding verifier inherits,
   and it already carries a claim that verifier has to catch.
+  *(Phase 10 Task 1 renamed the ambiguous field: the two `provenance`
+  blocks in this fixture now read `read_delta_versions`, matching the
+  post-rename schema. Nothing else in the transcript changed — the
+  question, the answer, and the false claim are as recorded, and the
+  original matched the window evidence at sha256 `2ab0aa9cab7b`.)*
 
 ## Why neither configured model could answer
 
@@ -235,10 +242,12 @@ and nothing in this window says how Sonnet 5 would have answered.
    the model. **Verified locally, not live**: the fix landed after the last
    run, and a sixth run to watch it was not bought.
 9. **An answer attached a correct number to a false claim** (above).
-   Recorded, not fixed. Naming the field for what it is -- the versions
-   *read* -- is a contract change across four tools, not a window fix; and
-   checking the relationship a number is claimed to have, not only the
-   number, is the grounding verifier, which is Phase 10's.
+   Recorded here, fixed in Phase 10. Naming the field for what it is -- the
+   versions *read* -- is a contract change across the tools, not a window
+   fix; Phase 10 Task 1 makes it (`delta_versions` -> `read_delta_versions`
+   on `FeatureProvenance` and `ModelProvenance`). Checking the relationship
+   a number is claimed to have, not only the number, is the grounding
+   verifier, which is the rest of Phase 10.
 
 Two more were caught before any run, by the offline pre-flight:
 `pick_entity` stamped UTC onto a naive datetime Spark had already converted

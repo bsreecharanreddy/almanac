@@ -172,7 +172,7 @@ def test_provenance_names_the_delta_version_actually_read(
         features_path=features_path,
     )
 
-    assert result.provenance.delta_versions == {
+    assert result.provenance.read_delta_versions == {
         "events": 0,
         "author_activity": 1,
         "repo_activity": 0,
@@ -202,7 +202,7 @@ def test_a_pinned_version_is_reported_as_is_not_re_resolved(
         features_versions={"author_activity": 0, "repo_activity": 0, "pr_static": 0},
     )
 
-    assert result.provenance.delta_versions == {
+    assert result.provenance.read_delta_versions == {
         "events": 0,
         "author_activity": 0,
         "repo_activity": 0,

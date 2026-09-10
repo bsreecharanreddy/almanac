@@ -197,7 +197,7 @@ def test_a_reduced_era_window_is_refused_rather_than_explained(
     assert "contributions" not in type(result).model_fields
 
 
-def test_provenance_names_the_model_version_and_the_delta_versions_read(
+def test_provenance_names_the_model_version_and_the_read_delta_versions(
     spark: SparkSession, tmp_path: Path
 ) -> None:
     """An explanation is traceable to the byte-level state that produced it."""
@@ -207,7 +207,7 @@ def test_provenance_names_the_model_version_and_the_delta_versions_read(
 
     assert isinstance(result, ExplainResult)
     assert result.provenance.model_version == "test-1"
-    assert result.provenance.delta_versions == {
+    assert result.provenance.read_delta_versions == {
         "events": 0,
         "author_activity": 0,
         "repo_activity": 0,

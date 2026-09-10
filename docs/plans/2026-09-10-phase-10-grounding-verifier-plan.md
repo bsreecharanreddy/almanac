@@ -280,7 +280,10 @@ committed as fixtures, replayed offline.
   asserts the verifier returns `Ungrounded` on the relationship check,
   naming `training_data_delta_versions`. This is the fixture the whole
   phase exists to catch, and it was produced by a substitute model on
-  real data, not written to fail.
+  real data, not written to fail. Task 1 migrates its two `provenance`
+  blocks with the schema rename (`delta_versions` → `read_delta_versions`)
+  and records that in the findings doc; the model's answer text — the
+  false claim included — is not touched.
 - **Known-good fixtures**: hand-built transcripts where the agent calls
   `versions`, claims only what the fields support, and verifies clean —
   one per tool combination (`predict` alone, `predict`+`explain`,
@@ -479,7 +482,9 @@ Marked against evidence at close-out, not from memory.
 - [ ] A failed verification retries exactly once, then returns
       `Ungrounded` — never a number it could not ground
 - [ ] The golden set replays offline; the known-bad fixture is the
-      committed window transcript, unedited
+      committed window transcript with only Task 1's key rename applied to
+      its `provenance` blocks — the answer text, and the false claim in
+      it, untouched
 - [ ] A directional claim that contradicts the contribution sign fails;
       the first fixture is a flipped copy of a real answer
 - [ ] Every verifier check has a mutation that turns the suite red

@@ -106,15 +106,17 @@ def get_features(
     # tool's job (schemas.py) -- refusing to score it is Task 4's predict.
     features = {name: (None if row[name] is None else float(row[name])) for name in FEATURE_COLUMNS}
 
-    delta_versions = {"events": _resolved_version(spark, silver_delta_path, silver_version)}
+    read_delta_versions = {"events": _resolved_version(spark, silver_delta_path, silver_version)}
     for table in FEATURE_TABLE_NAMES:
-        delta_versions[table] = _resolved_version(spark, f"{features_path}/{table}", pins[table])
+        read_delta_versions[table] = _resolved_version(
+            spark, f"{features_path}/{table}", pins[table]
+        )
 
     return GetFeaturesResult(
         entity=request.entity,
         as_of=request.as_of,
         features=features,
-        provenance=FeatureProvenance(delta_versions=delta_versions),
+        provenance=FeatureProvenance(read_delta_versions=read_delta_versions),
     )
 
 
@@ -155,7 +157,7 @@ def predict(
         as_of=request.as_of,
         breach_risk=score,
         provenance=ModelProvenance(
-            model_version=model_version, delta_versions=fetched.provenance.delta_versions
+            model_version=model_version, read_delta_versions=fetched.provenance.read_delta_versions
         ),
     )
 
@@ -207,7 +209,7 @@ def explain(
         ],
         top_k=request.top_k,
         provenance=ModelProvenance(
-            model_version=model_version, delta_versions=fetched.provenance.delta_versions
+            model_version=model_version, read_delta_versions=fetched.provenance.read_delta_versions
         ),
     )
 
