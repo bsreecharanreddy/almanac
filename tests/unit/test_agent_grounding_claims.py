@@ -72,6 +72,21 @@ def test_an_unrecognized_claim_shape_produces_no_claim_check() -> None:
     assert claims == []
 
 
+def test_trained_on_a_version_is_not_also_read_as_a_model_version_claim() -> None:
+    """'the champion was trained on ... version 91' anchors on 'champion' and ends
+    on 'version 91', but the `train` between them makes it a training claim only --
+    otherwise 91 fails against `model_version` (which is 2) for the wrong reason.
+    """
+    claims = check_claims(
+        "on model version 2; the champion was trained on events/clean at Delta version 91",
+        [("predict", _PREDICT_RETURN), ("versions", _VERSIONS_RETURN)],
+    )
+
+    assert {c.claim_type for c in claims} == {"model_version", "training_provenance"}
+    assert _one(claims, "model_version").traced  # "model version 2" -> model_version
+    assert _one(claims, "training_provenance").traced  # "trained on ... 91" -> training
+
+
 def test_the_live_transcript_is_ungrounded_on_the_training_claim() -> None:
     trace = verify(load_transcript(_LIVE))
 

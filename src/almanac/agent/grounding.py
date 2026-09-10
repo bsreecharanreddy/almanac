@@ -211,7 +211,10 @@ _CLAIM_RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     (
         "model_version",
         "model_version",
-        re.compile(r"\b(?:model|champion)\b[^.]*?\bversion\s+(\d+)", re.IGNORECASE),
+        # "the model ... is version 2" -- but not "the champion was trained on ...
+        # version 91", which is the next rule's claim. The `train` between anchor
+        # and version is what separates a training claim from a model-version one.
+        re.compile(r"\b(?:model|champion)\b(?:(?!\btrain)[^.])*?\bversion\s+(\d+)", re.IGNORECASE),
     ),
     (
         "score",
