@@ -24,7 +24,13 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-_GOLDEN = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "golden"
+_DIRECTION_FLIP = ("decrease the risk of breach", "increase the risk of breach")
+
+_FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
+_GOLDEN = _FIXTURES / "golden"
+_TRANSCRIPTS = _FIXTURES / "transcripts"
+_LIVE = "2026-09-10-live-predict-explain.json"
+_FLIPPED = "2026-09-10-live-predict-explain-directions-flipped.json"
 
 _ENTITY = {"repo_id": 678894831, "pr_number": 391628}
 _AS_OF = "2025-08-04T01:00:12+00:00"
@@ -81,9 +87,22 @@ _REFUSAL_RETURN: dict[str, Any] = {
 
 
 # Fixed so re-running the generator is a no-op unless the content changed -- a
-# committed fixture whose ids churn on every build is noise in every diff.
+# committed fixture whose ids churn on every build is noise in every diff. A tool
+# call and its return share an id; the counter advances once per call.
 _WHEN = datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
-_call_ids = itertools.count(1)
+
+
+class _CallIds:
+    def __init__(self) -> None:
+        self._n = itertools.count(1)
+        self.current = "golden-00"
+
+    def advance(self) -> str:
+        self.current = f"golden-{next(self._n):02d}"
+        return self.current
+
+
+_ids = _CallIds()
 
 
 def _ask(text: str) -> ModelRequest:
@@ -92,12 +111,14 @@ def _ask(text: str) -> ModelRequest:
 
 def _call(name: str) -> ModelResponse:
     args = {"request": {"entity": _ENTITY, "as_of": _AS_OF}}
-    part = ToolCallPart(tool_name=name, args=args, tool_call_id=f"golden-{next(_call_ids):02d}")
+    part = ToolCallPart(tool_name=name, args=args, tool_call_id=_ids.advance())
     return ModelResponse(parts=[part], model_name="golden-fixture", timestamp=_WHEN)
 
 
 def _returns(name: str, content: dict[str, Any]) -> ModelRequest:
-    part = ToolReturnPart(tool_name=name, content=content, timestamp=_WHEN)
+    part = ToolReturnPart(
+        tool_name=name, content=content, tool_call_id=_ids.current, timestamp=_WHEN
+    )
     return ModelRequest(parts=[part])
 
 
@@ -224,7 +245,16 @@ _ENTRIES: list[dict[str, Any]] = [
                 "required_field": "training_data_delta_versions",
             },
         },
-        "transcript_file": "transcripts/2026-09-10-live-predict-explain.json",
+        "transcript_file": f"transcripts/{_LIVE}",
+    },
+    {
+        "name": "live-window-directions-flipped",
+        "description": "The window transcript with one phrase inverted -- its top three drivers "
+        "'increase the risk of breach' where the contributions are negative. Same numbers, "
+        "'decrease' swapped for 'increase'; the direction check fails on all three.",
+        "requires_tools": ["versions", "predict", "explain"],
+        "expect": {"passes": False, "reason": "ungrounded"},
+        "transcript_file": f"transcripts/{_FLIPPED}",
     },
 ]
 
@@ -239,8 +269,19 @@ def _write(entry: dict[str, Any]) -> None:
     print(f"wrote {path.relative_to(_GOLDEN.parents[2])}")
 
 
+def _build_flipped_transcript() -> None:
+    """The window transcript with one directional phrase inverted -- everything else identical."""
+    source = (_TRANSCRIPTS / _LIVE).read_text()
+    old, new = _DIRECTION_FLIP
+    if old not in source:
+        raise SystemExit(f"{_LIVE} no longer contains {old!r}; the flip anchor moved")
+    (_TRANSCRIPTS / _FLIPPED).write_text(source.replace(old, new))
+    print(f"wrote tests/fixtures/transcripts/{_FLIPPED}")
+
+
 def main() -> None:
     _GOLDEN.mkdir(parents=True, exist_ok=True)
+    _build_flipped_transcript()
     for entry in _ENTRIES:
         _write(entry)
 

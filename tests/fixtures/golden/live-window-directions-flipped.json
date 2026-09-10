@@ -1,0 +1,14 @@
+{
+  "name": "live-window-directions-flipped",
+  "description": "The window transcript with one phrase inverted -- its top three drivers 'increase the risk of breach' where the contributions are negative. Same numbers, 'decrease' swapped for 'increase'; the direction check fails on all three.",
+  "requires_tools": [
+    "versions",
+    "predict",
+    "explain"
+  ],
+  "expect": {
+    "passes": false,
+    "reason": "ungrounded"
+  },
+  "transcript_file": "transcripts/2026-09-10-live-predict-explain-directions-flipped.json"
+}

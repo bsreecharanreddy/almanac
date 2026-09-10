@@ -274,6 +274,74 @@ def _why_untraced(literal: str, required_field: str, values: Sequence[tuple[str,
     )
 
 
+# Directional language, split by which way it moves the risk. A sentence naming a
+# feature and exactly one of these says which direction the answer claims for it;
+# a sentence with both (or neither) is ambiguous and not judged.
+_RAISES = re.compile(
+    r"\b(?:increase\w*|raise\w*|elevat\w*|heighten\w*|driv\w+ up|push\w* up|higher)\b",
+    re.IGNORECASE,
+)
+_LOWERS = re.compile(
+    r"\b(?:decreas\w*|lower\w*|reduc\w*|mitigat\w*|dampen\w*|driv\w+ down|push\w* down)\b",
+    re.IGNORECASE,
+)
+_SENTENCE = re.compile(r"(?<=[.?!])\s+")
+
+
+def _claimed_direction(sentence: str) -> Direction | None:
+    raises, lowers = bool(_RAISES.search(sentence)), bool(_LOWERS.search(sentence))
+    if raises == lowers:
+        return None
+    return "increases_risk" if raises else "decreases_risk"
+
+
+def _signed_contributions(
+    tool_returns: Sequence[tuple[str, object]],
+) -> list[tuple[str, Direction]]:
+    """Each `(feature, direction)` from an `explain` return -- from the sign if absent."""
+    signed: list[tuple[str, Direction]] = []
+    for _tool, content in tool_returns:
+        rows = content.get("contributions") if isinstance(content, dict) else None
+        for row in rows or []:
+            feature = row.get("feature") if isinstance(row, dict) else None
+            if not isinstance(feature, str):
+                continue
+            value = _as_float(row.get("contribution")) or 0.0
+            from_sign: Direction = "increases_risk" if value >= 0 else "decreases_risk"
+            stated = row.get("direction")
+            direction: Direction = (
+                stated if stated in ("increases_risk", "decreases_risk") else from_sign
+            )
+            signed.append((feature, direction))
+    return signed
+
+
+def check_directions(
+    answer: str, tool_returns: Sequence[tuple[str, object]]
+) -> list[DirectionCheck]:
+    """One `DirectionCheck` per contribution the answer gives a direction to."""
+    sentences = _SENTENCE.split(answer)
+    checks: list[DirectionCheck] = []
+    for feature, actual in _signed_contributions(tool_returns):
+        for sentence in sentences:
+            if feature not in sentence:
+                continue
+            claimed = _claimed_direction(sentence)
+            if claimed is None:
+                continue
+            checks.append(
+                DirectionCheck(
+                    claim=" ".join(sentence.split()),
+                    feature=feature,
+                    claimed=claimed,
+                    actual=actual,
+                    agrees=claimed == actual,
+                )
+            )
+            break
+    return checks
+
+
 def answer_and_returns(transcript: Sequence[ModelMessage]) -> tuple[str, list[tuple[str, object]]]:
     """The final answer text, and every tool return in the run, in call order."""
     answer = ""
@@ -294,18 +362,28 @@ def answer_and_returns(transcript: Sequence[ModelMessage]) -> tuple[str, list[tu
 def verify(transcript: Sequence[ModelMessage]) -> GroundingTrace:
     """The run's answer against its tool returns.
 
-    Ungrounded if a number is unmatched (Task 3) or a typed claim's number
-    traced to the wrong field, or to none (Task 4).
+    Ungrounded if a number is unmatched (Task 3), a typed claim's number traced
+    to the wrong field or to none (Task 4), or a directional claim contradicts
+    the contribution's sign (Task 7).
     """
     answer, returns = answer_and_returns(transcript)
     numbers = check_numbers(answer, returns)
     claims = check_claims(answer, returns)
-    failures = [
-        f"{c.literal} appears in no tool return" for c in numbers if c.source == "unmatched"
-    ] + [f"{c.claim!r}: {c.detail}" for c in claims if not c.traced]
+    directions = check_directions(answer, returns)
+    failures = (
+        [f"{c.literal} appears in no tool return" for c in numbers if c.source == "unmatched"]
+        + [f"{c.claim!r}: {c.detail}" for c in claims if not c.traced]
+        + [
+            f"{d.feature}: the answer has it {d.claimed.replace('_', ' ')}, "
+            f"its contribution {d.actual.replace('_', ' ')}"
+            for d in directions
+            if not d.agrees
+        ]
+    )
     return GroundingTrace(
         verdict="ungrounded" if failures else "grounded",
         numbers=numbers,
         claims=claims,
+        directions=directions,
         failures=failures,
     )

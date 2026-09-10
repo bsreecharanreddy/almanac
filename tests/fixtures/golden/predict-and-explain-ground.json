@@ -93,7 +93,7 @@
               }
             }
           },
-          "tool_call_id": "pyd_ai_1b4c702f63184cd79f5ff6bf3eed7962",
+          "tool_call_id": "golden-02",
           "tool_kind": null,
           "metadata": null,
           "timestamp": "2026-09-10T12:00:00Z",
@@ -194,7 +194,7 @@
               }
             }
           },
-          "tool_call_id": "pyd_ai_a53e38feffa74f88922c66a6340fd039",
+          "tool_call_id": "golden-03",
           "tool_kind": null,
           "metadata": null,
           "timestamp": "2026-09-10T12:00:00Z",

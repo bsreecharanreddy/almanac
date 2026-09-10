@@ -87,7 +87,7 @@
             },
             "feature_set_version": "1"
           },
-          "tool_call_id": "pyd_ai_4e5ee1077f4743fb9370890a85940440",
+          "tool_call_id": "golden-04",
           "tool_kind": null,
           "metadata": null,
           "timestamp": "2026-09-10T12:00:00Z",
@@ -171,7 +171,7 @@
               }
             }
           },
-          "tool_call_id": "pyd_ai_3470aed82888463c9f12d26cb718c72c",
+          "tool_call_id": "golden-05",
           "tool_kind": null,
           "metadata": null,
           "timestamp": "2026-09-10T12:00:00Z",
@@ -272,7 +272,7 @@
               }
             }
           },
-          "tool_call_id": "pyd_ai_74b017c901824843aa7a25339c64378d",
+          "tool_call_id": "golden-06",
           "tool_kind": null,
           "metadata": null,
           "timestamp": "2026-09-10T12:00:00Z",
