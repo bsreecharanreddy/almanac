@@ -8,15 +8,20 @@ item 4 names, and the one that would go stale silently.
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+import numpy as np
+import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 
 from almanac.agent.schemas import EntityKey
+from almanac.agent.tools import SPARK_DATASOURCE_TAG
 from almanac.features.groups import (
     compute_author_activity,
     compute_pr_static,
     compute_repo_activity,
 )
+from almanac.model.train import FEATURE_COLUMNS
 
 SILVER_EVENT_SCHEMA = (
     "repo_id long, pr_number long, created_at timestamp, event_type string, "
@@ -125,3 +130,43 @@ RICH_ENTITY = EntityKey(repo_id=1, pr_number=10)
 RICH_AS_OF = datetime(2025, 8, 12, 9, 5, tzinfo=UTC)
 REDUCED_ENTITY = EntityKey(repo_id=1, pr_number=11)
 REDUCED_AS_OF = datetime(2025, 8, 13, 9, 5, tzinfo=UTC)
+
+
+# The champion as the whole tool surface needs it, stubbed: Task 11 is the
+# phase's first billable step, so nothing here calls an endpoint.
+MODEL_NAME = "almanac_dbx.models.pr_review_sla_risk"
+RUN_ID = "817800814439176"
+DATASOURCE_TAG = (
+    "path=abfss://lake@almanac.dfs.core.windows.net/silver/events/clean,version=91,format=delta"
+)
+
+
+class StubScoringModel:
+    """Both halves the tools need: a probability, and a contribution matrix."""
+
+    def predict_proba(self, features: pd.DataFrame) -> Any:
+        return np.tile([0.3, 0.7], (len(features), 1))
+
+    def predict(self, features: pd.DataFrame, **kwargs: Any) -> Any:
+        row = [float(i) for i in range(len(FEATURE_COLUMNS))] + [0.25]
+        return np.tile(row, (len(features), 1))
+
+
+class StubRegistry:
+    """`versions`' two reads, refusing anything it was not asked for.
+
+    Raising on an unknown name or run id is what makes a tool wired to a
+    hardcoded model or run fail loudly; a stub that answers regardless let one
+    such mutation survive in Task 6.
+    """
+
+    def get_model_version_by_alias(self, name: str, alias: str) -> Any:
+        if name != MODEL_NAME:
+            raise KeyError(f"no registered model {name!r}")
+        return type("ModelVersion", (), {"version": "2", "run_id": RUN_ID})()
+
+    def get_run(self, run_id: str) -> Any:
+        if run_id != RUN_ID:
+            raise KeyError(f"no run {run_id!r}")
+        data = type("RunData", (), {"tags": {SPARK_DATASOURCE_TAG: DATASOURCE_TAG}})()
+        return type("Run", (), {"data": data})()

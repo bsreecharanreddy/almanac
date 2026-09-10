@@ -11,53 +11,26 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-import numpy as np
-import pandas as pd
 import pytest
 from pyspark.sql import SparkSession
 
 from almanac.agent.mcp_server import TOOL_NAMES, ToolContext, build_server, tool_payload
-from almanac.agent.tools import SPARK_DATASOURCE_TAG
 from almanac.model.train import FEATURE_COLUMNS
 from tests.agent_fixtures import (
+    MODEL_NAME,
     REDUCED_AS_OF,
     REDUCED_ENTITY,
     RICH_AS_OF,
     RICH_ENTITY,
+    RUN_ID,
     TWO_ERA_EVENTS,
+    StubRegistry,
+    StubScoringModel,
     land_silver_and_features,
     silver_frame,
 )
 
 pytestmark = pytest.mark.spark
-
-_MODEL_NAME = "almanac_dbx.models.pr_review_sla_risk"
-_RUN_ID = "817800814439176"
-_TAG = "path=abfss://lake@almanac.dfs.core.windows.net/silver/events/clean,version=91,format=delta"
-
-
-class _StubModel:
-    """Both halves the tools need: a probability, and a contribution matrix."""
-
-    def predict_proba(self, features: pd.DataFrame) -> Any:
-        return np.tile([0.3, 0.7], (len(features), 1))
-
-    def predict(self, features: pd.DataFrame, **kwargs: Any) -> Any:
-        row = [float(i) for i in range(len(FEATURE_COLUMNS))] + [0.25]
-        return np.tile(row, (len(features), 1))
-
-
-class _StubRegistry:
-    def get_model_version_by_alias(self, name: str, alias: str) -> Any:
-        # Raises on any other name, so a tool wired to a hardcoded model
-        # rather than to its context cannot pass unnoticed.
-        if name != _MODEL_NAME:
-            raise KeyError(f"no registered model {name!r}")
-        return type("ModelVersion", (), {"version": "2", "run_id": _RUN_ID})()
-
-    def get_run(self, run_id: str) -> Any:
-        data = type("RunData", (), {"tags": {SPARK_DATASOURCE_TAG: _TAG}})()
-        return type("Run", (), {"data": data})()
 
 
 def _server(spark: SparkSession, tmp_path: Path) -> Any:
@@ -67,9 +40,9 @@ def _server(spark: SparkSession, tmp_path: Path) -> Any:
     return build_server(
         ToolContext(
             spark=spark,
-            model=_StubModel(),
-            registry=_StubRegistry(),
-            registered_model_name=_MODEL_NAME,
+            model=StubScoringModel(),
+            registry=StubRegistry(),
+            registered_model_name=MODEL_NAME,
             model_version="2",
             silver_path=silver_path,
             features_path=features_path,
@@ -171,7 +144,7 @@ def test_versions_reports_the_live_registry_over_the_protocol(
     payload = _call(_server(spark, tmp_path), "versions", {})
 
     assert payload["model_version"] == "2"
-    assert payload["training_run_id"] == _RUN_ID
+    assert payload["training_run_id"] == RUN_ID
 
 
 def test_an_unregistered_tool_name_is_refused(spark: SparkSession, tmp_path: Path) -> None:
