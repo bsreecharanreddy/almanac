@@ -81,7 +81,10 @@ def join_similarity_features(training_frame: DataFrame, similarity_frame: DataFr
     return training_frame.join(similarity_frame, on=["repo_id", "pr_number"], how="left")
 
 
-def _read_delta(spark: SparkSession, path: str, version: int | None) -> DataFrame:
+def read_delta(spark: SparkSession, path: str, version: int | None) -> DataFrame:
+    """A path Delta table, optionally pinned. Public: `agent.tools` reads
+    feature tables through this same primitive rather than a second copy.
+    """
     reader = spark.read.format("delta")
     if version is not None:
         reader = reader.option("versionAsOf", version)
@@ -140,11 +143,11 @@ def _build_feature_frame(
     # to discover, and half a frame is worse than none.
     pins = feature_pins(features_versions)
 
-    events = _read_delta(spark, f"{silver_path}/clean", silver_version)
+    events = read_delta(spark, f"{silver_path}/clean", silver_version)
     spine = build_pr_opened_spine(events)
 
     def read(table: str) -> DataFrame:
-        return _read_delta(spark, f"{features_path}/{table}", pins[table])
+        return read_delta(spark, f"{features_path}/{table}", pins[table])
 
     return assemble_training_set(
         spine,

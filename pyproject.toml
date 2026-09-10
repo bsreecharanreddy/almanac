@@ -78,6 +78,30 @@ ml = [
     "databricks-sdk>=0.136.0",
 ]
 
+# Phase 9 (design doc 2026-09-09-almanac-agent-layer-design.md): the agent
+# layer. Both floors checked live against pypi.org's JSON API on 2026-09-09,
+# and both are the current release.
+#
+# The `mcp` floor is load-bearing rather than cosmetic. The v2 line is a
+# rework for the 2026-07-28 spec revision, which made the protocol stateless
+# and moved protocol version, client identity and capabilities into a
+# per-request `_meta` parameter; a 1.x server speaks a different protocol,
+# so this is a floor a resolver must not walk under.
+#
+# `openai` and `httpx2` arrive with `pydantic-ai` and are declared anyway,
+# because `model_gateway.py` imports both directly: the Databricks serving API
+# is OpenAI-compatible, so `AsyncOpenAI` is where this project's timeout and
+# retry budget is actually set, and `httpx2.AsyncClient` is the transport seam
+# the request tests assert on. An undeclared import that a resolver could drop
+# is the classic transitive-dependency trap. Both floors checked live against
+# pypi.org's JSON API on 2026-09-10, and both are the current release.
+agent = [
+    "httpx2>=2.12.0",
+    "mcp>=2.2.0",
+    "openai>=3.11.0",
+    "pydantic-ai>=2.42.0",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
@@ -150,6 +174,11 @@ max-complexity = 10
 # independently -- store, source table, online table, publish mode. Naming
 # them at the call site is what makes a publish readable (Phase 6, Task 7).
 "src/almanac/stream/online_store.py" = ["PLR0913"]
+# get_features is the same I/O-boundary shape as build_training_frame
+# above, one layer up: the session and the typed request, plus one
+# keyword-only argument per independently-pinnable Delta source (Phase 9,
+# Task 3).
+"src/almanac/agent/tools.py" = ["PLR0913"]
 
 [tool.mypy]
 python_version = "3.12"
