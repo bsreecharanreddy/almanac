@@ -6,8 +6,9 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase 9 (agent layer) is complete on branch `phase-9-agent-layer` —
-twelve of twelve tasks — and not yet merged.** Task 1 (`almanac/model/contributions.py`), Task 2
+**Phase 9 (agent layer) is complete and merged to `main` — twelve of
+twelve tasks, PR #20 (`6fc99cb`), untagged** because `v1.1.0` covers
+Phases 9 and 10 together and the tag waits for both. Task 1 (`almanac/model/contributions.py`), Task 2
 (`almanac/agent/schemas.py`), Tasks 3–6 (`almanac/agent/tools.py`'s
 `get_features`, `predict`, `explain` and `versions` — the full four-tool
 surface), Task 7 (`almanac/agent/mcp_server.py`, those four tools over
@@ -37,7 +38,17 @@ written about.
 **Every phase through 8 is complete and merged to `main`, and `v1.0` is tagged at
 this point in the history.** Phase 6 via PR #13 (`2b6473b`), Phase 7 via
 PR #14 (`15a45ea`), Phase 8 via PR #16 (`69a929b`), and the pre-tag PII
-fix via PR #17 (`a6c6afe`).
+fix via PR #17 (`a6c6afe`). **Phase 9 followed via PR #20 (`6fc99cb`),
+2026-09-10 — merged but deliberately not tagged**, since `v1.1.0` is the
+Phase 9 + Phase 10 release.
+
+**Phase 10 (grounding verifier) is the active phase.** Plan approved
+2026-09-10, `docs/plans/2026-09-10-phase-10-grounding-verifier-plan.md`,
+branch `phase-10-grounding-verifier` — nine build tasks plus the `v1.1.0`
+close-out (Task 10). Task work begins at Task 1, the provenance schema
+rename. The two commits already on the branch that predate Task 1
+(`2c11789` graphify tooling, `1349e02` a stale-ADR fix) rebased onto
+`main` at the merge.
 
 **Every SHA in this file that predates `a6c6afe` is a pre-rewrite SHA and
 no longer resolves.** The 2026-09-09 `filter-repo` pass rewrote all 199
@@ -247,24 +258,40 @@ Every other figure in the docs remains bracketed or absent by design.
 
 ## Next
 
-**Phase 9 — the agent layer.** Branch `phase-9-agent-layer`, plan
-`docs/plans/2026-09-09-phase-9-agent-layer-plan.md`, twelve tasks, target
-`v1.1.0`.
+**Phase 9 is merged.** PR #20 → `main` as `6fc99cb` on 2026-09-10, a merge
+commit the way the Phase 6, 7 and 8 PRs went, and **deliberately not
+tagged**: the design header's scope is Phases 9 and 10 together
+(`**Scope:** Phases 9 and 10, shipping as v1.1.0`), so `v1.1.0` waits for
+Phase 10. *(This section read "`v1.1.0` is tagged after the merge" before
+Phase 10 was planned — Phase 8's rule for a phase that is its own release,
+which does not hold here. Caught while planning Phase 10; before the merge
+it would have mis-tagged, not after.)*
 
-**What is left of Phase 9 is its PR.** The branch goes up as one push for
-one PR, the way `phase-6-streaming` did. **Correction to what this section
-said before Phase 10 was planned:** it read "`v1.1.0` is tagged after the
-merge," which is Phase 8's rule for a phase that is its own release and
-does not hold here — the design doc's own header states
-`**Scope:** Phases 9 and 10, shipping as v1.1.0`. Phase 9 merges to `main`
-untagged; `v1.1.0` is tagged once Phase 10 also lands. Caught while
-planning Phase 10, before the merge it would have mis-tagged — not after.
+**Phase 10 — the grounding verifier — is the active phase, plan approved
+2026-09-10.** Branch `phase-10-grounding-verifier`, rebased onto the
+post-merge `main`, carrying two pre-Task-1 commits (`2c11789` graphify
+tooling, `1349e02` a stale-ADR fix graphify surfaced). Plan:
+`docs/plans/2026-09-10-phase-10-grounding-verifier-plan.md`, nine build
+tasks plus a `v1.1.0` close-out (Task 10), design §6 amended in place. A
+deterministic verifier — not an LLM judge — that fails the build when a
+number in an agent answer does not trace to a tool return, **or** when the
+relationship claimed around a real number does not: the defect Phase 9's
+window found, where every number was grounded and "trained on Delta
+versions 92" was still false. Task 1, the next thing to build, is the
+schema rename (`delta_versions` → `read_delta_versions`) that removes the
+reading which invited that claim. No paid window — it replays Phase 9's
+recorded transcripts. Task 10, after the Phase 10 PR merges, is the
+release: story-bank gist, `README.md` with its architecture diagram **and
+a first-time-reader narrative** (why the project, what it is for, key
+takeaways & roadmap), `CLAUDE.md`, the goal / resume / limitations docs,
+the `v1.1.0` tag on `main`, and the GitHub profile — with the Phase 9 cost
+read as its one hard gate before the tag.
 
-**One read is owed after the phase closes: the window's cost.**
+**One read is owed before `v1.1.0` is tagged: the Phase 9 window's cost.**
 `system.billing.usage` for workspace `7405615444091260`, on or after
 2026-09-11 — the job-cluster DBUs for Task 11's five runs, and any
 foundation-model serving usage from its endpoint calls. Until then no cost
-for this phase is quoted anywhere, and the exit-gate row for token
+for the agent layer is quoted anywhere, and the exit-gate row for token
 reconciliation stays open: the gateway keeps no token count, and
 `system.serving.endpoint_usage` has no rows in this workspace.
 
