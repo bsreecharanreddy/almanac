@@ -1,23 +1,38 @@
-"""Tool 1: point-in-time features, read through the platform's own as-of join.
+"""Tools 1-2: point-in-time features and the champion's score, each read
+through the platform's own path rather than a parallel implementation.
 
-Design doc S6 calls this "the demo that carries the interview": two calls
-at different `as_of` values on the same entity return different vectors,
-and each is exactly what the real training-time join would have produced
--- not a second implementation that merely resembles it.
+Design doc S6 calls `get_features` "the demo that carries the interview":
+two calls at different `as_of` values on the same entity return different
+vectors, and each is exactly what the real training-time join would have
+produced. `predict` is S4.2's recorded response to Phase 8's drift finding,
+executable for the first time: a reduced-era window gets a structured
+refusal naming the missing feature, never a fabricated number.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 
+import pandas as pd
 from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
-from almanac.agent.schemas import FeatureProvenance, GetFeaturesInput, GetFeaturesResult
+from almanac.agent.schemas import (
+    FeatureProvenance,
+    GetFeaturesInput,
+    GetFeaturesResult,
+    ModelProvenance,
+    PredictInput,
+    PredictOutput,
+    PredictRefusal,
+    PredictResult,
+)
 from almanac.features.assemble import assemble_training_set
 from almanac.features.spine import build_pr_opened_spine
+from almanac.model import drift
 from almanac.model.dataset import FEATURE_TABLE_NAMES, feature_pins, read_delta
+from almanac.model.score import ProbabilityModel, positive_class_probability
 from almanac.model.train import FEATURE_COLUMNS
 
 
@@ -67,7 +82,10 @@ def get_features(
         pr_static=feature_table("pr_static"),
     )
     row = assembled.select(*FEATURE_COLUMNS).collect()[0]
-    features = {name: float(row[name]) for name in FEATURE_COLUMNS}
+    # None survives here rather than crashing on float(None): a reduced-era
+    # window genuinely has no is_draft, and reporting that honestly is this
+    # tool's job (schemas.py) -- refusing to score it is Task 4's predict.
+    features = {name: (None if row[name] is None else float(row[name])) for name in FEATURE_COLUMNS}
 
     delta_versions = {"events": _resolved_version(spark, silver_delta_path, silver_version)}
     for table in FEATURE_TABLE_NAMES:
@@ -78,6 +96,60 @@ def get_features(
         as_of=request.as_of,
         features=features,
         provenance=FeatureProvenance(delta_versions=delta_versions),
+    )
+
+
+def predict(
+    spark: SparkSession,
+    model: ProbabilityModel,
+    request: PredictInput,
+    *,
+    model_version: str,
+    silver_path: str,
+    features_path: str,
+    silver_version: int | None = None,
+    features_versions: Mapping[str, int] | None = None,
+) -> PredictOutput:
+    """The champion's score for one entity at one instant -- or a structured
+    refusal naming the feature the champion needs but this window does not
+    have. `PredictRefusal` carries no numeric field at all (schemas.py): the
+    fabrication `predict` must never commit is structurally impossible, not
+    merely discouraged.
+
+    Calls `get_features` for the vector, `drift.missing_for` -- the
+    single-row schema-drift check -- in front of the model, never behind it:
+    a null feature must be caught before it reaches `positive_class_probability`,
+    not after it silently becomes NaN.
+    """
+    fetched = get_features(
+        spark,
+        GetFeaturesInput(entity=request.entity, as_of=request.as_of),
+        silver_path=silver_path,
+        features_path=features_path,
+        silver_version=silver_version,
+        features_versions=features_versions,
+    )
+
+    missing = drift.missing_for(fetched.features)
+    if missing:
+        offending = missing[0]
+        return PredictRefusal(
+            entity=request.entity,
+            as_of=request.as_of,
+            missing_feature=offending.feature,
+            reason=offending.response,
+            provenance=fetched.provenance,
+        )
+
+    frame = pd.DataFrame([fetched.features])
+    score = float(positive_class_probability(model, frame).iloc[0])
+    return PredictResult(
+        entity=request.entity,
+        as_of=request.as_of,
+        breach_risk=score,
+        provenance=ModelProvenance(
+            model_version=model_version, delta_versions=fetched.provenance.delta_versions
+        ),
     )
 
 

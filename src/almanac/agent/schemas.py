@@ -65,11 +65,16 @@ class GetFeaturesInput(_Strict):
 
 
 class GetFeaturesResult(_Strict):
-    """`features` is exactly `FEATURE_COLUMNS` -- refused, not realigned, on any other shape."""
+    """`features` is exactly `FEATURE_COLUMNS` -- refused, not realigned, on any other shape.
+
+    A value may be `None`: a reduced-era window (design doc S4.2) genuinely
+    has no `is_draft`, and reporting that honestly is this tool's job --
+    refusing to *score* it is Task 4's `predict`, not this one.
+    """
 
     entity: EntityKey
     as_of: AsOf
-    features: dict[str, float]
+    features: dict[str, float | None]
     provenance: FeatureProvenance
 
     @model_validator(mode="after")

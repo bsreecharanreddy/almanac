@@ -6,7 +6,7 @@ billable window.
 """
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from pyspark.sql import DataFrame
@@ -26,6 +26,14 @@ _FLOOR = 1e-6
 
 # Above this, a feature is treated as gone rather than merely sparse.
 _NULL_IS_SCHEMA_DRIFT = 0.99
+
+# Shared by `compare`'s schema-drift branch and `missing_for` below, so the
+# response a caller acts on is stated once -- two copies of this sentence
+# is exactly the kind of duplication that goes stale silently (CLAUDE.md).
+_SCHEMA_DRIFT_RESPONSE = (
+    "The champion reads this feature, so it cannot score this window. "
+    "Refuse to serve rather than re-baselining."
+)
 
 
 @dataclass(frozen=True)
@@ -94,10 +102,7 @@ def compare(
                     kind="schema",
                     psi=None,
                     detail=f"{ref.name} is {was}; it was populated in training",
-                    response=(
-                        "The champion reads this feature, so it cannot score this "
-                        "window. Refuse to serve rather than re-baselining."
-                    ),
+                    response=_SCHEMA_DRIFT_RESPONSE,
                 )
             )
             continue
@@ -120,6 +125,31 @@ def compare(
             )
 
     return findings
+
+
+def missing_for(features: Mapping[str, float | None]) -> list[DriftFinding]:
+    """The schema-drift question `compare` asks of a whole window, asked of
+    one already-fetched row instead: not "has this window's distribution
+    shifted", but "is the value this row needs here at all".
+
+    No reference distribution and no PSI: a null value needs no training-time
+    baseline to know it cannot be scored, and a covariate-drift comparison is
+    not meaningful at n=1 -- concentrating a reference's mass onto whichever
+    single bin one row happens to fall in reads as drift regardless of
+    whether anything really shifted. `predict` (agent/tools.py) is this
+    function's caller; `compare` above stays the window-level check.
+    """
+    return [
+        DriftFinding(
+            feature=name,
+            kind="schema",
+            psi=None,
+            detail=f"{name} is null for this row",
+            response=_SCHEMA_DRIFT_RESPONSE,
+        )
+        for name, value in sorted(features.items())
+        if value is None
+    ]
 
 
 # Enough resolution to see a shift, few enough that each bin holds real mass

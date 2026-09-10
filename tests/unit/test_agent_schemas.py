@@ -28,7 +28,7 @@ AS_OF = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
 ENTITY = EntityKey(repo_id=1, pr_number=42)
 
 
-def zero_features() -> dict[str, float]:
+def zero_features() -> dict[str, float | None]:
     return {name: 0.0 for name in FEATURE_COLUMNS}
 
 
@@ -46,6 +46,27 @@ def test_get_features_result_round_trips_through_json() -> None:
     )
 
     assert round_tripped(result) == result
+
+
+def test_get_features_result_accepts_a_null_feature_value() -> None:
+    """A reduced-era window genuinely has no `is_draft` (design doc S4.2).
+
+    Reporting that honestly is this tool's job; refusing to *score* it is
+    Task 4's `predict`, not this one -- so a null value here must round-trip,
+    not fail validation the way a missing `provenance` does.
+    """
+    reduced_era = zero_features()
+    reduced_era["is_draft"] = None
+
+    result = GetFeaturesResult(
+        entity=ENTITY,
+        as_of=AS_OF,
+        features=reduced_era,
+        provenance=FeatureProvenance(delta_versions={"features/pr_state": 4}),
+    )
+
+    assert round_tripped(result) == result
+    assert result.features["is_draft"] is None
 
 
 def test_predict_result_round_trips_through_json() -> None:
