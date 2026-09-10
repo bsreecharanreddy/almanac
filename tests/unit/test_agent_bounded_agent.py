@@ -105,20 +105,24 @@ def _agent(
 ) -> tuple[Any, AuditLog]:
     """Each agent lands its own tables: two in one directory is a Delta path clash."""
     server, gateway, audit = _wired(spark, tmp_path / label)
-    return build_agent(model, anyio.run(lambda: gateway_tools(server, gateway))), audit
+    tools = anyio.run(lambda: gateway_tools(server, gateway))
+    return build_agent(model, tools, audit=audit), audit
 
 
-def test_the_agent_answers_by_calling_a_tool_and_both_calls_are_audited(
+def test_the_agent_answers_by_calling_a_tool_and_every_call_is_audited_in_order(
     spark: SparkSession, tmp_path: Path
 ) -> None:
+    """Each model request and each tool call, in the order they happened: the
+    request that chose the tool comes before the tool it chose.
+    """
     agent, audit = _agent(_calls_versions_then_answers(), spark, tmp_path)
 
-    outcome = anyio.run(lambda: answer(agent, _QUESTION, audit=audit))
+    outcome = anyio.run(lambda: answer(agent, _QUESTION))
 
     assert isinstance(outcome, Answered)
     assert outcome.answer == "Version 2 is live."
     assert outcome.tools_called == ["versions"]
-    assert [record.tool for record in audit.records()] == ["versions", MODEL_CALL]
+    assert [record.tool for record in audit.records()] == [MODEL_CALL, "versions", MODEL_CALL]
 
 
 def test_the_tools_the_agent_sees_come_from_the_served_surface(
@@ -153,9 +157,9 @@ def test_a_run_that_hits_the_turn_bound_stops_with_a_structured_incomplete_resul
     spark: SparkSession, tmp_path: Path
 ) -> None:
     """No truncated answer, and no prose standing in for one that was never reached."""
-    agent, audit = _agent(_always_calls_a_tool(), spark, tmp_path)
+    agent, _ = _agent(_always_calls_a_tool(), spark, tmp_path)
 
-    outcome = anyio.run(lambda: answer(agent, _QUESTION, audit=audit, turn_limit=3))
+    outcome = anyio.run(lambda: answer(agent, _QUESTION, turn_limit=3))
 
     assert isinstance(outcome, Incomplete)
     assert "3" in outcome.reason
@@ -167,11 +171,11 @@ def test_the_turn_bound_is_enforced_at_the_boundary(spark: SparkSession, tmp_pat
     """Two model requests is exactly what one tool call plus an answer costs, so
     the bound is checked where it actually bites rather than far from it.
     """
-    at_limit, audit = _agent(_calls_versions_then_answers(), spark, tmp_path, "at-limit")
-    below, other_audit = _agent(_calls_versions_then_answers(), spark, tmp_path, "below")
+    at_limit, _ = _agent(_calls_versions_then_answers(), spark, tmp_path, "at-limit")
+    below, _ = _agent(_calls_versions_then_answers(), spark, tmp_path, "below")
 
-    allowed = anyio.run(lambda: answer(at_limit, _QUESTION, audit=audit, turn_limit=2))
-    refused = anyio.run(lambda: answer(below, _QUESTION, audit=other_audit, turn_limit=1))
+    allowed = anyio.run(lambda: answer(at_limit, _QUESTION, turn_limit=2))
+    refused = anyio.run(lambda: answer(below, _QUESTION, turn_limit=1))
 
     assert isinstance(allowed, Answered)
     assert isinstance(refused, Incomplete)
@@ -182,7 +186,7 @@ def test_the_answering_model_is_recorded_rather_than_assumed(
 ) -> None:
     agent, audit = _agent(_calls_versions_then_answers(), spark, tmp_path)
 
-    outcome = anyio.run(lambda: answer(agent, _QUESTION, audit=audit))
+    outcome = anyio.run(lambda: answer(agent, _QUESTION))
 
     assert isinstance(outcome, Answered)
     assert outcome.model == _STUB_MODEL_NAME
@@ -195,17 +199,15 @@ def test_a_transcript_round_trips_and_replays_to_the_same_answer(
     """The first run is the only one that needs a model. Every later one replays,
     deterministically and free, which is what Phase 10's suite inherits.
     """
-    recorded, audit = _agent(_calls_versions_then_answers(), spark, tmp_path, "recorded")
-    first = anyio.run(lambda: answer(recorded, _QUESTION, audit=audit))
+    recorded, _ = _agent(_calls_versions_then_answers(), spark, tmp_path, "recorded")
+    first = anyio.run(lambda: answer(recorded, _QUESTION))
     assert isinstance(first, Answered)
 
     path = tmp_path / "transcripts" / "versions.json"
     save_transcript(path, first.transcript)
 
-    replayed, replay_audit = _agent(
-        replay_model(load_transcript(path)), spark, tmp_path, "replayed"
-    )
-    second = anyio.run(lambda: answer(replayed, _QUESTION, audit=replay_audit))
+    replayed, _ = _agent(replay_model(load_transcript(path)), spark, tmp_path, "replayed")
+    second = anyio.run(lambda: answer(replayed, _QUESTION))
 
     assert isinstance(second, Answered)
     assert second.answer == first.answer

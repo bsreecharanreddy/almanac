@@ -54,6 +54,12 @@ equivalents first:
   old number*, which looks exactly like confirmation. The re-score on
   2026-09-08 came within one step of this; the local wheel was eleven
   hours stale.
+- **The cluster's library set is complete, not only the wheel.** The wheel
+  carries the code and none of its runtime dependencies; the job's
+  `libraries` list carries those. On 2026-09-10 the first Phase 9 run died
+  at import on `lightgbm`, with the wheel sha256-verified identical on both
+  sides — verifying the wheel is not verifying what it needs. Diff a new
+  job's `libraries` against a job that already runs the same imports.
 
 ## Gate 3 — Capture perishable evidence before teardown, not after
 
@@ -72,6 +78,12 @@ screenshots, run the queries. On 2026-09-08 a panel returned 200
 perfectly healthy rows while aging every PR against a horizon **340 days**
 wrong — nothing errored and nothing was empty. Capturing when asked would
 have published confidently wrong numbers as proof of progress.
+
+**Write the evidence as it is produced, not once at the end.** On
+2026-09-10 the agent step failed after ten minutes of tool demonstrations
+had already run. The record had been written before the agent started, so
+those ten paid minutes survived as evidence instead of dying with the
+process.
 
 ## Gate 4 — Verify teardown independently, then verify again
 

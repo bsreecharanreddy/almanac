@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -23,7 +22,7 @@ from pydantic_ai.tools import Tool
 from pydantic_ai.usage import UsageLimits
 
 from almanac.agent.gateway import AuditLog, ToolGateway
-from almanac.agent.model_gateway import answering_model, elapsed_ms, record_model_call
+from almanac.agent.model_gateway import AuditedModel, answering_model
 from almanac.agent.schemas import Strict
 
 # Six model requests is room for two or three tool calls and an answer. The
@@ -92,24 +91,21 @@ async def gateway_tools(server: MCPServer, gateway: ToolGateway) -> list[Tool[An
     ]
 
 
-def build_agent(model: Model, tools: Sequence[Tool[Any]]) -> Agent[None, str]:
-    """One agent, its tools already bound to the gateway."""
-    return Agent(model, output_type=str, instructions=INSTRUCTIONS, tools=tools)
+def build_agent(model: Model, tools: Sequence[Tool[Any]], *, audit: AuditLog) -> Agent[None, str]:
+    """One agent, its tools bound to the gateway and its model to the audit log."""
+    return Agent(
+        AuditedModel(model, audit), output_type=str, instructions=INSTRUCTIONS, tools=tools
+    )
 
 
 async def answer(
-    agent: Agent[None, str],
-    question: str,
-    *,
-    audit: AuditLog,
-    turn_limit: int = DEFAULT_TURN_LIMIT,
+    agent: Agent[None, str], question: str, *, turn_limit: int = DEFAULT_TURN_LIMIT
 ) -> AgentOutcome:
     """One bounded run: an answer with its evidence, or a structured stop.
 
     The bound counts model requests rather than wall time, because the failure
     it guards is a loop that keeps calling tools, not one that runs slowly.
     """
-    started = time.perf_counter()
     with capture_run_messages() as captured:
         try:
             result = await agent.run(question, usage_limits=UsageLimits(request_limit=turn_limit))
@@ -126,7 +122,6 @@ async def answer(
 
     messages = result.all_messages()
     response = _final_response(messages)
-    record_model_call(audit, response=response, latency_ms=elapsed_ms(started))
     return Answered(
         question=question,
         answer=result.output,

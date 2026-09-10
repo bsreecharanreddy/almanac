@@ -426,6 +426,11 @@ Currently present:
   refuses an unsupported region before terraform is invoked — its message
   names the *symptom*, because an unsupported region does not fail cleanly,
   it hangs and looks exactly like an outage.
+  **Two gate bullets added 2026-09-10**, both from Phase 9's window: gate 2
+  now checks the cluster's library set and not only the wheel (run 1 died at
+  import on `lightgbm` with the wheel hash-verified identical), and gate 3
+  now requires writing evidence as it is produced (run 2 lost ten minutes of
+  tool evidence to a crash at the end; run 3 kept them).
 
 Deliberately deferred until earned, with the trigger that would justify
 each:

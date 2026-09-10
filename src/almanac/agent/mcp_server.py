@@ -56,7 +56,7 @@ class ToolContext:
     features_versions: Mapping[str, int] | None = None
 
 
-class _TablePaths(TypedDict):
+class TablePaths(TypedDict):
     """Typed so `**` unpacking is checked at the call site rather than trusted."""
 
     silver_path: str
@@ -130,9 +130,9 @@ def tool_payload(result: CallToolResult) -> dict[str, object]:
     )
 
 
-def _paths(context: ToolContext) -> _TablePaths:
+def _paths(context: ToolContext) -> TablePaths:
     """The table arguments every reading tool takes, forwarded rather than restated."""
-    return _TablePaths(
+    return TablePaths(
         silver_path=context.silver_path,
         features_path=context.features_path,
         silver_version=context.silver_version,

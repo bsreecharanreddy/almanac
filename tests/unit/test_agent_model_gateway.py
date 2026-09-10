@@ -7,7 +7,7 @@ the vendor's 400 does not have to be bought to be guarded against.
 """
 
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
 import anyio
@@ -15,13 +15,25 @@ import httpx2
 import pytest
 from databricks.sdk.service.serving import EndpointState, EndpointStateReady, ServingEndpoint
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import Model, ModelRequestParameters
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.tools import Tool
 
+from almanac.agent.bounded_agent import answer, build_agent
 from almanac.agent.gateway import AuditLog
 from almanac.agent.model_gateway import (
     FALLBACK_ENDPOINT,
+    MODEL_CALL,
     PRIMARY_ENDPOINT,
+    AuditedModel,
     EndpointNotReadyError,
     UnsupportedSettingError,
     Workspace,
@@ -29,6 +41,7 @@ from almanac.agent.model_gateway import (
     build_model,
     fallback_model,
     preflight,
+    record_failed_model_call,
     record_model_call,
 )
 
@@ -234,3 +247,136 @@ def test_preflight_passes_when_both_configured_models_are_ready() -> None:
     )
 
     preflight(catalog)
+
+
+# Deliberately not the configured primary: a record that took its model from
+# config rather than from the error would otherwise pass by coincidence.
+_ASKED = "databricks-claude-opus-5"
+
+
+def test_a_failed_model_call_is_recorded_with_the_model_that_was_asked(tmp_path: Any) -> None:
+    """The live window's first finding: a 403 that left the audit log empty."""
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    refused = ModelHTTPError(403, _ASKED, {"error_code": "PERMISSION_DENIED"})
+
+    record_failed_model_call(audit, refused, latency_ms=7.0)
+
+    record = audit.records()[-1]
+    assert record.tool == MODEL_CALL
+    assert record.outcome == "failed"
+    assert record.model == _ASKED
+    assert "403" in (record.reason or "")
+
+
+def test_an_agent_run_the_model_refuses_leaves_a_failed_audit_record(tmp_path: Any) -> None:
+    """Through `answer` itself, not only the helper: the run raises, and the
+    log says which model refused before it does.
+    """
+
+    def refuses(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise ModelHTTPError(403, _ASKED, {"error_code": "PERMISSION_DENIED"})
+
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    agent = build_agent(FunctionModel(refuses), [], audit=audit)
+
+    with pytest.raises(ModelHTTPError):
+        anyio.run(lambda: answer(agent, "is anything at risk?"))
+
+    assert [(r.outcome, r.model) for r in audit.records()] == [("failed", _ASKED)]
+
+
+_PRIMARY_STUB = "primary-stub"
+_FALLBACK_STUB = "fallback-stub"
+_SLOW_TOOL_SECONDS = 0.3
+
+
+def _calls_then_answers(tool_name: str) -> FunctionModel:
+    """One tool call, then an answer: the smallest run with two model requests."""
+    responses = iter(
+        [
+            ModelResponse(parts=[ToolCallPart(tool_name=tool_name, args={})]),
+            ModelResponse(parts=[TextPart(content="done")]),
+        ]
+    )
+
+    def next_response(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return next(responses)
+
+    return FunctionModel(next_response, model_name=_PRIMARY_STUB)
+
+
+def _noop() -> str:
+    return "ok"
+
+
+def test_each_model_request_is_recorded_with_its_own_latency_not_the_runs(tmp_path: Any) -> None:
+    """A slow tool must not make the model look slow: the first live answer logged
+    two tool calls' time against its one model record.
+    """
+
+    async def slow() -> str:
+        await anyio.sleep(_SLOW_TOOL_SECONDS)
+        return "done"
+
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    agent = build_agent(_calls_then_answers("slow"), [Tool(slow)], audit=audit)
+
+    anyio.run(lambda: answer(agent, "is anything at risk?"))
+
+    requests = [r for r in audit.records() if r.tool == MODEL_CALL]
+    assert len(requests) == 2
+    assert all(r.latency_ms < _SLOW_TOOL_SECONDS * 1000 for r in requests)
+
+
+def test_a_fallback_that_answered_an_earlier_request_is_on_that_requests_record(
+    tmp_path: Any,
+) -> None:
+    """One record per run names whichever model answered last, so a fallback that
+    chose the run's tool call would leave the configured primary on the record.
+    """
+    attempts: list[str] = []
+
+    def primary(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        attempts.append("primary")
+        if len(attempts) == 1:
+            raise ModelHTTPError(429, _PRIMARY_STUB, {"error": "busy"})
+        return ModelResponse(parts=[TextPart(content="done")])
+
+    def fallback(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart(tool_name="noop", args={})])
+
+    chain = fallback_model(
+        FunctionModel(primary, model_name=_PRIMARY_STUB),
+        FunctionModel(fallback, model_name=_FALLBACK_STUB),
+    )
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    agent = build_agent(chain, [Tool(_noop, name="noop")], audit=audit)
+
+    anyio.run(lambda: answer(agent, "is anything at risk?"))
+
+    assert [(r.outcome, r.model) for r in audit.records() if r.tool == MODEL_CALL] == [
+        ("ok", _FALLBACK_STUB),
+        ("ok", _PRIMARY_STUB),
+    ]
+
+
+async def _streams(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+    yield "streamed"
+
+
+def test_a_streamed_request_is_refused_rather_than_left_unaudited(tmp_path: Any) -> None:
+    """A stream would reach the model with no record, so it does not reach it at all."""
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    model = AuditedModel(FunctionModel(stream_function=_streams, model_name=_PRIMARY_STUB), audit)
+
+    async def stream() -> None:
+        async with model.request_stream(
+            [ModelRequest(parts=[UserPromptPart(content="which PRs are at risk?")])],
+            None,
+            ModelRequestParameters(),
+        ):
+            pass
+
+    with pytest.raises(NotImplementedError, match="audit"):
+        anyio.run(stream)
+    assert audit.records() == []

@@ -4,18 +4,21 @@ failure is worth falling back on, and which model actually answered."""
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx2
 from databricks.sdk.service.serving import EndpointStateReady, ServingEndpoint
 from openai import AsyncOpenAI
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
-from pydantic_ai.messages import ModelResponse
-from pydantic_ai.models import Model
+from pydantic_ai import RunContext
+from pydantic_ai.exceptions import FallbackExceptionGroup, ModelAPIError, ModelHTTPError
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
@@ -189,6 +192,79 @@ def record_model_call(
     )
     audit.append(record)
     return record
+
+
+def record_failed_model_call(
+    audit: AuditLog,
+    error: ModelAPIError | FallbackExceptionGroup,
+    *,
+    latency_ms: float,
+) -> AuditRecord:
+    """A model call that did not answer, in the same log as the ones that did.
+
+    Found live, not designed: the first paid window's only model call 403'd,
+    and the audit log held nothing about it -- the one call that mattered most
+    left no trace in the record built to hold every call. The model named is
+    the one that was *asked*, read off the error rather than assumed from config.
+    """
+    asked = (
+        ", ".join(sorted({getattr(inner, "model_name", "unknown") for inner in error.exceptions}))
+        if isinstance(error, FallbackExceptionGroup)
+        else error.model_name
+    )
+    record = AuditRecord(
+        tool=MODEL_CALL,
+        arguments={},
+        outcome="failed",
+        latency_ms=latency_ms,
+        model=asked,
+        reason=repr(error),
+    )
+    audit.append(record)
+    return record
+
+
+# ceiling: a primary failure the fallback absorbed shows only as the fallback's
+# name on that request's record; wrapping each leg instead would log the failed
+# attempt as well.
+class AuditedModel(WrapperModel):
+    """Any model, with each request it serves recorded as it happens."""
+
+    def __init__(self, wrapped: Model, audit: AuditLog) -> None:
+        super().__init__(wrapped)
+        self.audit = audit
+
+    async def request(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
+        # Timed per request, not per run: the first live answer logged two tool
+        # calls' time against its one model record, and named only the model
+        # that answered last.
+        started = time.perf_counter()
+        try:
+            response = await super().request(messages, model_settings, model_request_parameters)
+        except (ModelAPIError, FallbackExceptionGroup) as error:
+            record_failed_model_call(self.audit, error, latency_ms=elapsed_ms(started))
+            raise
+        record_model_call(self.audit, response=response, latency_ms=elapsed_ms(started))
+        return response
+
+    @asynccontextmanager
+    async def request_stream(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+        run_context: RunContext[Any] | None = None,
+    ) -> AsyncIterator[StreamedResponse]:
+        """Refused: a stream would reach the model with no record."""
+        raise NotImplementedError(
+            "a streamed request would reach the model without an audit record; use request()"
+        )
+        yield  # type: ignore[unreachable]  # the decorator needs a generator; never runs
 
 
 def preflight(
