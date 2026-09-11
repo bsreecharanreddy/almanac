@@ -14,9 +14,16 @@ __pycache__/
 coverage/
 htmlcov/
 
-# Data — never commit downloaded archive files or built tables
-data/
+# Data — never commit downloaded archive files or built tables. Anchored to
+# the repo root: an unanchored `data/` also matched `demo/data/`, the
+# committed build artifacts Phase 11 depends on, and silently ate them.
+/data/
 *.json.gz
+
+# demo/data/ commits only the three named build artifacts (medallion.json,
+# coverage.json, queue.parquet) -- the Bronze/Silver Delta lake the build
+# step computes them from is scratch, same as the top-level warehouse above.
+demo/data/lake/
 warehouse/
 spark-warehouse/
 metastore_db/

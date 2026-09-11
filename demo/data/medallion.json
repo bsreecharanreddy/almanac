@@ -1,0 +1,32 @@
+{
+  "eras": [
+    {
+      "bronze_rows": 2000,
+      "event_date": "2025-08-13",
+      "event_hour": 14,
+      "quarantine_rows": 0,
+      "scored_rows": 2000,
+      "silver_rows": 2000
+    },
+    {
+      "bronze_rows": 2000,
+      "event_date": "2014-06-12",
+      "event_hour": 14,
+      "quarantine_rows": 3,
+      "scored_rows": 2000,
+      "silver_rows": 1997
+    },
+    {
+      "bronze_rows": 2000,
+      "event_date": "2025-11-03",
+      "event_hour": 14,
+      "quarantine_rows": 0,
+      "scored_rows": 2000,
+      "silver_rows": 2000
+    }
+  ],
+  "scale": {
+    "hours_per_era": 1,
+    "note": "One archived hour per schema era. The platform's measured backfill is 341,060,851 rows over Q3 2025."
+  }
+}

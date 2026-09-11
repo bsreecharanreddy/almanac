@@ -35,6 +35,18 @@ targeting `v1.2.0`.** Design doc at
   `events_total_to_date`, which the wrap happens to split, even though the
   signature does name it. Fixed by parsing the YAML and the embedded JSON
   signature instead of substring-matching the raw text.
+- **Task 3, the build step's medallion counts (`src/almanac/demo/build.py`,
+  `demo/data/medallion.json`).** Lands all three fixture eras through
+  Bronze and Silver, `silver + quarantine == scored` asserted on each.
+  Measured 2026-09-11: modern (2025-08-13) 2,000 bronze / 2,000 silver / 0
+  quarantine; legacy (2014-06-12) 2,000 bronze / 1,997 silver / 3
+  quarantine; reduced (2025-11-03) 2,000 bronze / 2,000 silver / 0
+  quarantine. **Found a second defect, this time in `.gitignore`**: its
+  bare `data/` pattern (for the ephemeral top-level warehouse) is
+  unanchored, so it also matched `demo/data/` at depth and silently
+  swallowed the committed build artifacts this task and the file
+  structure table both require. Anchored to `/data/`; `demo/data/` is
+  trackable and the top-level warehouse stays ignored.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
