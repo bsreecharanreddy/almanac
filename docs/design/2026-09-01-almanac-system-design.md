@@ -107,17 +107,17 @@ conformed dimensions, SCD2, pre-aggregates. The feature platform is
 modeled for machine consumption — entity-keyed, point-in-time correct,
 no conformed dimensions. Collapsing the two is the most common mistake
 in this space, and "why are these separate?" is a question this design
-can win. → ADR-002.
+can win.
 
 **3.2 The vector index lives inside the feature platform, not beside an
 LLM.** Its consumers are model features (nearest-prior-PRs, semantic
 issue dedup, reviewer similarity), and its success metric is *downstream
 model lift* — not citation groundedness. This is retrieval as ML
-infrastructure rather than retrieval as a chatbot. → ADR-006.
+infrastructure rather than retrieval as a chatbot. → ADR-0003.
 
 **3.3 Bronze never transforms.** Payload stays a JSON string; parsing is
 per-event-type in Silver. A new event type can therefore never break
-ingestion. → ADR-001.
+ingestion.
 
 ---
 
@@ -232,10 +232,10 @@ snapshot**: one row per PR, columns filling in as lifecycle events
 arrive, earliest timestamps preserved across out-of-order batches.
 
 `fact_event` and `fact_pull_request` stay separate rather than becoming
-one wide fact with sixty mostly-null columns. → ADR-003.
+one wide fact with sixty mostly-null columns.
 
 No `dim_time` at timestamp grain — millions of rows storing attributes
-the fact already carries. → ADR-004.
+the fact already carries.
 
 ### 4.3a Facts are built from the event stream, not from embedded payloads
 
@@ -990,7 +990,7 @@ detection.** Ship the regex heuristic first
 names like `robotframework` and `Abbott`, then replace it with a trained
 classifier and measure the lift. Shipping a heuristic, measuring your own
 error rate, and then beating it is an honest, self-critical arc that
-interviewers remember. → ADR-005.
+interviewers remember.
 
 ### 5.1 Label definition — measured, not assumed
 

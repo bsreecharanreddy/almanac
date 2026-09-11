@@ -203,7 +203,7 @@
   {
     "parts": [
       {
-        "content": "The breach risk for pull request 391628 in repository 678894831 as of 2025-08-04T01:00:12+00:00 is 0.003826. This score is driven by several features, with the strongest contributions coming from \"prior_pr_count\", \"prior_merge_rate\", and \"prs_opened_to_date\", all of which decrease the risk of breach. The model used to generate this score is version 2, and it was trained on Delta versions 92 for events, and version 0 for author activity, repo activity, and pr static.",
+        "content": "The breach risk for pull request 391628 in repository 678894831 as of 2025-08-04T01:00:12+00:00 is 0.003826. This score is driven by several features, with the strongest contributions coming from \"prior_pr_count\", \"prior_merge_rate\", and \"prs_opened_to_date\", all of which increase the risk of breach. The model used to generate this score is version 2, and it was trained on Delta versions 92 for events, and version 0 for author activity, repo activity, and pr static.",
         "id": null,
         "provider_name": null,
         "provider_details": null,

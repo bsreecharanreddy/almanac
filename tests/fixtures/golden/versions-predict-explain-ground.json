@@ -1,0 +1,326 @@
+{
+  "name": "versions-predict-explain-ground",
+  "description": "The provenance-complete answer: `versions` is called, and the training claim traces to `training_data_delta_versions` (v91), distinct from the v92 the tools read. The known-good counterpart to the window transcript.",
+  "requires_tools": [
+    "versions",
+    "predict",
+    "explain"
+  ],
+  "expect": {
+    "passes": true
+  },
+  "transcript": [
+    {
+      "parts": [
+        {
+          "content": "What is the breach risk for pull request 391628 in repository 678894831 as of 2025-08-04T01:00:12+00:00? Report the model version, the Delta versions the tools read, and what the champion trained on.",
+          "timestamp": "2026-09-10T12:00:00Z",
+          "part_kind": "user-prompt"
+        }
+      ],
+      "timestamp": null,
+      "instructions": null,
+      "kind": "request",
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "versions",
+          "args": {
+            "request": {
+              "entity": {
+                "repo_id": 678894831,
+                "pr_number": 391628
+              },
+              "as_of": "2025-08-04T01:00:12+00:00"
+            }
+          },
+          "tool_call_id": "golden-04",
+          "tool_kind": null,
+          "id": null,
+          "provider_name": null,
+          "provider_details": null,
+          "part_kind": "tool-call"
+        }
+      ],
+      "usage": {
+        "input_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "output_tokens": 0,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {},
+        "cost": null
+      },
+      "model_name": "golden-fixture",
+      "timestamp": "2026-09-10T12:00:00Z",
+      "kind": "response",
+      "provider_name": null,
+      "provider_url": null,
+      "provider_details": null,
+      "provider_response_id": null,
+      "finish_reason": null,
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "versions",
+          "content": {
+            "registered_model_name": "almanac_breach_risk",
+            "model_version": "2",
+            "training_run_id": "817800814439176",
+            "training_data_delta_versions": {
+              "events/clean": 91,
+              "author_activity": 0,
+              "repo_activity": 0,
+              "pr_static": 0
+            },
+            "feature_set_version": "1"
+          },
+          "tool_call_id": "golden-04",
+          "tool_kind": null,
+          "metadata": null,
+          "timestamp": "2026-09-10T12:00:00Z",
+          "outcome": "success",
+          "part_kind": "tool-return"
+        }
+      ],
+      "timestamp": null,
+      "instructions": null,
+      "kind": "request",
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "predict",
+          "args": {
+            "request": {
+              "entity": {
+                "repo_id": 678894831,
+                "pr_number": 391628
+              },
+              "as_of": "2025-08-04T01:00:12+00:00"
+            }
+          },
+          "tool_call_id": "golden-05",
+          "tool_kind": null,
+          "id": null,
+          "provider_name": null,
+          "provider_details": null,
+          "part_kind": "tool-call"
+        }
+      ],
+      "usage": {
+        "input_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "output_tokens": 0,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {},
+        "cost": null
+      },
+      "model_name": "golden-fixture",
+      "timestamp": "2026-09-10T12:00:00Z",
+      "kind": "response",
+      "provider_name": null,
+      "provider_url": null,
+      "provider_details": null,
+      "provider_response_id": null,
+      "finish_reason": null,
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "predict",
+          "content": {
+            "status": "scored",
+            "entity": {
+              "repo_id": 678894831,
+              "pr_number": 391628
+            },
+            "as_of": "2025-08-04T01:00:12Z",
+            "breach_risk": 0.0038260014552166737,
+            "unit": "probability_of_breach",
+            "provenance": {
+              "model_version": "2",
+              "read_delta_versions": {
+                "events": 92,
+                "author_activity": 0,
+                "repo_activity": 0,
+                "pr_static": 0
+              }
+            }
+          },
+          "tool_call_id": "golden-05",
+          "tool_kind": null,
+          "metadata": null,
+          "timestamp": "2026-09-10T12:00:00Z",
+          "outcome": "success",
+          "part_kind": "tool-return"
+        }
+      ],
+      "timestamp": null,
+      "instructions": null,
+      "kind": "request",
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "explain",
+          "args": {
+            "request": {
+              "entity": {
+                "repo_id": 678894831,
+                "pr_number": 391628
+              },
+              "as_of": "2025-08-04T01:00:12+00:00"
+            }
+          },
+          "tool_call_id": "golden-06",
+          "tool_kind": null,
+          "id": null,
+          "provider_name": null,
+          "provider_details": null,
+          "part_kind": "tool-call"
+        }
+      ],
+      "usage": {
+        "input_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "output_tokens": 0,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {},
+        "cost": null
+      },
+      "model_name": "golden-fixture",
+      "timestamp": "2026-09-10T12:00:00Z",
+      "kind": "response",
+      "provider_name": null,
+      "provider_url": null,
+      "provider_details": null,
+      "provider_response_id": null,
+      "finish_reason": null,
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "explain",
+          "content": {
+            "status": "explained",
+            "entity": {
+              "repo_id": 678894831,
+              "pr_number": 391628
+            },
+            "as_of": "2025-08-04T01:00:12Z",
+            "baseline": 0.265,
+            "top_k": 3,
+            "contributions": [
+              {
+                "feature": "prior_pr_count",
+                "contribution": -0.42,
+                "direction": "decreases_risk"
+              },
+              {
+                "feature": "prior_merge_rate",
+                "contribution": -0.31,
+                "direction": "decreases_risk"
+              },
+              {
+                "feature": "prs_opened_to_date",
+                "contribution": -0.19,
+                "direction": "decreases_risk"
+              }
+            ],
+            "provenance": {
+              "model_version": "2",
+              "read_delta_versions": {
+                "events": 92,
+                "author_activity": 0,
+                "repo_activity": 0,
+                "pr_static": 0
+              }
+            }
+          },
+          "tool_call_id": "golden-06",
+          "tool_kind": null,
+          "metadata": null,
+          "timestamp": "2026-09-10T12:00:00Z",
+          "outcome": "success",
+          "part_kind": "tool-return"
+        }
+      ],
+      "timestamp": null,
+      "instructions": null,
+      "kind": "request",
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "content": "The breach risk is 0.003826 on model version 2. The tools read the events table at Delta version 92 to score it. The champion was trained on the events/clean table at Delta version 91.",
+          "id": null,
+          "provider_name": null,
+          "provider_details": null,
+          "part_kind": "text"
+        }
+      ],
+      "usage": {
+        "input_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "output_tokens": 0,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {},
+        "cost": null
+      },
+      "model_name": "golden-fixture",
+      "timestamp": "2026-09-10T12:00:00Z",
+      "kind": "response",
+      "provider_name": null,
+      "provider_url": null,
+      "provider_details": null,
+      "provider_response_id": null,
+      "finish_reason": null,
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    }
+  ]
+}

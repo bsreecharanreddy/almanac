@@ -83,7 +83,7 @@ def test_get_features_returns_the_contracted_vector_over_the_protocol(
     payload = _call(_server(spark, tmp_path), "get_features", _request(RICH_ENTITY, RICH_AS_OF))
 
     assert payload["features"].keys() == set(FEATURE_COLUMNS)
-    assert payload["provenance"]["delta_versions"]["events"] == 0
+    assert payload["provenance"]["read_delta_versions"]["events"] == 0
 
 
 def test_predict_returns_a_score_and_explain_returns_ranked_contributions(

@@ -47,16 +47,17 @@ class EntityKey(Strict):
 
 
 class FeatureProvenance(Strict):
-    """Which Delta version of each table read produced these feature values. No model involved."""
+    """The Delta version of each table the tools *read* for these values -- not a training input."""
 
-    delta_versions: dict[str, int] = Field(min_length=1)
+    read_delta_versions: dict[str, int] = Field(min_length=1)
 
 
 class ModelProvenance(Strict):
-    """Which registered model version, reading which Delta versions, produced this number."""
+    """The model version, and the Delta versions the tools *read* to score -- not the
+    champion's training inputs (`VersionsResult.training_data_delta_versions`)."""
 
     model_version: str = Field(min_length=1)
-    delta_versions: dict[str, int] = Field(min_length=1)
+    read_delta_versions: dict[str, int] = Field(min_length=1)
 
 
 class GetFeaturesInput(Strict):

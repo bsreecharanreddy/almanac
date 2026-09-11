@@ -1,0 +1,248 @@
+{
+  "name": "predict-and-explain-ground",
+  "description": "Score plus drivers, from `predict` and `explain`. The baseline traces to `explain.baseline`; the directional language is Task 7's check, not this fixture's.",
+  "requires_tools": [
+    "predict",
+    "explain"
+  ],
+  "expect": {
+    "passes": true
+  },
+  "transcript": [
+    {
+      "parts": [
+        {
+          "content": "What is the breach risk for pull request 391628 in repository 678894831 as of 2025-08-04T01:00:12+00:00, and which features drive it?",
+          "timestamp": "2026-09-10T12:00:00Z",
+          "part_kind": "user-prompt"
+        }
+      ],
+      "timestamp": null,
+      "instructions": null,
+      "kind": "request",
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "predict",
+          "args": {
+            "request": {
+              "entity": {
+                "repo_id": 678894831,
+                "pr_number": 391628
+              },
+              "as_of": "2025-08-04T01:00:12+00:00"
+            }
+          },
+          "tool_call_id": "golden-02",
+          "tool_kind": null,
+          "id": null,
+          "provider_name": null,
+          "provider_details": null,
+          "part_kind": "tool-call"
+        }
+      ],
+      "usage": {
+        "input_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "output_tokens": 0,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {},
+        "cost": null
+      },
+      "model_name": "golden-fixture",
+      "timestamp": "2026-09-10T12:00:00Z",
+      "kind": "response",
+      "provider_name": null,
+      "provider_url": null,
+      "provider_details": null,
+      "provider_response_id": null,
+      "finish_reason": null,
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "predict",
+          "content": {
+            "status": "scored",
+            "entity": {
+              "repo_id": 678894831,
+              "pr_number": 391628
+            },
+            "as_of": "2025-08-04T01:00:12Z",
+            "breach_risk": 0.0038260014552166737,
+            "unit": "probability_of_breach",
+            "provenance": {
+              "model_version": "2",
+              "read_delta_versions": {
+                "events": 92,
+                "author_activity": 0,
+                "repo_activity": 0,
+                "pr_static": 0
+              }
+            }
+          },
+          "tool_call_id": "golden-02",
+          "tool_kind": null,
+          "metadata": null,
+          "timestamp": "2026-09-10T12:00:00Z",
+          "outcome": "success",
+          "part_kind": "tool-return"
+        }
+      ],
+      "timestamp": null,
+      "instructions": null,
+      "kind": "request",
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "explain",
+          "args": {
+            "request": {
+              "entity": {
+                "repo_id": 678894831,
+                "pr_number": 391628
+              },
+              "as_of": "2025-08-04T01:00:12+00:00"
+            }
+          },
+          "tool_call_id": "golden-03",
+          "tool_kind": null,
+          "id": null,
+          "provider_name": null,
+          "provider_details": null,
+          "part_kind": "tool-call"
+        }
+      ],
+      "usage": {
+        "input_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "output_tokens": 0,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {},
+        "cost": null
+      },
+      "model_name": "golden-fixture",
+      "timestamp": "2026-09-10T12:00:00Z",
+      "kind": "response",
+      "provider_name": null,
+      "provider_url": null,
+      "provider_details": null,
+      "provider_response_id": null,
+      "finish_reason": null,
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "tool_name": "explain",
+          "content": {
+            "status": "explained",
+            "entity": {
+              "repo_id": 678894831,
+              "pr_number": 391628
+            },
+            "as_of": "2025-08-04T01:00:12Z",
+            "baseline": 0.265,
+            "top_k": 3,
+            "contributions": [
+              {
+                "feature": "prior_pr_count",
+                "contribution": -0.42,
+                "direction": "decreases_risk"
+              },
+              {
+                "feature": "prior_merge_rate",
+                "contribution": -0.31,
+                "direction": "decreases_risk"
+              },
+              {
+                "feature": "prs_opened_to_date",
+                "contribution": -0.19,
+                "direction": "decreases_risk"
+              }
+            ],
+            "provenance": {
+              "model_version": "2",
+              "read_delta_versions": {
+                "events": 92,
+                "author_activity": 0,
+                "repo_activity": 0,
+                "pr_static": 0
+              }
+            }
+          },
+          "tool_call_id": "golden-03",
+          "tool_kind": null,
+          "metadata": null,
+          "timestamp": "2026-09-10T12:00:00Z",
+          "outcome": "success",
+          "part_kind": "tool-return"
+        }
+      ],
+      "timestamp": null,
+      "instructions": null,
+      "kind": "request",
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    },
+    {
+      "parts": [
+        {
+          "content": "The breach risk is 0.003826, against a baseline risk of 0.265, on model version 2. The strongest drivers -- prior_pr_count, prior_merge_rate and prs_opened_to_date -- all decrease the risk of breach.",
+          "id": null,
+          "provider_name": null,
+          "provider_details": null,
+          "part_kind": "text"
+        }
+      ],
+      "usage": {
+        "input_tokens": 0,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "output_tokens": 0,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {},
+        "cost": null
+      },
+      "model_name": "golden-fixture",
+      "timestamp": "2026-09-10T12:00:00Z",
+      "kind": "response",
+      "provider_name": null,
+      "provider_url": null,
+      "provider_details": null,
+      "provider_response_id": null,
+      "finish_reason": null,
+      "run_id": null,
+      "conversation_id": null,
+      "metadata": null,
+      "state": "complete"
+    }
+  ]
+}

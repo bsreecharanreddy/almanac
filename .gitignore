@@ -60,3 +60,10 @@ dbt/logs/
 dbt/.user.yml
 dbt_packages/
 logs/
+
+# graphify — local knowledge-graph build, treated as regenerable local state.
+# The post-commit hook (`graphify hook install`) rebuilds graph.json on every
+# commit, AST-only. A tracked copy would be dirty after every commit, and the
+# hook's re-clustering decays the curated LLM community labels to mechanical
+# hub-names because a git hook has no LLM. A fresh clone runs `/graphify` once.
+graphify-out/

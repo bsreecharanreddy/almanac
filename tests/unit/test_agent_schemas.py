@@ -42,7 +42,7 @@ def test_get_features_result_round_trips_through_json() -> None:
         entity=ENTITY,
         as_of=AS_OF,
         features=zero_features(),
-        provenance=FeatureProvenance(delta_versions={"features/author_activity": 12}),
+        provenance=FeatureProvenance(read_delta_versions={"features/author_activity": 12}),
     )
 
     assert round_tripped(result) == result
@@ -62,7 +62,7 @@ def test_get_features_result_accepts_a_null_feature_value() -> None:
         entity=ENTITY,
         as_of=AS_OF,
         features=reduced_era,
-        provenance=FeatureProvenance(delta_versions={"features/pr_state": 4}),
+        provenance=FeatureProvenance(read_delta_versions={"features/pr_state": 4}),
     )
 
     assert round_tripped(result) == result
@@ -74,7 +74,7 @@ def test_predict_result_round_trips_through_json() -> None:
         entity=ENTITY,
         as_of=AS_OF,
         breach_risk=0.42,
-        provenance=ModelProvenance(model_version="3", delta_versions={"gold": 1}),
+        provenance=ModelProvenance(model_version="3", read_delta_versions={"gold": 1}),
     )
 
     assert round_tripped(result) == result
@@ -87,7 +87,7 @@ def test_predict_refusal_round_trips_and_carries_no_score() -> None:
         as_of=AS_OF,
         missing_feature="is_draft",
         reason="is_draft is null on 100% of this window",
-        provenance=FeatureProvenance(delta_versions={"features/pr_state": 4}),
+        provenance=FeatureProvenance(read_delta_versions={"features/pr_state": 4}),
     )
 
     assert round_tripped(refusal) == refusal
@@ -104,7 +104,7 @@ def test_predict_output_union_discriminates_on_status() -> None:
             "entity": {"repo_id": 1, "pr_number": 42},
             "as_of": AS_OF.isoformat(),
             "breach_risk": 0.1,
-            "provenance": {"model_version": "3", "delta_versions": {"gold": 1}},
+            "provenance": {"model_version": "3", "read_delta_versions": {"gold": 1}},
         }
     )
     refused = adapter.validate_python(
@@ -114,7 +114,7 @@ def test_predict_output_union_discriminates_on_status() -> None:
             "as_of": AS_OF.isoformat(),
             "missing_feature": "is_draft",
             "reason": "null on 100% of this window",
-            "provenance": {"delta_versions": {"features/pr_state": 4}},
+            "provenance": {"read_delta_versions": {"features/pr_state": 4}},
         }
     )
 
@@ -132,7 +132,7 @@ def test_explain_result_round_trips_and_direction_is_derived_from_sign() -> None
             Contribution(feature="is_draft", contribution=-0.3, direction="decreases_risk"),
         ],
         top_k=2,
-        provenance=ModelProvenance(model_version="3", delta_versions={"gold": 1}),
+        provenance=ModelProvenance(model_version="3", read_delta_versions={"gold": 1}),
     )
 
     assert round_tripped(result) == result
@@ -148,6 +148,26 @@ def test_versions_result_round_trips_through_json() -> None:
     )
 
     assert round_tripped(result) == result
+
+
+def test_read_delta_versions_is_named_for_what_it_is_versions_of() -> None:
+    """Phase 9's window put "trained on Delta versions 92" in an answer when the
+    champion trained on v91 -- 92 was the version the tools *read*. The key the
+    model saw was the bare `delta_versions`, which reads as the model's own
+    training data. It is now `read_delta_versions`; training-data versions keep
+    the distinct `VersionsResult.training_data_delta_versions`.
+    """
+    feature = FeatureProvenance(read_delta_versions={"features/pr_state": 4})
+    model = ModelProvenance(model_version="2", read_delta_versions={"events": 92})
+
+    assert "read_delta_versions" in feature.model_dump_json()
+    assert round_tripped(feature) == feature
+    assert round_tripped(model) == model
+
+    with pytest.raises(ValidationError, match="delta_versions"):
+        FeatureProvenance.model_validate({"delta_versions": {"features/pr_state": 4}})
+    with pytest.raises(ValidationError, match="delta_versions"):
+        ModelProvenance.model_validate({"model_version": "2", "delta_versions": {"events": 92}})
 
 
 def test_missing_provenance_fails_validation_rather_than_serializing_with_a_null() -> None:
@@ -172,7 +192,7 @@ def test_features_missing_a_contracted_column_is_refused_not_realigned() -> None
             entity=ENTITY,
             as_of=AS_OF,
             features=incomplete,
-            provenance=FeatureProvenance(delta_versions={"features/author_activity": 12}),
+            provenance=FeatureProvenance(read_delta_versions={"features/author_activity": 12}),
         )
 
 
@@ -185,7 +205,7 @@ def test_features_with_an_uncontracted_column_is_refused() -> None:
             entity=ENTITY,
             as_of=AS_OF,
             features=extra,
-            provenance=FeatureProvenance(delta_versions={"features/author_activity": 12}),
+            provenance=FeatureProvenance(read_delta_versions={"features/author_activity": 12}),
         )
 
 
@@ -205,7 +225,7 @@ def test_as_of_must_be_timezone_aware() -> None:
             entity=ENTITY,
             as_of=datetime(2026, 9, 9, 12, 0),
             features=zero_features(),
-            provenance=FeatureProvenance(delta_versions={"features/author_activity": 12}),
+            provenance=FeatureProvenance(read_delta_versions={"features/author_activity": 12}),
         )
 
 
@@ -220,5 +240,5 @@ def test_breach_risk_outside_zero_one_is_refused() -> None:
             entity=ENTITY,
             as_of=AS_OF,
             breach_risk=1.5,
-            provenance=ModelProvenance(model_version="3", delta_versions={"gold": 1}),
+            provenance=ModelProvenance(model_version="3", read_delta_versions={"gold": 1}),
         )

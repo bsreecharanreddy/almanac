@@ -172,6 +172,31 @@ of unknown scope, which is the `pseudonymity.py` failure again.
 
 **Gate:** a deliberately hallucinated number fails CI.
 
+> **Amended 2026-09-10 — Phase 9's window changed this list, and the
+> change is recorded rather than silently folded in.** The implementation
+> plan (`docs/plans/2026-09-10-phase-10-grounding-verifier-plan.md`)
+> executes the seven tasks above and adds two, both earned by
+> `docs/findings/2026-09-10-agent-layer-window.md`:
+>
+> - **A provenance schema rename becomes Task 1.** The window's one false
+>   claim — "trained on Delta versions 92" when the champion trained on
+>   v91 — formed because `ModelProvenance.delta_versions` never says what
+>   it is versions *of*. `read_delta_versions` does. The verifier is the
+>   enforcement; this is the fix for the cause, and it is a pure rename.
+> - **Relationship grounding splits out from Task 1 as its own task.**
+>   Task 1 above — "every numeric literal appears in that run's tool
+>   results" — held in the window: *every* number in the false answer did
+>   appear in a tool result. What was wrong was the verb. "Trained on N"
+>   is a claim of training-data provenance and must trace to
+>   `training_data_delta_versions`, not to the version a tool read.
+>   Checking the claim type against its required field is a different
+>   check, not a stricter number check, so it is a different task.
+>
+> The other change is a rounding rule on the numeric check: the window's
+> `0.003826` is `predict`'s `0.0038260014552166737`, and rounding is a
+> transformation the verifier has to allow for without allowing a
+> tolerance band. The plan states the rule.
+
 ## 7. Non-goals
 
 Stated so they cannot be re-litigated mid-phase.

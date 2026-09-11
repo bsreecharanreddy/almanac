@@ -1,0 +1,18 @@
+{
+  "name": "live-window-training-claim",
+  "description": "The 2026-09-10 window transcript, committed and untouched but for Task 1's key rename. 'Trained on Delta versions 92' is a training-provenance claim; 92 traced to read_delta_versions, and `versions` was never called.",
+  "requires_tools": [
+    "versions",
+    "predict",
+    "explain"
+  ],
+  "expect": {
+    "passes": false,
+    "reason": "ungrounded",
+    "ungrounded_claim": {
+      "claim_type": "training_provenance",
+      "required_field": "training_data_delta_versions"
+    }
+  },
+  "transcript_file": "transcripts/2026-09-10-live-predict-explain.json"
+}
