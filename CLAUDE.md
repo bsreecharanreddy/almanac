@@ -75,9 +75,10 @@ just that a number is real but that the *relationship* claimed around it
 is the one that field actually means, plus a directional check and a
 retry-once-then-abstain policy — regex and structural traversal over the
 run's own transcript, no model call, so it runs as a normal offline test
-rather than a new CI job. `v1.1.0` tags both together once the Phase 9
-window's cost is read: `system.billing.usage`, on or after 2026-09-11
-(`docs/findings/2026-09-10-agent-layer-window.md`).
+rather than a new CI job. The Phase 9 window's cost is read — **$5.59**
+in DBUs on 2026-09-10, from `system.billing.usage`
+(`docs/findings/2026-09-11-agent-layer-window-cost.md`) — so `v1.1.0`
+tags both phases together as soon as that tag is cut.
 
 **The project is complete and tagged `v1.0`.** Every phase is merged to
 `main`: Phase 7 via PR #14, Phase 8 via PR #16, and a pre-tag PII fix via

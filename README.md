@@ -72,14 +72,25 @@ backfill row are the demo window being run against a chosen date rather
 than a hardcoded one. *(The `Run as` column is redacted — it carried a
 real name.)*
 
+![Five agent-window job runs, three RunExecutionErrors, two Llama substitute runs](docs/images/phase9-agent-window-run-history.png)
+
+**The agent layer's own run history: five runs to get one answer.** Four
+failed, each for a different reason — a dependency the wheel didn't
+carry, a host that already owned an event loop, a vendor rate limit, a
+storage layer that doesn't support append — before a substitute model
+answered on the fifth. Full account:
+[`docs/findings/2026-09-10-agent-layer-window.md`](docs/findings/2026-09-10-agent-layer-window.md).
+*(Same redaction as above.)*
+
 ---
 
 > **Status: `v1.0` tagged, all nine phases merged.** Two more are merged
 > on top, untagged: Phase 9, an agent layer (PR #20), and Phase 10, a
 > deterministic grounding verifier on its answers (PR #21). Both are
 > additive and read-only — everything below this line still describes
-> `v1.0` and remains true of it. `v1.1.0` tags once the Phase 9 window's
-> cost is read from `system.billing.usage`. Phase by phase, each led by
+> `v1.0` and remains true of it. The Phase 9 window's cost is read
+> (**$5.59** in DBUs), so `v1.1.0` tags both phases together next. Phase
+> by phase, each led by
 > what it *found*: [`CHANGELOG.md`](CHANGELOG.md). Task granularity and
 > the verification log: [`docs/STATUS.md`](docs/STATUS.md).
 

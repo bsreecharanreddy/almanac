@@ -29,6 +29,12 @@ Every wheel was **sha256-verified identical** on both sides before its run,
 by exporting the workspace copy back and hashing it. Each cluster was five
 `Standard_D4ds_v6` nodes. Cost is not quoted here; see *Cost* below.
 
+![Five job runs, three RunExecutionErrors, two Llama substitute runs -- one of them the answer](../images/phase9-agent-window-run-history.png)
+
+**The Databricks run history, matching the table above.** *(The `Run as`
+column is redacted -- it carried a real name, the same treatment the
+Phase 8 run-history screenshot got.)*
+
 ## What the tools proved on real data
 
 Run `827768810656715`, against `events/clean` at Delta **v92** and the three

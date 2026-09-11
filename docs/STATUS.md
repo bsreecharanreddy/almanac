@@ -23,9 +23,11 @@ and the agent answered once — through Llama 3.3 70B as a recorded
 substitute, because every Claude endpoint in this workspace returns 403 for
 a Databricks-set rate limit of 0 and the configured fallback's replies
 cannot be parsed. Its first live transcript is committed and replays for
-free. **What it cost is not known yet**: `system.billing.usage` lags, so it
-is read on or after 2026-09-11, and the plan's token reconciliation cannot
-run here at all (`docs/findings/2026-09-10-agent-layer-window.md`). Task 12
+free. **What it cost is now known: $5.59 in DBUs on 2026-09-10**, read
+2026-09-11 from `system.billing.usage` (`docs/findings/2026-09-11-agent-layer-window-cost.md`).
+The plan's token reconciliation still cannot run here at all, recorded as
+uncloseable in this workspace rather than dropped
+(`docs/findings/2026-09-10-agent-layer-window.md`). Task 12
 closed out the reader-facing artifacts and marked the plan's exit gate
 against evidence. Design doc at
 `docs/design/2026-09-09-almanac-agent-layer-design.md`, plan at
@@ -65,8 +67,9 @@ already on the branch that predate Task 1 (`2c11789` graphify tooling,
 `1349e02` a stale-ADR fix) rebased onto `main` at the Phase 9 merge. Task
 10, the `v1.1.0` close-out, is underway on `main`: the story-bank gist,
 README, CLAUDE.md, and the goal/resume/limitations docs are done; the
-`v1.1.0` tag itself waits on the Phase 9 window's cost read
-(`system.billing.usage`, on or after 2026-09-11).
+Phase 9 window's cost is read (`$5.59`,
+`docs/findings/2026-09-11-agent-layer-window-cost.md`); the GitHub
+profile is drafted and pushed. Remaining: the `v1.1.0` tag itself.
 
 **Every SHA in this file that predates `a6c6afe` is a pre-rewrite SHA and
 no longer resolves.** The 2026-09-09 `filter-repo` pass rewrote all 199

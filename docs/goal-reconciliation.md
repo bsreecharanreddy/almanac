@@ -354,13 +354,16 @@ model was retrained as part of either phase, and the vector index was not
 repurposed as a claim source for the agent.
 
 **`[~]` Token / cost reconciliation for the paid window**
-The window's four-tool-call cost is not separable from other workspace
-activity in this account, and the plan's token reconciliation cannot run
-at all in a workspace whose `endpoint_usage` table has never had a row —
-recorded as uncloseable in this workspace rather than silently dropped.
-The window's total DBU cost is a distinct, closeable number: read from
-`system.billing.usage` before the `v1.1.0` tag, per the close-out plan's
-one hard gate.
+**The DBU half is now closed: $5.59, read 2026-09-10's usage from
+`system.billing.usage` on 2026-09-11**
+(`docs/findings/2026-09-11-agent-layer-window-cost.md`), the close-out
+plan's one hard gate before the `v1.1.0` tag. It turned out cleanly
+separable — every DBU that workspace drew that day falls inside a single
+~3-hour span, with nothing else billed that day to disambiguate from. The
+plan's *token*-level reconciliation is the part that stays open: it
+cannot run at all in a workspace whose `endpoint_usage` table has never
+had a row, checked directly rather than assumed — recorded as
+uncloseable in this workspace rather than silently dropped.
 
 **Agent-layer score: 7 done, 1 partly, 0 not done**, against the design
 doc's own stated gates and non-goals — a much smaller goal set than §10's,
