@@ -709,9 +709,7 @@ def build_queue(spark: SparkSession, *, out_dir: Path) -> dict[str, Any]:
     pdf = frame.select(*keep).toPandas()
 
     model = load_champion()
-    pdf["breach_risk"] = model.booster_.predict(
-        pdf[FEATURE_COLUMNS].astype("float64").to_numpy()
-    )
+    pdf["breach_risk"] = model.booster_.predict(pdf[FEATURE_COLUMNS].astype("float64").to_numpy())
     pdf = pdf.sort_values("breach_risk", ascending=False).reset_index(drop=True)
     pdf.insert(0, "rank", pdf.index + 1)
     pdf.to_parquet(out_dir / "queue.parquet", index=False)
@@ -934,14 +932,16 @@ Expected: FAIL, `AssertionError: demo/**/*.py is published and unscanned`.
 In `PUBLISHED_GLOBS`, after the `.claude/**` entries:
 
 ```python
+(
     # The demo is deployed publicly, which makes it the highest-exposure
-    # surface this repo has. Added with the demo itself rather than after it,
-    # because the one time this check missed a leak it was not broken -- it
-    # was aimed at the wrong files, and passed cleanly forever.
+    # surface this repo has. Added with the demo itself rather than after
+    # it, because the one time this check missed a leak it was not broken
+    # -- it was aimed at the wrong files, and passed cleanly forever.
     "demo/**/*.py",
     "demo/**/*.json",
     "demo/**/*.md",
     "demo/Dockerfile",
+)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1135,7 +1135,9 @@ def coverage_rows(coverage: dict[str, Any]) -> pd.DataFrame:
             "feature": name,
             "non_null": int(stats["non_null"]),
             "null": total - int(stats["non_null"]),
-            "pct_null": round(100.0 * (total - int(stats["non_null"])) / total, 1) if total else 0.0,
+            "pct_null": round(100.0 * (total - int(stats["non_null"])) / total, 1)
+            if total
+            else 0.0,
         }
         for name, stats in coverage["features"].items()
     ]
@@ -1480,15 +1482,11 @@ with explain_tab:
     queue = artifacts.load_queue()
     model = st.cache_resource(load_champion)()
 
-    rank = st.number_input(
-        "Rank", min_value=1, max_value=int(queue["rank"].max()), value=1, step=1
-    )
+    rank = st.number_input("Rank", min_value=1, max_value=int(queue["rank"].max()), value=1, step=1)
     row = queue.loc[queue["rank"] == rank].iloc[0]
 
     st.metric("Predicted breach risk", f"{row['breach_risk']:.6f}")
-    st.dataframe(
-        panels.contributions_for(model, row), hide_index=True, use_container_width=True
-    )
+    st.dataframe(panels.contributions_for(model, row), hide_index=True, use_container_width=True)
     st.markdown(
         f"Contributions move from the model's own **baseline** of "
         f"`{panels.baseline_for(model, row):.6f}`, which is *not* a feature — "
