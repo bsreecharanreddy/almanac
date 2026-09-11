@@ -262,11 +262,37 @@ targeting `v1.2.0`.** Design doc at
   uv-managed environment. `demo/README.md` rewritten as a plain
   description doc (the Hugging Face Spaces YAML frontmatter no longer
   applies -- Community Cloud's configuration is its own web UI, not a
-  README). **Not done yet**: the actual Community Cloud deploy happens
-  through its web UI (connect the GitHub repo, pick `demo/app.py` as the
-  main file) -- there is no token-based API path to automate this the way
-  `scripts/deploy_space.py` did for Hugging Face, so this step is the
-  user's to do directly.
+  README). **Deployed and verified live**: the user connected the GitHub
+  repo through Community Cloud's web UI (no token-based API path exists
+  for this, unlike the removed Hugging Face script) and deployed
+  `demo/app.py` at **[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/)**. All four tabs
+  checked directly in a real browser against the live URL, not just the
+  deploy log -- identical output to every prior local check
+  (`0.768437` / `-0.940807` on Why this score, `189` rows on the queue,
+  `ungrounded` on Agent verified with the correct rejection reason, all
+  three eras and the quarantine invariant on the medallion). One console
+  error is Community Cloud's own platform chrome (an anonymous-viewer
+  account-details call), unrelated to this app's code. README's "No
+  persistent public demo" paragraph retired with the live link, and the
+  badge and "Hiring managers" bullet both point at it now.
+- **Tasks 14-15, the architecture walkthrough -- a fifth tab, added after
+  Task 13 at the user's request.** Design at
+  `docs/design/2026-09-11-almanac-architecture-walkthrough-design.md`;
+  explicitly revisits and supersedes the original local-demo design doc's
+  §11 row rejecting a fifth panel, rather than quietly overriding it --
+  weighed a separate `st.navigation` page against a fifth tab directly,
+  and picked the tab for immediate visibility to a hiring-manager-facing
+  visitor. **Task 14 done**: `src/almanac/demo/architecture.py`, nine
+  nodes (Bronze through the grounding verifier) each carrying a link to
+  the real ADR/finding where its claim was actually measured, never a
+  restated number -- the design doc's governing rule enforced as a test
+  (`test_no_summary_or_label_contains_a_digit`) rather than left as a
+  convention. A second test walks every node's links against the real
+  filesystem (`test_every_link_resolves_to_a_real_file`); all nine
+  resolved on the first attempt, checked directly against `ls docs/adr/
+  docs/findings/` rather than guessed. 5 passed, `mypy --strict` and
+  `ruff` both clean. **Task 15 (the tab itself, wiring in
+  `streamlit-flow-component`) not started yet.**
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
