@@ -7,6 +7,76 @@ Every number here is measured. Where one was later found wrong, it is
 corrected **in place with the original kept**, because a retraction that
 deletes its own evidence is not a retraction.
 
+## v1.2.0 — Phase 11, the local demo (branch `phase-11-local-demo`)
+
+A Streamlit app scoring against a committed snapshot of the registered
+champion, no cloud account needed to run it, deployed publicly at
+[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/) for
+anyone to click through.
+
+- **The OpenMP segfault, never seen before because scoring had only ever
+  run on Databricks.** Importing `mlflow` before `lightgbm` segfaults with
+  no traceback — 10 of 10 runs on macOS arm64. This demo is the first
+  thing in the repo to score on a laptop rather than a cluster. Fixed with
+  an import-order guard, verified by reversal: swap the two imports and
+  the regression test fails.
+- **The feature-coverage measurement makes the governing invariant
+  visible instead of asserted.** One archived hour holds almost no prior
+  history, so most point-in-time features are legitimately null —
+  rendered directly beside the queue rather than hidden, with the null
+  count and the reason stated together.
+- **The plan's own Dockerfile did not work, twice, and only running the
+  built container caught either time.** `--extra demo` alone omitted
+  lightgbm/mlflow; the fixed version still transitively imported pyspark
+  two hops down (`panels.py -> bounded_agent -> gateway -> mcp_server`),
+  past an import-graph test that checked only three files' own direct
+  statements, not what they import. Fixed by moving the two functions the
+  panel actually needed into a new pyspark-free module, and by rewriting
+  the regression test as a transitive first-party-only AST walk — a
+  subprocess-import version was tried first and rejected, because
+  `mlflow` itself pulls in pyspark whenever pyspark happens to be
+  installed in the environment doing the testing, which is a property of
+  that environment, not of the demo's own code.
+- **The same container measured 11.1GB**, almost all of it a
+  `sentence-transformers` dependency (torch, transformers, CUDA wheels)
+  pulled in for a Phase 5 embedding pipeline the demo never imports. A
+  minimal `ml-scoring` extra cut it to 2.33GB with identical scoring
+  output.
+- **The deploy target changed after the container worked, on cost
+  alone.** Creating a Docker Space on Hugging Face requires a paid
+  personal plan, checked directly against Hugging Face's own docs rather
+  than assumed. Streamlit Community Cloud is free and a better fit, since
+  the demo already is a Streamlit app — no Dockerfile needed at all. The
+  pivot needed a `sys.path` fallback (Community Cloud never runs `uv`, so
+  the project package is never installed into its environment) and a
+  pinned `requirements.txt` exported from the same trimmed extras,
+  verified against a completely clean, `uv`-free `pip install` venv
+  before trusting it would work on the actual platform.
+- **A fifth tab, added after the phase's own deploy work, found three
+  more defects the same way — by running it, not trusting a test.** An
+  interactive architecture walkthrough indexes the project's real build
+  story (this segfault, the leakage bug Phase 7 found, the watermark
+  postmortem) rather than restating it — every node links to the ADR or
+  finding where a claim was actually measured, enforced by a test that
+  rejects a digit anywhere in a node's own text. `AppTest` cannot execute
+  a third-party component's frontend canvas at all; a second, unrelated
+  bug survived that and only broke in a real browser — `st.session_state`
+  reused the flow component's own widget key, so Streamlit silently
+  overwrote a stored state object with the component's raw return value
+  on rerun. A third was found only by a person actually clicking the
+  deployed page: the walkthrough's links rendered as inline code, never
+  real hyperlinks, and a node click did nothing. All three fixed and
+  reverified against the live site, not only locally.
+- **Real, not staged.** No feature phase changed; nothing here re-trains
+  or re-registers a model. The demo scores the same registered champion
+  (version 2) that Phase 4 rescored and Phase 8 shipped.
+- **What stayed rejected.** A real-quarter export was considered and
+  dropped — it needed a billable window, a feature recompute inside it, a
+  cost read after it, and a publication-safety review of data that has
+  never been public in that form, for the least visible gain of anything
+  in the design. The demo scores three committed fixture hours instead,
+  labelled as exactly that rather than implied to be more.
+
 ## v1.1.0 — Phases 9 and 10, 2026-09-10
 
 Tagged on `main` at `762a330`. Two phases in one release, because the

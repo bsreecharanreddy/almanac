@@ -346,6 +346,50 @@ targeting `v1.2.0`.** Design doc at
   after this phase's PR merges, a manual step with no API to automate,
   carried into Task 13 Step 7 below as a closing action.
 
+**Phase 11 is complete. Every exit-gate row from the design doc's §10,
+marked against its actual evidence:**
+
+- [x] `make demo-build` regenerates the committed artifacts byte-identically
+  -- `test_demo_artifacts_reproducible.py`, green in the 751-passed full run.
+- [x] `make demo` opens all panels with no SparkSession and no network call
+  -- now five, not four (Tasks 14-15 added the architecture walkthrough
+  after this gate was written); confirmed via `AppTest`, a real local
+  browser, and the live production site; the transitive-import test
+  (Task 13's fix) guarantees no `pyspark` reachable from any of them.
+- [x] The champion scores a pinned vector to a pinned value, offline --
+  `0.6937982497227584`, Task 2, with `DATABRICKS_HOST=` `DATABRICKS_TOKEN=`
+  unset and the suite still green.
+- [x] The import-order regression test fails when the order is reversed --
+  Task 1, verified by reversal (swapping the imports turns the test red).
+- [x] The grounding panel shows the flipped-direction transcript being
+  **rejected** -- confirmed on the live site (`ungrounded` verdict,
+  correct rejection reason) and in `test_the_flipped_transcript_is_rejected`.
+- [x] No login and no `owner/repo` appears in any committed demo artifact --
+  13 pseudonymity tests green, including the two Task 6 added specifically
+  for the demo surface.
+- [x] `pseudonymity.py` covers `demo/` and the deploy folder -- adapted
+  during the platform pivot: `demo/Dockerfile` (Hugging Face-specific, now
+  removed) replaced in `PUBLISHED_GLOBS` by `demo/requirements.txt`, the
+  actual artifact the current deploy path publishes.
+- [x] Full `make check` green -- **751 passed in 1:14:55**, serial, zero
+  failures, 2026-09-11.
+- [x] The app is live and its URL is in the README -- adapted from "the
+  Space" (Hugging Face terminology) to Streamlit Community Cloud, live at
+  [almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/), linked
+  from the README's badges, its "No persistent public demo" paragraph, and
+  its "Hiring managers" bullet.
+- [x] The README's "No persistent public demo" paragraph is rewritten to
+  match -- states what actually runs continuously now and distinguishes it
+  clearly from the production serving endpoint, which is still torn down
+  between sessions exactly as before.
+
+Two deviations from the plan's own text, both explicit rather than silent:
+the deploy target itself (Hugging Face Spaces -> Streamlit Community
+Cloud, on cost, documented in Task 13's own entry above and in
+`CHANGELOG.md`), and two tasks added mid-phase at the user's request
+(14-15, the architecture walkthrough) that the original 13-task plan does
+not mention because they postdate it.
+
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
 tagged together, per the phase plan's own rule that the two ship as one

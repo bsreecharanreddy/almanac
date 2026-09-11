@@ -59,6 +59,32 @@ a year later.**
 
 ## Current status
 
+**Phase 11, a local demo deployed publicly, is underway on branch
+`phase-11-local-demo`, targeting `v1.2.0`; the PR for the whole phase has
+not been opened yet as this line is written.** A Streamlit app scores
+against a committed snapshot of the registered champion — no cloud
+account needed to run it — live at
+[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/). Found
+by actually running things rather than trusting a test at every stage:
+an OpenMP segfault never seen before because scoring had only run on
+Databricks (importing `mlflow` before `lightgbm` crashes with no
+traceback, 10 of 10 runs); a Docker container that "worked" per an
+import-graph test but transitively imported pyspark two first-party hops
+down, because that test checked only three files' own direct statements;
+the same container measured at 11.1GB, almost all of it an unrelated
+Phase 5 dependency the demo never imports, cut to 2.33GB; a mid-build
+platform change from Hugging Face Spaces to Streamlit Community Cloud on
+cost alone, once Docker Spaces turned out to need a paid personal plan;
+and, on a fifth tab added after the deploy work, `AppTest`'s inability to
+execute a third-party component at all, a `session_state` key collision
+that only broke in a real browser, and a dead-links bug caught only by a
+person clicking the actual deployed page. Full suite green: **751 passed
+in 1:14:55**, serial (the repo's own documented CI fallback — `-n 4`
+drove this machine's load average to 156 and then 365, from
+subprocess-spawned Spark sessions stacking on top of xdist workers; the
+Makefile already documented an earlier load-average-35 failure mode
+before this one).
+
 **Phase 9, the agent layer, and Phase 10, its grounding verifier, are both
 merged to `main` and tagged together as `v1.1.0`** (annotated, on
 `762a330`, 2026-09-10). Phase 9 (PR #20, `6fc99cb`) added four
@@ -185,6 +211,8 @@ See §9 of the design doc for the full table and its gates. At a glance:
 | 7 | Wk 12–13 | Governance, lineage, contracts in CI, BI, docs |
 | 8 | Wk 13 | Tag `v1.0`. Stop. |
 | 9 | After `v1.0` | Agent layer: four read-only tools over MCP, two gateways, a bounded agent — `v1.1.0` |
+| 10 | With Phase 9 | Grounding verifier: deterministic checks on the agent's own claims — `v1.1.0` |
+| 11 | After `v1.1.0` | Local demo: Streamlit app scoring a committed champion, no cloud account needed, deployed publicly — `v1.2.0` |
 
 ## Data engineering patterns — non-negotiable
 
