@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 from pyspark.sql import SparkSession
 
-from almanac.demo.build import DEMO_DATA_DIR, build_medallion, build_queue
+from almanac.demo.artifacts import DEMO_DATA_DIR
+from almanac.demo.build import build_medallion, build_queue
 
 pytestmark = pytest.mark.spark
 

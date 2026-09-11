@@ -95,6 +95,17 @@ targeting `v1.2.0`.** Design doc at
   artifacts themselves (`medallion.json`, `coverage.json`, `queue.parquet`)
   were already clean; the fix is in the check's own surface, not the build
   step's output.
+- **Task 7, panel data prep (`src/almanac/demo/artifacts.py`,
+  `src/almanac/demo/panels.py`).** Pure functions: coverage rows that
+  report the null side, contributions sorted by strength with a direction
+  label, a grounding verdict replayed from a committed transcript with no
+  model call. `DEMO_DATA_DIR` moved from `build.py` into `artifacts.py`
+  per the plan's own note, so the app's import graph never reaches
+  `pyspark`; a test asserts that directly over the AST. Fixing that
+  required also repointing Task 5's reproducibility test at the new
+  location (`mypy --strict` refuses an implicit re-export through
+  `build.py`), which the plan's note did not call out but follows the
+  same move.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

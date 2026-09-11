@@ -14,6 +14,7 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from almanac.config import Settings
+from almanac.demo.artifacts import DEMO_DATA_DIR
 from almanac.demo.champion import load_champion
 from almanac.features.assemble import assemble_training_set
 from almanac.features.groups import (
@@ -29,7 +30,6 @@ from almanac.pipeline.source import SourceConfig
 from almanac.spark import local_session
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-DEMO_DATA_DIR = _REPO_ROOT / "demo" / "data"
 
 # (fixture glob, event_date, event_hour). All three eras, unlike
 # scripts/build_silver_fixture.py's two: the schema break is the point.
