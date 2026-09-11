@@ -5,6 +5,7 @@
 ![coverage gate](https://img.shields.io/badge/gate-%E2%89%A585%25%20enforced-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![mypy](https://img.shields.io/badge/mypy-strict-blue)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://almanac-demo.streamlit.app/)
 
 An **ML platform for work-queue risk**: work items arrive in a queue, some
 breach their service expectation, and a model predicts which ones early
@@ -61,12 +62,17 @@ Four decisions that carry the project:
   sign of the contribution it names. A run that fails is retried once,
   then abstains. See [The agent layer](#the-agent-layer-and-why-it-is-verified-rather-than-trusted).
 
-**No persistent public demo.** The serving endpoint scales to zero and
-needs Databricks auth; everything billable is torn down between sessions
-on purpose, and the cost of each teardown is measured. The evidence below
-is the artifact, `make check-fast` reproduces the local half in 4 m 28 s
-from a fresh clone, and the agent's first live transcript is committed and
-**replays offline for free**.
+**A persistent public demo, not the live serving endpoint.** The
+production serving endpoint scales to zero and needs Databricks auth —
+everything billable is torn down between sessions on purpose, and the
+cost of each teardown is measured. What runs continuously instead is a
+separate, free app — **[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/)**
+— scoring one archived hour per schema era against a committed snapshot of
+the real registered champion (LightGBM, MLflow model registry version 2),
+with no cloud account behind it. The evidence below is the artifact, `make
+check-fast` reproduces the local half in 4 m 28 s from a fresh clone, and
+the agent's first live transcript is committed and **replays offline for
+free**.
 
 ### What it looks like
 
@@ -509,9 +515,11 @@ is the authoritative architecture, phasing, and scope document.
   [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md)
   for a real incident written up properly.
 - **Hiring managers, 5 minutes** — [In sixty seconds](#in-sixty-seconds)
-  above, then [`docs/decision-memo.md`](docs/decision-memo.md): a
-  ship/don't-ship call with a stated confidence level and a prediction that
-  was later scored against what actually happened.
+  above, then the **[live demo](https://almanac-demo.streamlit.app/)** to
+  click through the actual queue and the agent's verified answer, then
+  [`docs/decision-memo.md`](docs/decision-memo.md): a ship/don't-ship call
+  with a stated confidence level and a prediction that was later scored
+  against what actually happened.
 - **Anyone checking whether the claims hold** —
   [`docs/goal-reconciliation.md`](docs/goal-reconciliation.md) marks every
   stated goal done / partly / not done against the artifact that would
