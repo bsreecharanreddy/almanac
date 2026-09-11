@@ -80,6 +80,21 @@ targeting `v1.2.0`.** Design doc at
   to fix if nothing is broken. Verified the check can still fail: mutated
   one byte of the committed `coverage.json`, watched the test fail, and
   restored it.
+- **Task 6, the pseudonymity guard extended to `demo/`
+  (`src/almanac/governance/pseudonymity.py`).** `PUBLISHED_GLOBS` gains
+  `demo/**/*.py`, `demo/**/*.json`, `demo/**/*.md`, `demo/Dockerfile`.
+  **Immediately found a real gap this widening exposed**, not in a
+  committed artifact but in what the check itself scans: `demo/**/*.json`
+  also matches `demo/data/lake/`, the build step's gitignored Bronze/Silver
+  Delta scratch, and Delta's own column statistics baked in the local
+  absolute fixture path (`/Users/<login>/...`) -- a local identifier, on a
+  file that will never be published. `published_files` now excludes
+  gitignored matches (`git check-ignore --stdin`), with a dedicated
+  regression test using a throwaway `git init` repo, independent of
+  whatever scratch state happens to be on a given machine. The committed
+  artifacts themselves (`medallion.json`, `coverage.json`, `queue.parquet`)
+  were already clean; the fix is in the check's own surface, not the build
+  step's output.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

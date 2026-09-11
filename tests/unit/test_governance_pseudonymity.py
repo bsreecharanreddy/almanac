@@ -5,9 +5,11 @@ exist so a change that quietly stops the scan from catching anything fails
 loudly, rather than passing because it found nothing.
 """
 
+import subprocess
 from pathlib import Path
 
 from almanac.governance.pseudonymity import (
+    PUBLISHED_GLOBS,
     local_identifiers,
     published_files,
     scan,
@@ -128,3 +130,30 @@ def test_no_published_artifact_carries_an_identity() -> None:
     findings = scan(REPO_ROOT, identifiers=local_identifiers())
 
     assert not findings, "identity published in:\n" + "\n".join(str(f) for f in findings)
+
+
+def test_the_demo_surface_is_covered() -> None:
+    """A public demo is the highest-exposure artifact this repo ships.
+
+    The control that once passed cleanly while aimed at the wrong files is the
+    reason this is a test and not a note.
+    """
+    for glob in ("demo/**/*.py", "demo/**/*.json", "demo/**/*.md", "demo/Dockerfile"):
+        assert glob in PUBLISHED_GLOBS, f"{glob} is published and unscanned"
+
+
+def test_published_files_excludes_gitignored_matches(tmp_path: Path) -> None:
+    """A glob is a surface a stranger reads. A gitignored match under it is not
+    that -- found 2026-09-11 when the demo build step's own scratch Delta lake,
+    gitignored, sat inside demo/**, newly scanned by Task 6, and failed the
+    gate on a local absolute path that would never actually be published.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "demo" / "data" / "lake").mkdir(parents=True)
+    (tmp_path / ".gitignore").write_text("demo/data/lake/\n")
+    (tmp_path / "demo" / "data" / "lake" / "scratch.json").write_text("{}")
+    (tmp_path / "demo" / "data" / "coverage.json").write_text("{}")
+
+    found = {p.name for p in published_files(tmp_path, globs=("demo/**/*.json",))}
+
+    assert found == {"coverage.json"}
