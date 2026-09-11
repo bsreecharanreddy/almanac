@@ -106,6 +106,22 @@ targeting `v1.2.0`.** Design doc at
   location (`mypy --strict` refuses an implicit re-export through
   `build.py`), which the plan's note did not call out but follows the
   same move.
+- **Task 8, the app shell (`demo/app.py`).** Streamlit enters as a new
+  `demo` optional-dependency group, floor checked live against pypi.org's
+  JSON API on 2026-09-11: **1.63.0** is the current release. The app
+  declares its scale on load -- "one archived hour per schema era" and
+  the measured **341,060,851**-row backfill, both asserted by a headless
+  `AppTest` run rather than a screenshot, per Phase 8's most expensive
+  recorded finding (a dashboard that rendered 200 healthy-looking rows
+  against a horizon 340 days wrong). Ran `make demo` for real: served
+  HTTP 200 and a healthy `/_stcore/health`, then stopped. **One
+  environment hazard hit and avoided**: `uv sync --extra demo` (bare, one
+  extra) silently dropped `pyspark`, `mlflow`, `lightgbm` and every other
+  previously-synced extra from `.venv` -- uv treats a bare `--extra` sync
+  as declaring the *complete* desired set, not adding to it. Restored with
+  `uv sync --all-extras --dev`, the command this repo's own CI and README
+  already use; `uv run --extra demo ...` (per-invocation, not a sync) did
+  not reproduce the problem once the venv was correctly synced.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

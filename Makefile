@@ -66,6 +66,11 @@ fixtures:
 demo-build:
 	uv run python -m almanac.demo.build
 
+# The app. Reads demo/data/ and demo/model/ -- no SparkSession, no JVM, no
+# network. Run `make demo-build` first if the artifacts are missing.
+demo:
+	uv run --extra demo streamlit run demo/app.py
+
 # Bronze -> Silver on the committed fixtures, so Gold has real Delta tables
 # to select from. Ephemeral output under data/, gitignored like the
 # warehouse and metastore it feeds.
