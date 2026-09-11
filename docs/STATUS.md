@@ -6,9 +6,14 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase 9 (agent layer) is complete and merged to `main` — twelve of
-twelve tasks, PR #20 (`6fc99cb`), untagged** because `v1.1.0` covers
-Phases 9 and 10 together and the tag waits for both. Task 1 (`almanac/model/contributions.py`), Task 2
+**`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
+layer) and Phase 10 (grounding verifier) are both merged to `main` and
+tagged together, per the phase plan's own rule that the two ship as one
+release. Both are strictly additive and strictly read-only: nothing
+`v1.0` describes changed underneath it.
+
+**Phase 9 (agent layer) — twelve of
+twelve tasks, PR #20 (`6fc99cb`).** Task 1 (`almanac/model/contributions.py`), Task 2
 (`almanac/agent/schemas.py`), Tasks 3–6 (`almanac/agent/tools.py`'s
 `get_features`, `predict`, `explain` and `versions` — the full four-tool
 surface), Task 7 (`almanac/agent/mcp_server.py`, those four tools over
@@ -31,9 +36,7 @@ uncloseable in this workspace rather than dropped
 closed out the reader-facing artifacts and marked the plan's exit gate
 against evidence. Design doc at
 `docs/design/2026-09-09-almanac-agent-layer-design.md`, plan at
-`docs/plans/2026-09-09-phase-9-agent-layer-plan.md`. Target is
-**`v1.1.0`**: the agent layer is strictly additive and strictly
-read-only, so no existing interface breaks. `v1.0` stays tagged and
+`docs/plans/2026-09-09-phase-9-agent-layer-plan.md`. `v1.0` stays
 untouched, and the paragraph below remains true of everything it was
 written about.
 
@@ -41,13 +44,11 @@ written about.
 this point in the history.** Phase 6 via PR #13 (`2b6473b`), Phase 7 via
 PR #14 (`15a45ea`), Phase 8 via PR #16 (`69a929b`), and the pre-tag PII
 fix via PR #17 (`a6c6afe`). **Phase 9 followed via PR #20 (`6fc99cb`),
-2026-09-10 — merged but deliberately not tagged**, since `v1.1.0` is the
-Phase 9 + Phase 10 release.
+2026-09-10**, tagged together with Phase 10 as `v1.1.0`.
 
 **Phase 10 (grounding verifier) is complete and merged to `main` — nine
-of nine build tasks, PR #21 (`b73834d`), 2026-09-10, deliberately
-untagged** for the same reason as Phase 9: `v1.1.0` is the Phase 9 +
-Phase 10 release and the tag waits for both. Plan approved 2026-09-10,
+of nine build tasks, PR #21 (`b73834d`), 2026-09-10**, tagged together
+with Phase 9 as `v1.1.0`. Plan approved 2026-09-10,
 `docs/plans/2026-09-10-phase-10-grounding-verifier-plan.md`. Task 1
 renamed both provenance fields to `read_delta_versions`; Tasks 2-4 built
 the verifier core (`almanac/agent/grounding.py`: the trace, numeric
@@ -65,11 +66,11 @@ traces onto disk (`write_trace`, `<stem>.grounding.json`), rewiring
 `answer_grounded` so a future window self-verifies. The two commits
 already on the branch that predate Task 1 (`2c11789` graphify tooling,
 `1349e02` a stale-ADR fix) rebased onto `main` at the Phase 9 merge. Task
-10, the `v1.1.0` close-out, is underway on `main`: the story-bank gist,
-README, CLAUDE.md, and the goal/resume/limitations docs are done; the
-Phase 9 window's cost is read (`$5.59`,
+10, the `v1.1.0` close-out, is done on `main`: the story-bank gist,
+README, CLAUDE.md, and the goal/resume/limitations docs updated; the
+Phase 9 window's cost read (`$5.59`,
 `docs/findings/2026-09-11-agent-layer-window-cost.md`); the GitHub
-profile is drafted and pushed. Remaining: the `v1.1.0` tag itself.
+profile drafted and pushed; `v1.1.0` tagged annotated on `main` (`762a330`).
 
 **Every SHA in this file that predates `a6c6afe` is a pre-rewrite SHA and
 no longer resolves.** The 2026-09-09 `filter-repo` pass rewrote all 199
