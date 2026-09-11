@@ -6,6 +6,23 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
+**Phase 11 (local demo) is underway on branch `phase-11-local-demo`,
+targeting `v1.2.0`.** Design doc at
+`docs/design/2026-09-11-almanac-local-demo-design.md`, plan at
+`docs/plans/2026-09-11-phase-11-local-demo-plan.md`.
+
+- **Task 1, the import-order guard (`src/almanac/model/native.py`).**
+  Measured 2026-09-11 on macOS arm64, Python 3.12, lightgbm 4.7.0, mlflow
+  3.16.0: importing `lightgbm` before `mlflow` succeeds **10 of 10** runs;
+  pandas-then-numpy-then-`mlflow` fails **10 of 10**; numpy-then-`mlflow`
+  with no explicit `lightgbm` fails **3 of 3** -- all as a SIGSEGV with no
+  traceback. Never seen before because scoring had only ever run on
+  Databricks runtime; Phase 11 is the first thing here to score on a
+  laptop. The guard is an AST test, not a comment, and it was verified by
+  reversal: reordering the two imports made
+  `tests/unit/test_model_native.py` fail, and restoring them made it pass
+  again.
+
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
 tagged together, per the phase plan's own rule that the two ship as one
