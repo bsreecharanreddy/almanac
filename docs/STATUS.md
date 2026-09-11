@@ -22,6 +22,19 @@ targeting `v1.2.0`.** Design doc at
   reversal: reordering the two imports made
   `tests/unit/test_model_native.py` fail, and restoring them made it pass
   again.
+- **Task 2, the committed champion (`src/almanac/demo/champion.py`,
+  `demo/model/champion/`).** Version 2 under the `@champion` alias, run
+  `5f6a71bd9e4f4b6d8f7ea0a6454c0ca5` -- fetched from the registry once (a
+  free read, no compute) and committed: 432 KB, 10 files. Loads and scores
+  with no network (`DATABRICKS_HOST=` `DATABRICKS_TOKEN=` and the suite
+  still passes); a pinned vector scores `0.6937982497227584`, measured
+  against this exact artifact. **Found the plan's own signature test was
+  wrong against the real artifact**: MLflow wraps the long `inputs` scalar
+  in `MLmodel` across YAML lines, so the plan's plain
+  `'"name": "..."' in text` substring check broke on
+  `events_total_to_date`, which the wrap happens to split, even though the
+  signature does name it. Fixed by parsing the YAML and the embedded JSON
+  signature instead of substring-matching the raw text.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
