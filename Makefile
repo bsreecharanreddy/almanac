@@ -17,7 +17,8 @@
 test:
 	uv run pytest -m "not network" -n 4 --durations=25
 
-# The ~195 tests that need no SparkSession -- seconds, not half an hour.
+# The 467 tests that need no SparkSession -- seconds, not half an hour.
+# Measured 2026-09-11: 467 passed, 253 deselected, 36.59s.
 # The inner-loop counterpart to `test`; `check` still runs everything.
 test-fast:
 	uv run pytest -m "not network and not spark"

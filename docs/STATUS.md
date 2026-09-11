@@ -12,6 +12,20 @@ tagged together, per the phase plan's own rule that the two ship as one
 release. Both are strictly additive and strictly read-only: nothing
 `v1.0` describes changed underneath it.
 
+**2026-09-11, a reader-facing docs pass on `main`.** No code behaviour
+changed. It corrected the **ninth** instance of this repo's recorded
+stale-record pattern: `CHANGELOG.md`, `README.md` and `CLAUDE.md` all
+still said `v1.1.0` was pending or uncut, a day after it was tagged, while
+this file alone was correct. `CHANGELOG.md` also had **no Phase 10 entry
+at all**, in a file whose stated job is phase-level history. Both fixed.
+The pass also gave the agent layer and its grounding verifier a section of
+their own in the README rather than a caption, documented the local
+Bronze-to-Gold run as a first-class path (**`make dbt`, measured
+2026-09-11 at 2 m 8.78 s wall clock, 23 of 23 dbt tests passing**, warm
+caches), and corrected the non-Spark test count in both the README and the
+Makefile from a stale 340 and ~195 to a **measured 467** (467 passed, 253
+deselected, 36.59 s).
+
 **Phase 9 (agent layer) — twelve of
 twelve tasks, PR #20 (`6fc99cb`).** Task 1 (`almanac/model/contributions.py`), Task 2
 (`almanac/agent/schemas.py`), Tasks 3–6 (`almanac/agent/tools.py`'s

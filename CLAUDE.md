@@ -60,7 +60,8 @@ a year later.**
 ## Current status
 
 **Phase 9, the agent layer, and Phase 10, its grounding verifier, are both
-merged to `main` — untagged.** Phase 9 (PR #20, `6fc99cb`) added four
+merged to `main` and tagged together as `v1.1.0`** (annotated, on
+`762a330`, 2026-09-10). Phase 9 (PR #20, `6fc99cb`) added four
 read-only tools over MCP, a tool gateway and a model gateway in front of
 them, and a bounded agent — additive and read-only, so `v1.0` stays tagged
 where it was and everything below remains true of what it describes.
@@ -77,8 +78,8 @@ retry-once-then-abstain policy — regex and structural traversal over the
 run's own transcript, no model call, so it runs as a normal offline test
 rather than a new CI job. The Phase 9 window's cost is read — **$5.59**
 in DBUs on 2026-09-10, from `system.billing.usage`
-(`docs/findings/2026-09-11-agent-layer-window-cost.md`) — so `v1.1.0`
-tags both phases together as soon as that tag is cut.
+(`docs/findings/2026-09-11-agent-layer-window-cost.md`), and `v1.1.0`
+carries both phases.
 
 **The project is complete and tagged `v1.0`.** Every phase is merged to
 `main`: Phase 7 via PR #14, Phase 8 via PR #16, and a pre-tag PII fix via
@@ -102,7 +103,17 @@ passes trivially. An **eighth** followed almost immediately: this
 section's own Phase 9 paragraph read "is complete on branch
 `phase-9-agent-layer`, targeting `v1.1.0`" through Phase 9's own merge
 (PR #20) and the whole of Phase 10's build and merge (PR #21), until this
-same positive check caught it again.)*
+same positive check caught it again. A **ninth** on 2026-09-11, and this
+one spanned three files at once: `CHANGELOG.md` headed its Phase 9 entry
+"targets `v1.1.0`, not yet released", the README said `v1.1.0` "tags both
+phases together next", and this very section said "as soon as that tag is
+cut" — with `v1.1.0` annotated on `main` since the day before.
+`docs/STATUS.md` alone was correct, because it is the one file this repo's
+conventions require to move in the same commit as the work. The lesson is
+not "check harder"; it is that **the tag is the work**, and the three
+reader-facing artifacts were treated as a follow-up to it. The same
+positive check caught it, again, and only because someone asked what had
+changed.)*
 
 **The last defect found was in the guard against defects of its own kind.**
 `pseudonymity.py` exists to fail the build when an actor identifier reaches

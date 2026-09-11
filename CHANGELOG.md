@@ -7,10 +7,16 @@ Every number here is measured. Where one was later found wrong, it is
 corrected **in place with the original kept**, because a retraction that
 deletes its own evidence is not a retraction.
 
-## Phase 9 — the agent layer, 2026-09-10 (targets `v1.1.0`, not yet released)
+## v1.1.0 — Phases 9 and 10, 2026-09-10
 
-Strictly additive and strictly read-only: nothing under it changed, and
-`v1.0` stays tagged where it was.
+Tagged on `main` at `762a330`. Two phases in one release, because the
+second exists to check the first: Phase 9 built the agent layer, Phase 9's
+paid window found it making one false claim, and Phase 10 is the
+deterministic verifier that catches that class of claim. Both are strictly
+additive and strictly read-only, so everything `v1.0` describes is
+unchanged underneath them.
+
+### Phase 9 — the agent layer (PR #20, `6fc99cb`)
 
 - **Four tools, one contract.** `get_features`, `predict`, `explain` and
   `versions`, typed once in `schemas.py`, served over MCP, and called only
@@ -46,9 +52,43 @@ Strictly additive and strictly read-only: nothing under it changed, and
   run read **212.4 s**, of which about 7.4 s was the model: it spanned both
   tool calls and named only the last model to answer. Now one record per
   request, mutation-tested six ways.
-- **Cost not yet known.** `system.billing.usage` is read on or after
-  2026-09-11, and the token reconciliation the plan asked for cannot run in
-  a workspace whose `system.serving.endpoint_usage` has never had a row.
+- **The window cost $5.59** in DBUs on 2026-09-10, read 2026-09-11 from
+  `system.billing.usage` once the lag had passed
+  (`docs/findings/2026-09-11-agent-layer-window-cost.md`). The token
+  reconciliation the plan asked for cannot run in a workspace whose
+  `system.serving.endpoint_usage` has never had a row, and is recorded as
+  uncloseable here rather than dropped.
+
+### Phase 10 — the grounding verifier (PR #21, `b73834d`)
+
+Phase 9's window produced an answer where **every number came from a tool
+and one claim still did not**. The answer said the model was *trained on*
+the Delta version the tools had *read*. Nine build tasks, all offline.
+
+- **Checking the number is not enough; the relationship around it is a
+  separate check.** A verifier that only asks "does this literal appear in
+  a tool result" passes the false claim, because 92 did appear. So claims
+  are typed, and each type names the field it must trace to: "trained on"
+  must trace to the training version, not the read one.
+- **The cause was fixed, not only the symptom.** `ModelProvenance` carried
+  a field named `delta_versions` that did not say what it was versions
+  *of*. Renamed to `read_delta_versions` across the schema and its four
+  construction sites, so the field name itself refuses the confusion.
+- **A directional check, because a sign error reads as fluent prose.** A
+  contribution that decreases risk described as increasing it quotes a real
+  number and inverts its meaning. Each directional statement is checked
+  against the sign of the contribution it names.
+- **Retry once, then abstain.** An ungrounded answer is retried a single
+  time and then returns an `Ungrounded` outcome. The agent says it cannot
+  answer rather than publishing a claim that failed its own check.
+- **No model call, so it is a test rather than a new CI job.** The verifier
+  is regex and structural traversal over the run's own transcript.
+  Deterministic by design, per design doc §6's "deterministic, not
+  LLM-as-judge": a build gate needs a yes or no, not a score. It runs in
+  the existing offline `pytest` step, and every run writes its trace to
+  disk.
+- **The verifier is mutation-tested**, one killing mutation per check,
+  because a grounding check that cannot fail is worse than none.
 
 ## v1.0 — Phase 8 (ship), 2026-09-09
 

@@ -20,8 +20,15 @@ review queue. The domain is incidental, and that is the point.
 
 ## In sixty seconds
 
+**What it does.** It ingests a real event firehose, builds a
+point-in-time-correct feature store over it, trains and serves a model
+that ranks queue items by how likely they are to breach, and puts a
+bounded agent in front of the result whose every number is mechanically
+checked against the tool call it came from.
+
 **Built solo, start to finish** — design docs, infrastructure, pipelines,
-model, serving, dashboards, and the write-ups of what went wrong.
+model, serving, dashboards, the agent layer, and the write-ups of what
+went wrong.
 
 **341,060,851 real events** ingested across a real schema break, for a
 **measured $11.96**. A point-in-time-correct feature store, a model
@@ -32,7 +39,7 @@ and three AI/BI dashboards demonstrated against the real quarter.
 **88% coverage** on transformation and feature logic, gated at 85% in CI.
 **Clone to a green run: 4 m 28 s**, measured on a cold cache.
 
-Three decisions that carry the project:
+Four decisions that carry the project:
 
 - **Point-in-time correctness is enforced, not asserted.** Every feature
   computed `as_of` T reads only events with `created_at < T`, and the
@@ -47,12 +54,19 @@ Three decisions that carry the project:
   Fixed, re-scored, and the inflated number retracted in public: **0.612 →
   0.4661**, optimistic by 24%. The leakage suite was green throughout and
   was not wrong — it tested one axis, and the bug was on another.
+- **The agent's answers are verified by a machine, not trusted.** Every
+  number it states must trace to a tool call in the same run, the
+  *relationship* claimed around that number must trace to the field that
+  claim type requires, and a directional statement must agree with the
+  sign of the contribution it names. A run that fails is retried once,
+  then abstains. See [The agent layer](#the-agent-layer-and-why-it-is-verified-rather-than-trusted).
 
 **No persistent public demo.** The serving endpoint scales to zero and
 needs Databricks auth; everything billable is torn down between sessions
 on purpose, and the cost of each teardown is measured. The evidence below
-is the artifact, and `make check-fast` reproduces the local half in
-4 m 28 s from a fresh clone.
+is the artifact, `make check-fast` reproduces the local half in 4 m 28 s
+from a fresh clone, and the agent's first live transcript is committed and
+**replays offline for free**.
 
 ### What it looks like
 
@@ -84,15 +98,14 @@ answered on the fifth. Full account:
 
 ---
 
-> **Status: `v1.0` tagged, all nine phases merged.** Two more are merged
-> on top, untagged: Phase 9, an agent layer (PR #20), and Phase 10, a
-> deterministic grounding verifier on its answers (PR #21). Both are
-> additive and read-only — everything below this line still describes
-> `v1.0` and remains true of it. The Phase 9 window's cost is read
-> (**$5.59** in DBUs), so `v1.1.0` tags both phases together next. Phase
-> by phase, each led by
-> what it *found*: [`CHANGELOG.md`](CHANGELOG.md). Task granularity and
-> the verification log: [`docs/STATUS.md`](docs/STATUS.md).
+> **Status: `v1.1.0` tagged, eleven phases merged.** `v1.0` was the
+> platform, all nine phases of it. `v1.1.0` adds two more on top: Phase 9,
+> an agent layer (PR #20), and Phase 10, a deterministic grounding
+> verifier on its answers (PR #21). Both are additive and read-only —
+> everything below this line described `v1.0` and remains true of it.
+> Phase by phase, each led by what it *found*:
+> [`CHANGELOG.md`](CHANGELOG.md). Task granularity and the verification
+> log: [`docs/STATUS.md`](docs/STATUS.md).
 
 
 **No number in this README is quoted unless it was measured.** Where
@@ -149,6 +162,57 @@ two dashboard panels Phase 7 deferred rather than shipped half-checked.
 time T uses only events with `created_at < T`. This is where label
 leakage lives — invisible in code review, impossible to bluff, and the
 cleanest separator between shipped ML systems and notebook models.
+
+## The agent layer, and why it is verified rather than trusted
+
+Four read-only tools, two gateways, a bounded agent, and a deterministic
+verifier standing between its answer and the reader. Shipped as `v1.1.0`,
+strictly additive: nothing in the platform below it changed.
+
+**The tools.** `get_features`, `predict`, `explain` and `versions`, typed
+once in `schemas.py` and served over MCP. `explain` returns the
+champion's own per-feature contributions, so a natural-language
+explanation is generated *from* a computed result rather than invented
+alongside one. Every call goes through an allow-list gateway that records
+it.
+
+**A 4xx never falls back.** The framework's default routes any API error
+to the fallback model, which would quietly let answers come from a model
+nobody chose. A permanent 403 now raises the primary's own refusal
+instead. Tested on four failure shapes, then held live.
+
+**The window found the failure that matters.** On real data, the agent
+produced an answer in which every number came from a tool and **one claim
+still did not**: it said the model was *trained on* the Delta version the
+tools had *read*. A verifier that only asks "does this literal appear in a
+tool result" passes that answer, because the number did appear.
+
+**So the verifier checks three things, and the second is the point:**
+
+| Check | What it asks |
+|---|---|
+| Numeric | Does every literal in the prose trace to a tool return, exactly or under a stated rounding rule? |
+| Relationship | Does the claim *around* the number trace to the field that claim type requires? "Trained on" must reach the training version, never the read one. |
+| Directional | Does a statement that a feature raises or lowers risk agree with the sign of its contribution? |
+
+A failing run is retried once and then abstains, returning an `Ungrounded`
+outcome rather than publishing a claim that failed its own check.
+
+**It is deterministic on purpose.** Regex and structural traversal over
+the run's own transcript, no model call. That is what lets it run as a
+normal offline test rather than a paid CI job, and it is why a build gate
+can depend on it: a gate needs a yes or no, not a score. The verifier is
+mutation-tested with one killing mutation per check, because a grounding
+check that cannot fail is worse than no check at all.
+
+**The cause was fixed, not just the symptom.** The field that produced
+the false claim was named `delta_versions` and did not say what it was
+versions *of*. It is now `read_delta_versions`, so the name itself refuses
+the confusion.
+
+Full account of the window, including the four failed runs and the two
+configured models that could not serve it:
+[`docs/findings/2026-09-10-agent-layer-window.md`](docs/findings/2026-09-10-agent-layer-window.md).
 
 ## Architecture, at a glance
 
@@ -353,22 +417,55 @@ docker/             containerized Spark + Delta, matching CI
 
 ```bash
 uv sync --all-extras --dev
-make check-fast   # ruff + mypy --strict + the 340 tests that need no SparkSession
+make check-fast   # ruff + mypy --strict + the 467 tests that need no SparkSession
 ```
 
 **Clone to a green run is 4 m 28 s, measured** on a fresh clone with a
 cold `uv` cache — 1 s to clone, 75 s to sync, 192 s for `check-fast`.
-Re-measured 2026-09-09 at **80 s** with the cache warm. Both are against a
-15-minute gate; the cold number is the one worth quoting.
+Both are against a 15-minute gate, and the cold number is the one worth
+quoting. That measurement is dated 2026-09-09 and predates Phase 10's
+tests, so it is stated as what it is rather than refreshed silently:
+`check-fast` re-timed warm on **2026-09-11 runs in 42.1 s** over the
+larger suite, with the `uv` and `mypy` caches populated.
 
-Then, when you want the whole thing:
+### The whole medallion, locally, with no cloud account
+
+The committed fixtures carry **all three schema eras**, so the pipeline can
+be run end to end on a laptop against real archived events. One command
+takes Bronze through Silver to Gold, building the SparkSession with Delta
+and a persistent metastore before dbt asks for one:
+
+```bash
+make dbt
+```
+
+That is Bronze read without transformation, Silver parsing per era with
+quality rules and a quarantine path, then the Gold dbt project: an SCD2
+repo dimension, an accumulating pull-request fact, and its data tests.
+**Measured 2026-09-11: 2 m 8.78 s wall clock, 23 of 23 dbt tests passing**,
+on a warm `uv` cache with the Spark jars already retrieved. A first run
+pays a one-time jar download on top.
+
+Nothing in it touches the network, and nothing in it needs Databricks. The
+cloud is where this was proven at 341M rows; it is not where the logic
+lives.
+
+Then the rest:
 
 ```bash
 make check      # the full gate: adds the Spark suite. 33 m 27 s measured, so not the inner loop
 make test-all   # every test including the network-marked ones
-make dbt        # fixtures -> Silver, then Gold through the runner that builds the session first
 make fixtures   # rebuild committed fixtures from the live archive
+make coverage   # the 88% figure, measured over the scope pyproject.toml defines
 ```
+
+The agent layer replays offline too. The live window's transcript is
+committed under `tests/fixtures/transcripts/`, alongside a copy of it with
+one direction deliberately flipped so the directional check has something
+it must fail on. Each carries the grounding trace the verifier produced for
+it. **Seven golden cases** under `tests/fixtures/golden/` cover grounding,
+refusal, the provenance gap and the flipped direction. All of it runs
+inside the normal `pytest` step, with no model call and no credentials.
 
 The cloud side is brought up and taken down by one command each, and both
 refuse any plan that reaches past the window they were asked for:
