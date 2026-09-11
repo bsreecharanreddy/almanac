@@ -430,10 +430,11 @@ larger suite, with the `uv` and `mypy` caches populated.
 
 ### The whole medallion, locally, with no cloud account
 
-The committed fixtures carry **all three schema eras**, so the pipeline can
-be run end to end on a laptop against real archived events. One command
-takes Bronze through Silver to Gold, building the SparkSession with Delta
-and a persistent metastore before dbt asks for one:
+The committed fixtures carry all three schema eras, and the local run
+lands **two of them** — the modern 2025 era and the legacy 2014 one, which
+are the pair the era-handling logic differs on. One command takes Bronze
+through Silver to Gold on those, building the SparkSession with Delta and a
+persistent metastore before dbt asks for one:
 
 ```bash
 make dbt
@@ -442,9 +443,11 @@ make dbt
 That is Bronze read without transformation, Silver parsing per era with
 quality rules and a quarantine path, then the Gold dbt project: an SCD2
 repo dimension, an accumulating pull-request fact, and its data tests.
-**Measured 2026-09-11: 2 m 8.78 s wall clock, 23 of 23 dbt tests passing**,
-on a warm `uv` cache with the Spark jars already retrieved. A first run
-pays a one-time jar download on top.
+**Measured 2026-09-11: 2 m 8.78 s wall clock, 3,997 Silver rows, 23 of 23
+dbt tests passing**, on a warm `uv` cache with the Spark jars already
+retrieved. A first run pays a one-time jar download on top. The reduced-era
+fixture is committed and exercised by the unit tests, but is not one of the
+two this run lands.
 
 Nothing in it touches the network, and nothing in it needs Databricks. The
 cloud is where this was proven at 341M rows; it is not where the logic
