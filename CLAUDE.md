@@ -59,9 +59,9 @@ a year later.**
 
 ## Current status
 
-**Phase 11, a local demo deployed publicly, is underway on branch
-`phase-11-local-demo`, targeting `v1.2.0`; the PR for the whole phase has
-not been opened yet as this line is written.** A Streamlit app scores
+**Phase 11, a local demo deployed publicly, is complete on branch
+`phase-11-local-demo`, open as PR #22, targeting `v1.2.0`; not yet
+merged as this line is written.** A Streamlit app scores
 against a committed snapshot of the registered champion — no cloud
 account needed to run it — live at
 [almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/). Found
