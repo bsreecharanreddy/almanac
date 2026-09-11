@@ -128,6 +128,15 @@ targeting `v1.2.0`.** Design doc at
   (Task 4) is the governing invariant made visible rather than asserted.
   Surrogate keys and rank only -- no login, no `owner/repo` -- asserted by
   a test over the rendered dataframe's own columns.
+- **Task 10, the contributions panel (`demo/app.py`).** Reuses
+  `contribution_frame` rather than adding scoring logic. The baseline is
+  labelled as not a feature -- LightGBM returns `n_features + 1` columns
+  and the last is the expected value, a silent off-by-one if left
+  unlabelled. **Found live**: Streamlit 1.63.0 flags `use_container_width`
+  (used in Task 9's own panels) as deprecated, already past its stated
+  2025-12-31 removal date. Replaced every occurrence with `width="stretch"`
+  rather than carrying a known-past-due deprecation into new code beside
+  it; confirmed the warning is gone by rerunning the app headlessly.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

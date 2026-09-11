@@ -44,3 +44,12 @@ def test_the_coverage_panel_states_why_the_features_are_null() -> None:
     text = " ".join(m.value for m in _run().markdown).lower()
     assert "point-in-time" in text
     assert "not a defect" in text
+
+
+def test_the_explain_tab_names_the_baseline_as_not_a_feature() -> None:
+    """LightGBM returns n_features + 1 columns and the last is the expected value.
+
+    Treating it as a feature is a silent off-by-one, which is why it is labelled.
+    """
+    text = " ".join(m.value for m in _run().markdown).lower()
+    assert "baseline" in text
