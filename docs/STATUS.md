@@ -291,8 +291,37 @@ targeting `v1.2.0`.** Design doc at
   filesystem (`test_every_link_resolves_to_a_real_file`); all nine
   resolved on the first attempt, checked directly against `ls docs/adr/
   docs/findings/` rather than guessed. 5 passed, `mypy --strict` and
-  `ruff` both clean. **Task 15 (the tab itself, wiring in
-  `streamlit-flow-component`) not started yet.**
+  `ruff` both clean. **Task 15 done -- and it found a real, subtle
+  Streamlit bug the same way Task 13 found the pyspark one: by actually
+  running it in a browser, not trusting `AppTest`.** `streamlit-flow-
+  component` (1.6.1, checked live against pypi.org's JSON API) added to
+  the `demo` extra; `demo/requirements.txt` regenerated. `AppTest` cannot
+  execute a custom component's frontend canvas at all -- the first real
+  attempt raised inside the library itself (`'StreamlitFlowState' object
+  is not subscriptable`), caught and shown as a graceful fallback rather
+  than crashing the tab, with an expander list underneath carrying every
+  node's summary and links independently of whether the canvas renders.
+  **A second, separate bug surfaced only in a real browser, past what
+  `AppTest` could ever have caught**: the diagram silently failed there
+  too, with a different underlying cause -- `st.session_state["arch_flow"]`
+  used the same name as the component's own widget `key`, so Streamlit's
+  widget-state mechanism overwrote the stored `StreamlitFlowState` object
+  with the component's raw dict return value on rerun
+  (`AttributeError: 'dict' object has no attribute 'nodes'`), traced by
+  temporarily writing the caught traceback to a file since the browser
+  console itself showed nothing (the exception is server-side Python, not
+  frontend JS). Fixed by giving the two names deliberately different
+  values, matching the library's own documented pattern. Verified for
+  real afterward: all nine nodes and all eight edges render in the
+  correct `LayeredLayout` positions, a node click produces no console
+  error, and every expander opens to the exact summary and link text
+  `architecture.py` defines. `test_the_architecture_tab_renders_every_node_with_no_exception`
+  checks expander labels via `app.expander` (not `app.markdown` --
+  `st.expander`'s own title is a distinct AppTest element, found only
+  after the first version of this test failed against real output).
+  13 passed across `test_demo_app.py`/`test_demo_architecture.py`/
+  `test_demo_panels.py`, `ruff`, `ruff format --check`, and
+  `mypy --strict` all clean.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

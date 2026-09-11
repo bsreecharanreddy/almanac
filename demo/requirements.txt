@@ -516,6 +516,10 @@ starlette==1.6.0
     #   sse-starlette
     #   streamlit
 streamlit==1.63.0
+    # via
+    #   almanac
+    #   streamlit-flow-component
+streamlit-flow-component==1.6.1
     # via almanac
 tenacity==9.1.4
     # via google-genai

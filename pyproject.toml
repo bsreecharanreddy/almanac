@@ -125,8 +125,14 @@ agent = [
 # Phase 11 (design doc 2026-09-11-almanac-local-demo-design.md): the local
 # demo app. Floor checked live against pypi.org's JSON API on 2026-09-11 --
 # 1.63.0 is the current release.
+#
+# streamlit-flow-component (Task 15, design doc
+# 2026-09-11-almanac-architecture-walkthrough-design.md): the fifth tab's
+# node/edge diagram. Floor checked live against pypi.org's JSON API on
+# 2026-09-11 -- 1.6.1 is the current release.
 demo = [
     "streamlit>=1.63.0",
+    "streamlit-flow-component>=1.6.1",
 ]
 
 [build-system]

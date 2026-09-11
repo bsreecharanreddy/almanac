@@ -5,6 +5,8 @@ from typing import Any
 
 import pytest
 
+from almanac.demo.architecture import NODES
+
 streamlit_testing = pytest.importorskip("streamlit.testing.v1")
 AppTest = streamlit_testing.AppTest
 
@@ -66,3 +68,18 @@ def test_the_medallion_tab_shows_every_era_and_its_quarantine() -> None:
     for event_date in ("2025-08-13", "2014-06-12", "2025-11-03"):
         assert event_date in text
     assert "quarantine" in text.lower()
+
+
+def test_the_architecture_tab_renders_every_node_with_no_exception() -> None:
+    """AppTest cannot see inside a custom component's canvas, so the diagram
+    alone would leave every node's label and link untestable here -- exactly
+    why the tab also renders a plain list, checked directly rather than
+    trusted to exist."""
+    app = _run()
+    assert not app.exception
+    labels = {e.label for e in app.expander}
+    text = " ".join(m.value for m in app.markdown)
+    for node in NODES:
+        assert node.label in labels
+        for link in node.links:
+            assert link in text

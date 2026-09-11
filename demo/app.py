@@ -14,6 +14,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from almanac.demo import artifacts, panels  # noqa: E402
+from almanac.demo.architecture import EDGES, NODES  # noqa: E402
 from almanac.demo.champion import champion_provenance, load_champion  # noqa: E402
 
 _FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "transcripts"
@@ -39,8 +40,14 @@ computed from the fixture hours, not from that quarter.
 """
 )
 
-queue_tab, explain_tab, agent_tab, lake_tab = st.tabs(
-    ["Intervention queue", "Why this score", "Agent, verified", "The medallion"]
+queue_tab, explain_tab, agent_tab, lake_tab, arch_tab = st.tabs(
+    [
+        "Intervention queue",
+        "Why this score",
+        "Agent, verified",
+        "The medallion",
+        "How this was built",
+    ]
 )
 
 with queue_tab:
@@ -138,3 +145,45 @@ with lake_tab:
         "Run it yourself with `make demo-build`, or the full Gold path with "
         "`make dbt`."
     )
+
+with arch_tab:
+    st.markdown(
+        "Bronze through the grounding verifier. Each node names what the stage "
+        "found, once, and links to where it was actually measured -- the "
+        "diagram never repeats a number the linked source already states."
+    )
+    try:
+        from streamlit_flow import streamlit_flow
+        from streamlit_flow.elements import StreamlitFlowEdge, StreamlitFlowNode
+        from streamlit_flow.layouts import LayeredLayout
+        from streamlit_flow.state import StreamlitFlowState
+
+        # "arch_flow_state" (ours) must differ from the component's own
+        # widget key below -- Streamlit silently overwrites session_state
+        # under the widget's key with the component's raw dict return value
+        # on rerun, clobbering a StreamlitFlowState stored under the same name.
+        if "arch_flow_state" not in st.session_state:
+            st.session_state.arch_flow_state = StreamlitFlowState(
+                [StreamlitFlowNode(n.id, (0, 0), {"content": n.label}) for n in NODES],
+                [StreamlitFlowEdge(f"{e.source}-{e.target}", e.source, e.target) for e in EDGES],
+            )
+        st.session_state.arch_flow_state = streamlit_flow(
+            "arch_flow_widget",
+            st.session_state.arch_flow_state,
+            layout=LayeredLayout(direction="right", node_node_spacing=60, node_layer_spacing=140),
+            height=360,
+            fit_view=True,
+            get_node_on_click=True,
+        )
+    except Exception:
+        # Custom Streamlit components need a real browser round-trip and do
+        # not function under AppTest's headless simulation. The expander
+        # list below is independently tested and carries every node
+        # regardless of whether the canvas itself can render.
+        st.info("The diagram needs a live browser session; the list below carries every node.")
+
+    for node in NODES:
+        with st.expander(node.label):
+            st.markdown(node.summary)
+            for link in node.links:
+                st.markdown(f"- `{link}`")
