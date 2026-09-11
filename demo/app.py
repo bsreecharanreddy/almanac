@@ -114,3 +114,19 @@ with agent_tab:
         hide_index=True,
         width="stretch",
     )
+
+with lake_tab:
+    medallion = artifacts.load_medallion()
+    st.subheader("Bronze, Silver, and what got quarantined")
+    st.dataframe(pd.DataFrame(medallion["eras"]), hide_index=True, width="stretch")
+    dates = ", ".join(era["event_date"] for era in medallion["eras"])
+    st.markdown(
+        f"One hour per schema era — {dates}. Bronze never transforms; the payload "
+        "stays a JSON string and parsing is per-type in Silver, so a new event type "
+        "cannot break ingestion. Bad records are **quarantined, never dropped**, and "
+        "carry an array of the rules they failed rather than a boolean, so the "
+        "quarantine is analyzable by rule. `silver + quarantine == scored` is "
+        "asserted on every build.\n\n"
+        "Run it yourself with `make demo-build`, or the full Gold path with "
+        "`make dbt`."
+    )

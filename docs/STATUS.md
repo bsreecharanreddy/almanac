@@ -146,6 +146,30 @@ targeting `v1.2.0`.** Design doc at
   with the relationship check over the numeric one, matching what the
   live run actually got wrong: every number in its answer was real: what
   was false was the relationship one sentence claimed around them.
+- **Task 12, the medallion panel (`demo/app.py`).** Bronze/Silver/quarantine
+  counts per era, read from the artifact Task 3's build step already
+  writes, with the two rules a row count alone doesn't show -- Bronze
+  never transforms, and quarantine carries the array of rules failed
+  rather than a boolean. **Full suite run measured**: `uv run pytest -m
+  "not network"` (the `make check`/`test` target) -- **751 passed in
+  4660.46s (1:17:40)**, serial, zero failures. Not this project's usual
+  fast number, and it took two aborted attempts to get: `-n 4` (the
+  Makefile's documented default) drove this machine's load average to
+  **156**, then **365**, on two separate tries -- several `test_gold_*`
+  and `test_model_dataset_versions.py` tests spawn `almanac.gold.runner`
+  as a *subprocess*, which builds its own SparkSession on top of the
+  xdist worker's own session, so under `-n 4` up to 8 concurrent JVMs
+  compete for `local[*]` at once. This repo's own Makefile documents `-n
+  4` as tuned for "an 8-core/16GB machine, on an otherwise idle machine"
+  and already records a load-average-35 failure mode; today's session
+  saw both other Claude Code sessions and ordinary desktop apps sharing
+  this machine, which is exactly "not idle." Killing and rerunning
+  serially reproduces this repo's own stated CI fallback and finished
+  clean. First attempt was killed at ~95% complete on the load-average
+  signal alone, before checking whether it was progressing -- the second
+  confirmed the JVM was actively accumulating CPU time throughout, not
+  stalled; killing on a load spike without checking for forward progress
+  cost more than either failure would have.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

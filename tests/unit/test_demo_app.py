@@ -58,3 +58,11 @@ def test_the_explain_tab_names_the_baseline_as_not_a_feature() -> None:
 def test_the_agent_tab_shows_a_rejection_not_only_a_pass() -> None:
     text = " ".join(m.value for m in _run().markdown).lower()
     assert "ungrounded" in text
+
+
+def test_the_medallion_tab_shows_every_era_and_its_quarantine() -> None:
+    app = _run()
+    text = " ".join(m.value for m in app.markdown)
+    for event_date in ("2025-08-13", "2014-06-12", "2025-11-03"):
+        assert event_date in text
+    assert "quarantine" in text.lower()
