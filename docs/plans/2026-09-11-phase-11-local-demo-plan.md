@@ -1793,7 +1793,301 @@ which is where a reader clones it."
 git push -u origin phase-11-local-demo
 ```
 
-Open one PR for the whole phase.
+Deferred until Tasks 14-15 (added 2026-09-11, after Task 13's own deploy
+work) are also done — see below. **Do not open the PR after this task.**
+
+---
+
+### Task 14: The architecture walkthrough's node/edge data
+
+Design: `docs/design/2026-09-11-almanac-architecture-walkthrough-design.md`.
+Pure data and its own invariants, no Streamlit -- same split as Task 7 kept
+panel data preparation free of Streamlit imports.
+
+**Files:**
+- Create: `src/almanac/demo/architecture.py`
+- Create: `tests/unit/test_demo_architecture.py`
+
+**Interfaces:**
+- Produces: `NODES: tuple[ArchNode, ...]`, `EDGES: tuple[ArchEdge, ...]`,
+  `missing_links(repo_root: Path) -> dict[str, list[str]]` for Task 15's
+  tab and its own tests.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+from pathlib import Path
+
+from almanac.demo.architecture import EDGES, NODES, missing_links
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_every_node_id_is_unique() -> None:
+    ids = [n.id for n in NODES]
+    assert len(ids) == len(set(ids))
+
+
+def test_every_edge_endpoint_names_a_real_node() -> None:
+    ids = {n.id for n in NODES}
+    for edge in EDGES:
+        assert edge.source in ids, f"{edge.source} is not a node id"
+        assert edge.target in ids, f"{edge.target} is not a node id"
+
+
+def test_no_node_carries_a_link_free_summary_or_a_summary_free_link() -> None:
+    """A node that asserts something must point at where it was measured."""
+    for node in NODES:
+        assert node.links, f"{node.id} has no link -- it is a claim with no source"
+
+
+def test_no_summary_or_label_contains_a_digit() -> None:
+    """The governing rule from the design doc, section 2: a node names a
+    fact, it never restates one. A digit in prose is a restated measurement;
+    digits belong only in link paths (dates, ADR numbers), never in the text
+    a viewer reads without clicking through."""
+    for node in NODES:
+        assert not any(c.isdigit() for c in node.label), node.id
+        assert not any(c.isdigit() for c in node.summary), node.id
+
+
+def test_every_link_resolves_to_a_real_file() -> None:
+    missing = missing_links(_REPO_ROOT)
+    assert not missing, f"dead links: {missing}"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest tests/unit/test_demo_architecture.py -v`
+Expected: FAIL/ERROR -- `almanac.demo.architecture` does not exist yet.
+
+- [ ] **Step 3: Write the minimal implementation**
+
+`src/almanac/demo/architecture.py`:
+
+```python
+"""The architecture walkthrough's node/edge graph. Pure data -- every claim
+links to where it was actually found; nothing here is restated from there.
+See docs/design/2026-09-11-almanac-architecture-walkthrough-design.md.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class ArchNode:
+    id: str
+    label: str
+    summary: str
+    links: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ArchEdge:
+    source: str
+    target: str
+
+
+NODES: tuple[ArchNode, ...] = (
+    ArchNode(
+        "bronze", "Bronze",
+        "Raw payload, untransformed. A new event type cannot break ingestion.",
+        ("docs/limitations.md", "docs/findings/2026-09-02-bronze-is-single-threaded.md"),
+    ),
+    ArchNode(
+        "silver", "Silver",
+        "Per-type parsing and quality rules. Bad records are quarantined, never dropped.",
+        ("docs/findings/2026-09-08-first-real-quarantine.md",),
+    ),
+    ArchNode(
+        "gold", "Gold",
+        "dbt-built facts and dimensions. A merge defect here was found the hard way.",
+        (
+            "docs/findings/2026-09-04-gold-is-a-metastore-table-not-a-path.md",
+            "docs/findings/2026-09-08-pr-opened-spine-fanout.md",
+        ),
+    ),
+    ArchNode(
+        "features", "Feature Platform",
+        "As-of joins enforce point-in-time correctness -- the governing invariant.",
+        ("docs/adr/0001-hand-rolled-as-of-join.md",),
+    ),
+    ArchNode(
+        "model", "Model",
+        "A baseline shipped first. The registered champion had a leakage bug, found and fixed.",
+        (
+            "docs/findings/2026-09-08-champion-rescored-temporal-split.md",
+            "docs/decision-memo.md",
+        ),
+    ),
+    ArchNode(
+        "serving", "Serving",
+        "A live endpoint, measured for skew against offline scoring.",
+        (
+            "docs/findings/2026-09-04-serving-endpoint-measured.md",
+            "docs/findings/2026-09-08-training-serving-skew-measured.md",
+        ),
+    ),
+    ArchNode(
+        "streaming", "Streaming",
+        "A live poller and an online store. A watermark silently dropped real data once.",
+        (
+            "docs/postmortem-watermark-data-loss.md",
+            "docs/adr/0004-dedup-on-write-not-watermark.md",
+        ),
+    ),
+    ArchNode(
+        "agent", "Agent layer",
+        "Four read-only tools over MCP, bounded, and audited.",
+        ("docs/findings/2026-09-11-agent-layer-window-cost.md",),
+    ),
+    ArchNode(
+        "grounding", "Grounding verifier",
+        "Checks the relationship a claim makes, not only that its number is real.",
+        ("CHANGELOG.md",),
+    ),
+)
+
+EDGES: tuple[ArchEdge, ...] = (
+    ArchEdge("bronze", "silver"),
+    ArchEdge("silver", "gold"),
+    ArchEdge("gold", "features"),
+    ArchEdge("gold", "streaming"),
+    ArchEdge("features", "model"),
+    ArchEdge("model", "serving"),
+    ArchEdge("model", "agent"),
+    ArchEdge("agent", "grounding"),
+)
+
+
+def missing_links(repo_root: Path) -> dict[str, list[str]]:
+    """Node id -> its links that do not resolve to a real file. Empty if clean."""
+    result: dict[str, list[str]] = {}
+    for node in NODES:
+        gone = [link for link in node.links if not (repo_root / link).exists()]
+        if gone:
+            result[node.id] = gone
+    return result
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `uv run pytest tests/unit/test_demo_architecture.py -v`
+Expected: 5 passed. If a link is dead, `ls docs/adr/ docs/findings/` and
+correct the path -- do not weaken the test.
+
+- [ ] **Step 5: Lint, typecheck, update STATUS.md, commit**
+
+```bash
+uv run ruff check src/almanac/demo/architecture.py tests/unit/test_demo_architecture.py
+uv run ruff format --check src/almanac/demo/architecture.py tests/unit/test_demo_architecture.py
+uv run mypy --strict src/almanac/demo/architecture.py
+git add src/almanac/demo/architecture.py tests/unit/test_demo_architecture.py docs/STATUS.md
+git commit -m "feat: the architecture walkthrough's node/edge graph
+
+Nine nodes, Bronze through the grounding verifier, each carrying a one-line
+summary and at least one link to the ADR or finding where that claim was
+actually measured -- never both a summary and a restated number, which is
+the failure mode this repo has recorded nine times. Enforced by a test, not
+a convention: no node's label or summary may contain a digit at all, and a
+second test checks every link resolves to a real file, so a rename elsewhere
+in the repo fails this suite rather than quietly breaking the walkthrough."
+```
+
+---
+
+### Task 15: The architecture walkthrough tab
+
+Renders Task 14's graph with `streamlit-flow-component`, wired as the demo
+app's fifth tab per the design doc's explicit choice of a tab over a
+separate page.
+
+**Files:**
+- Modify: `demo/app.py`, `pyproject.toml`, `demo/requirements.txt`
+- Modify: `tests/unit/test_demo_app.py`
+
+**Interfaces:**
+- Consumes: `architecture.NODES`, `architecture.EDGES`.
+
+- [ ] **Step 1: Add the dependency**
+
+Add `streamlit-flow-component>=<current release, checked live against
+PyPI's JSON API before writing the floor -- do not carry over a number
+from training data>` to the `demo` extra in `pyproject.toml`. Then:
+
+```bash
+uv lock
+uv export --extra demo --extra ml-scoring --extra agent --no-dev \
+  --no-emit-project --no-hashes --no-header --format requirements-txt \
+  -o demo/requirements.txt
+```
+
+- [ ] **Step 2: Write the failing test**
+
+```python
+def test_the_architecture_tab_renders_every_node_with_no_exception() -> None:
+    app = _run()
+    assert not app.exception
+    text = " ".join(m.value for m in app.markdown)
+    for node in NODES:
+        assert node.label in text
+```
+
+Add `from almanac.demo.architecture import NODES` to the test file's imports.
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `uv run --extra demo --extra ml-scoring --extra agent pytest
+tests/unit/test_demo_app.py -v`
+Expected: FAIL -- no fifth tab, node labels absent.
+
+- [ ] **Step 4: Write the minimal implementation**
+
+In `demo/app.py`, extend the existing tab tuple to five and add the new
+tab's body, rendering each node as a labelled block with its summary and
+link(s) -- `streamlit_flow` for the diagram layout, falling back to a
+plain list if the component is unavailable, matching this repo's existing
+practice of never letting a demo panel hard-fail on an optional dependency.
+Import `from almanac.demo.architecture import EDGES, NODES`.
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run the Step 3 command again. Expected: all `test_demo_app.py` tests pass.
+
+- [ ] **Step 6: Verify for real, not just AppTest**
+
+`AppTest` does not execute frontend JavaScript, so a broken
+`streamlit-flow-component` render would pass Step 5 and fail for a real
+viewer -- exactly the HTTP-200-proves-nothing lesson from Task 13. Run
+`make demo`, open it in a browser, click every node, confirm each link
+opens the real file.
+
+- [ ] **Step 7: Lint, typecheck, full suite, update STATUS.md, commit**
+
+```bash
+make check
+git add demo/app.py pyproject.toml uv.lock demo/requirements.txt tests/unit/test_demo_app.py docs/STATUS.md
+git commit -m "feat: the architecture walkthrough, as the demo's fifth tab
+
+Renders Task 14's node/edge graph with streamlit-flow-component. Chosen
+over a separate st.navigation page after weighing both explicitly in the
+design doc: a fifth tab is visible to every visitor with no extra click,
+which matters more for a hiring-manager-facing demo than the cleaner
+separation a second page would give. This revisits and supersedes the
+original design doc's section 11 row rejecting a fifth panel -- a
+different, narrower proposal (a point-in-time panel duplicating the
+coverage panel's own argument) than what this actually is."
+```
+
+---
+
+Then close out Task 13's own deferred Steps 5-7 (README already updated;
+phase closeout in STATUS.md/CHANGELOG.md/CLAUDE.md and the story-bank
+gist; full suite; push and the one PR for the whole phase, now covering
+Tasks 1-15).
 
 ---
 
