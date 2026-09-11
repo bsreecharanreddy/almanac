@@ -59,20 +59,25 @@ a year later.**
 
 ## Current status
 
-**Phase 9, the agent layer, is complete on branch `phase-9-agent-layer`,
-targeting `v1.1.0`.** Four read-only tools over MCP, a tool gateway and a
-model gateway in front of them, and a bounded agent — additive and
-read-only, so `v1.0` stays tagged where it was and everything below remains
-true of what it describes. **Its paid window found that neither configured
-model can serve the agent in this workspace**: every Claude endpoint
-returns 403 for a Databricks-set rate limit of 0 while reporting `READY`,
-and the fallback's replies do not parse. Llama 3.3 70B answered once,
-recorded as a substitute. **Every number in that answer came from a tool,
-and one claim did not** — "trained on" a Delta version the tools only read.
-That is the first real case for Phase 10's grounding verifier, and the
-reason it has to check what a number is claimed to be, not only where it
-came from. The window's cost is owed: `system.billing.usage`, on or after
-2026-09-11 (`docs/findings/2026-09-10-agent-layer-window.md`).
+**Phase 9, the agent layer, and Phase 10, its grounding verifier, are both
+merged to `main` — untagged.** Phase 9 (PR #20, `6fc99cb`) added four
+read-only tools over MCP, a tool gateway and a model gateway in front of
+them, and a bounded agent — additive and read-only, so `v1.0` stays tagged
+where it was and everything below remains true of what it describes.
+**Its paid window found that neither configured model can serve the agent
+in this workspace**: every Claude endpoint returns 403 for a
+Databricks-set rate limit of 0 while reporting `READY`, and the fallback's
+replies do not parse. Llama 3.3 70B answered once, recorded as a
+substitute. **Every number in that answer came from a tool, and one claim
+did not** — "trained on" a Delta version the tools only read. **Phase 10
+(PR #21, `b73834d`) is the fix**: a deterministic verifier that checks not
+just that a number is real but that the *relationship* claimed around it
+is the one that field actually means, plus a directional check and a
+retry-once-then-abstain policy — regex and structural traversal over the
+run's own transcript, no model call, so it runs as a normal offline test
+rather than a new CI job. `v1.1.0` tags both together once the Phase 9
+window's cost is read: `system.billing.usage`, on or after 2026-09-11
+(`docs/findings/2026-09-10-agent-layer-window.md`).
 
 **The project is complete and tagged `v1.0`.** Every phase is merged to
 `main`: Phase 7 via PR #14, Phase 8 via PR #16, and a pre-tag PII fix via
@@ -92,7 +97,11 @@ README, this section's own two earlier lapses, the §10 tally, and
 luck; it is the predictable behaviour of any hand-maintained status line,
 and the only thing that has ever caught one is the positive check below —
 "what changed today?", never "is it still accurate?", which a stale file
-passes trivially.)*
+passes trivially. An **eighth** followed almost immediately: this
+section's own Phase 9 paragraph read "is complete on branch
+`phase-9-agent-layer`, targeting `v1.1.0`" through Phase 9's own merge
+(PR #20) and the whole of Phase 10's build and merge (PR #21), until this
+same positive check caught it again.)*
 
 **The last defect found was in the guard against defects of its own kind.**
 `pseudonymity.py` exists to fail the build when an actor identifier reaches

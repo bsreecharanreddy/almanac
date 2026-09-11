@@ -74,15 +74,63 @@ real name.)*
 
 ---
 
-> **Status: `v1.0` tagged, all nine phases merged.** A tenth, the agent
-> layer, is complete on branch `phase-9-agent-layer` and targets `v1.1.0`;
-> everything below this line describes `v1.0` and remains true of it.
-> Phase by phase, each led by what it *found*: [`CHANGELOG.md`](CHANGELOG.md).
-> Task granularity and the verification log: [`docs/STATUS.md`](docs/STATUS.md).
+> **Status: `v1.0` tagged, all nine phases merged.** Two more are merged
+> on top, untagged: Phase 9, an agent layer (PR #20), and Phase 10, a
+> deterministic grounding verifier on its answers (PR #21). Both are
+> additive and read-only — everything below this line still describes
+> `v1.0` and remains true of it. `v1.1.0` tags once the Phase 9 window's
+> cost is read from `system.billing.usage`. Phase by phase, each led by
+> what it *found*: [`CHANGELOG.md`](CHANGELOG.md). Task granularity and
+> the verification log: [`docs/STATUS.md`](docs/STATUS.md).
 
 
 **No number in this README is quoted unless it was measured.** Where
 something is still unknown, it says so.
+
+## Why this project
+
+**The problem, and the motivation.** Almost every operational system is a
+work queue with a clock on it — pull requests waiting on review, tickets
+waiting on a response, claims waiting on adjudication. The expensive
+failure mode is always the same: finding out *after* the breach, when
+nobody could have acted on it. This is built on GitHub's public event
+firehose because it's a real, public, honest stand-in for that whole
+class of problem — real, large, free, genuinely messy, and carrying an
+actual schema break — not because pull requests themselves are what's
+being predicted. **The domain is deliberately incidental**: nothing in
+the platform layer knows the items are pull requests, so the same
+architecture serves a support-ticket queue or a claims backlog. One
+invariant sits under all of it — [point-in-time correctness](#the-centerpiece)
+— because a feature that can see its own future is invisible in code
+review and impossible to bluff.
+
+**What this is for.** A reader can:
+
+- clone it and get a green run in **4 m 28 s** on a cold cache;
+- read the medallion over the real 341,060,851-row GH Archive quarter,
+  Bronze never transforming, Silver parsing and quarantining, Gold and a
+  point-in-time feature platform reading Silver as peers rather than a
+  chain;
+- see a served model with a measured baseline (**0.4661 PR-AUC vs 0.2650**)
+  rather than an accepted-on-faith number;
+- and, on top of that, ask an agent a breach-risk question and get an
+  answer where every number traces to a tool call and is mechanically
+  checked against it — not merely trusted because the model said so.
+
+**Key takeaways, and what's next.** A green test suite is necessary and
+not sufficient — this project hit that wall at three separate layers: a
+leakage bug a leakage suite couldn't see because it tested row time and
+the bug was on split time; four defects (a silently dropped merge type, a
+serving endpoint live on a retracted model, a dashboard aged 340 days
+wrong, a quarantine path firing for the first time in 341M+ rows) that
+only existed at real volume, through the full stack, inside a paid
+window; and an agent's own false claim under a green "every number came
+from a tool" rule. Each was found by measuring, not by trusting a passing
+suite. Deliberately not done, and named rather than hidden: an LLM-judge
+cross-check as a second opinion on top of the deterministic gate, a
+larger relationship table for the grounding verifier, a real serving path
+for the agent rather than the offline windows it runs in today, and the
+two dashboard panels Phase 7 deferred rather than shipped half-checked.
 
 ## The centerpiece
 
@@ -134,6 +182,7 @@ flowchart LR
     TG[Tool gateway<br/>allow-list · append-only audit]
     MG[Model gateway<br/>capability records<br/>a 4xx never falls back]
     AG[Bounded agent<br/>turn limit · replayable transcripts]
+    GV[Grounding verifier<br/>numeric · relationship · directional checks<br/>retry once, then abstain]
   end
 
   GHA --> B
@@ -159,11 +208,12 @@ flowchart LR
   R --> MCP
   MCP --> TG --> AG
   MG --> AG
+  AG --> GV
 
   classDef done fill:#d4edda,stroke:#28a745,color:#000
   classDef todo fill:#f4f4f4,stroke:#999,color:#555,stroke-dasharray:4 3
   classDef gone fill:#fff3cd,stroke:#d39e00,color:#000,stroke-dasharray:2 2
-  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN,WC,DR,MCP,TG,MG,AG done
+  class GHA,B,S,G,F,R,E,P,EV,L,SS,SF,CT,LN,WC,DR,MCP,TG,MG,AG,GV done
   class API todo
   class V,O,BI gone
 ```
@@ -217,6 +267,23 @@ claim as callable, and only a real request reveals the difference. A
 substitute model answered instead, and its one live answer put every
 number through a tool call and still misstated what one of them meant.
 Full write-up: [`docs/findings/2026-09-10-agent-layer-window.md`](docs/findings/2026-09-10-agent-layer-window.md).
+
+**Phase 10 closes that gap with a deterministic verifier, not a second
+model.** The false claim above put a real, tool-sourced number ("Delta
+version 92") into the wrong relationship ("trained on" instead of "read
+as of") — every number was real and the claim about it still wasn't. The
+verifier checks three things separately: every numeric literal traces to
+a tool-returned field under a stated rounding rule, every typed claim
+(trained-on, read-as-of, model-version, score, baseline) traces to the
+*specific* field that type means rather than just some real number
+nearby, and a raises/lowers-risk claim agrees with the actual sign of the
+feature contribution it names. A failed check gets the model one retry
+with its own failure rows attached; still fails, the run returns a typed
+`Ungrounded` result instead of the number. It runs offline — regex and
+structural traversal over the run's own transcript, no model call — so it
+is a normal `pytest` step in `make check`, not a new CI job, and a golden
+set of known-good and known-bad transcripts fails the build today on the
+same false claim that motivated it.
 
 ## What it does not do
 

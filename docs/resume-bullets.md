@@ -84,3 +84,56 @@ which I report as an explicit zero rather than an empty panel, because
 Gold (the live path stops at Silver and the online store), or that the
 model works on current data (it reads `is_draft`, which the reduced era
 does not carry).
+
+## `v1.1.0` addendum — the agent layer and its grounding verifier
+
+Additive to everything above, not a replacement for it. Same rule: claim
+only what was measured.
+
+### Short form — two bullets
+
+- Added a **read-only agent layer** over the platform — four tools behind
+  an allow-listed gateway with a per-call audit log, and a bounded
+  plan/act/observe agent — then built a **deterministic grounding
+  verifier** that checks every number and every claim about that number
+  in an agent's answer against the tool call that produced it, with no
+  LLM judge in the loop.
+- Caught and fixed a **real false claim my own agent produced**: every
+  number in one live answer came from a tool, and it still misstated what
+  one of them meant. Root-caused to a schema field that didn't say what
+  it was versions *of*, fixed with a rename plus a relationship check —
+  not a stricter number check — and covered by a golden set that fails
+  the build on that exact hallucination today.
+
+### Longer form — with the story behind it
+
+**A grounded answer is not the same as a correct one, and I found the gap
+in my own system.** The agent's one live answer during a paid validation
+window put every number through a real tool call — a green result under
+the project's own "every number from a tool" rule — and still claimed the
+champion was "trained on" a Delta version the tools had only *read*. The
+fix was not a stricter numeric check; the number was already correct. It
+was a second, separate check that a claim of a given type (trained-on,
+read-as-of, model-version, score, baseline) traces to the *specific*
+field that type means. Built deterministically — regex and structural
+traversal over the run's own transcript, no second model — deliberately
+against the grain of the dominant 2026 pattern of scoring groundedness
+with an LLM judge, on published evidence (GroundEval, arXiv 2606.22737)
+that judges can score an ungrounded answer above 0.85.
+
+### Numbers, with their sources (v1.1.0)
+
+| Claim | Value | Source |
+|---|---|---|
+| Read-only tools shipped | 4 | `docs/STATUS.md`, Phase 9 |
+| Model requests per agent run, capped at | 6 | `almanac/agent/bounded_agent.py` |
+| Real runs needed to get one live agent answer | 5 | `docs/findings/2026-09-10-agent-layer-window.md` |
+| Grounding checks in the verifier | 3 (numeric, relationship, directional) | `docs/STATUS.md`, Phase 10 |
+| Retries before an ungroundable answer abstains | 1 | `almanac/agent/bounded_agent.py` |
+
+**Do not claim:** that either configured foundation model can serve the
+agent in this workspace (neither can — Llama 3.3 70B answered as a
+recorded substitute), that the agent has a live serving endpoint (it runs
+in offline validation windows only), or that the grounding verifier's
+relationship table covers claim shapes beyond the ones this system's four
+tools can actually produce.

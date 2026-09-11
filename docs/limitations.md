@@ -338,3 +338,49 @@ pure egress overhead that no compute-sizing exercise would predict.
 window it is measuring**. Every cost figure in this repo was therefore
 read *after* the fact, which is why some are reported a day late rather
 than at the end of the run that produced them.
+
+## 11. The agent layer and its grounding verifier have real limits
+
+Additive, read-only, and honest about what it does not cover.
+
+**Neither configured foundation model can actually serve the agent in
+this workspace.** Every Claude endpoint returns a Databricks-set rate
+limit of 0 while reporting `READY`, and the configured fallback's replies
+do not parse as tool calls. The one live answer this project has came
+from Llama 3.3 70B as a recorded substitute, not from either model the
+design named. `READY` is not the same claim as callable, and the gap was
+found only by a real request, not by a health check.
+
+**The relationship table the grounding verifier checks against is small
+and closed by design, not by effort.** It covers the claim shapes this
+system's four tools can actually produce — trained-on, read-as-of,
+model-version, score, baseline — plus a raises/lowers-risk directional
+check. A claim shape outside that table is not checked at all; adding a
+fifth tool with a new kind of claim needs a new rule, not automatically
+covered by the existing ones.
+
+**No LLM-judge cross-check exists.** The deterministic verifier is
+argued, with published evidence (GroundEval, arXiv 2606.22737), to be
+the right *first* gate — a judge returns a probability and a build gate
+needs a decision — but that is an argument for sequencing, not a claim
+that a second opinion has no value. None is built.
+
+**Claim parsing is English-only regex over the answer text**, not a
+language model reading the sentence. A grammatically unusual phrasing of
+a true claim can fail to match a rule and read as ungrounded when the
+underlying number is fine; the golden set covers the phrasings the
+project's own runs have actually produced, not the space of ways a claim
+could be phrased.
+
+**The golden set and the mutation tests are real, but small.** Six golden
+fixtures and one mutation per check demonstrate that each rule can be
+triggered and can fail — they do not demonstrate coverage of every way a
+model could construct a false claim. A model producing a genuinely novel
+failure mode, not represented in the fixtures, would only be caught if it
+happens to trip one of the three existing checks.
+
+**The agent has no serving path.** It runs inside offline, evidence-
+gathering windows on a job cluster, the same way the paid window that
+found Story 71's false claim did. There is no endpoint a caller can hit
+today; every real answer this project has came from a one-time run, not
+a live service.

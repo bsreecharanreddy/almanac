@@ -303,3 +303,65 @@ being reported rather than measured around. The fix is a README change:
 lead with the fast inner loop, and present `make check` as the
 pre-push gate it actually is. Recorded here rather than made silently, so
 the measurement stays honest about what it timed.
+
+---
+
+## Agent layer (Phase 9 + Phase 10) reconciled
+
+The design doc's own gates, from
+`docs/design/2026-09-09-almanac-agent-layer-design.md` §5–§7 — a
+separate goal set from §10 above, so scored separately rather than
+folded into that tally.
+
+**`[x]` Phase 9 gate: an agent answers a real question by calling tools**
+One live answer, through Llama 3.3 70B as a recorded substitute after
+every configured Claude endpoint returned a 403 (`docs/findings/2026-09-10-agent-layer-window.md`).
+
+**`[x]` Phase 9 gate: the audit log records every call with arguments and result**
+`almanac/agent/gateway.py`'s append-only audit record; exercised for real
+in the paid window.
+
+**`[x]` Phase 9 gate: a test proves no write path exists**
+The tool gateway is an allow-list of read-only tool names; a test asserts
+any other call is rejected.
+
+**`[x]` Phase 9 gate: `predict` against a reduced-era window refuses rather than returns**
+Fired for real on a 2026 entity in the paid window — on feature-table
+coverage rather than the drift condition it was designed for, and
+recorded as such rather than claimed as the intended trigger (Story 68).
+
+**`[x]` Phase 9, all 9 design-table tasks (feature contributions through the model gateway)**
+Implemented, tested, and mutation-tested per `docs/STATUS.md`'s Phase 9
+verification log. Task numbering in `docs/STATUS.md` runs to 12 because
+the bounded agent, the paid window, and close-out are counted as their
+own tasks there; the design doc's 9-row table and the implementation
+task list are not required to share numbering, only scope.
+
+**`[x]` Phase 10 gate: a deliberately hallucinated number fails CI**
+The golden set's known-bad fixture — the real committed window transcript
+— fails the normal offline `pytest` step today, no endpoint call needed.
+
+**`[x]` Phase 10, all 9 build tasks (schema rename through CI gate + trace persistence)**
+`docs/STATUS.md`'s Phase 10 verification log; PR #21, merged 2026-09-10.
+Includes both tasks the design doc's §6 amendment added after Phase 9's
+window (the provenance rename, relationship grounding as its own check)
+— on `main`, not deferred.
+
+**`[x]` Non-goals held (§7): no write tools, no chat interface, no retraining, no document retrieval**
+Checked against what actually shipped rather than assumed: the tool
+gateway's allow-list is read-only-only, there is no chat surface, no
+model was retrained as part of either phase, and the vector index was not
+repurposed as a claim source for the agent.
+
+**`[~]` Token / cost reconciliation for the paid window**
+The window's four-tool-call cost is not separable from other workspace
+activity in this account, and the plan's token reconciliation cannot run
+at all in a workspace whose `endpoint_usage` table has never had a row —
+recorded as uncloseable in this workspace rather than silently dropped.
+The window's total DBU cost is a distinct, closeable number: read from
+`system.billing.usage` before the `v1.1.0` tag, per the close-out plan's
+one hard gate.
+
+**Agent-layer score: 7 done, 1 partly, 0 not done**, against the design
+doc's own stated gates and non-goals — a much smaller goal set than §10's,
+by design: Phase 9 and 10 are two phases, not a whole platform.
