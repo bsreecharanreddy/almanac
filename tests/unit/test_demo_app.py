@@ -30,3 +30,17 @@ def test_it_declares_its_scale_on_load() -> None:
     text = " ".join(m.value for m in _run().markdown).lower()
     assert "one archived hour" in text
     assert "341,060,851" in text
+
+
+def test_the_queue_renders_no_identity() -> None:
+    """docs/pseudonymization.md -- surrogates and ranks, never a login or owner/repo."""
+    app = _run()
+    rendered = " ".join(str(frame.value.columns.tolist()) for frame in app.dataframe)
+    for forbidden in ("actor_login", "author_login", "repo_name", "repo_full_name"):
+        assert forbidden not in rendered
+
+
+def test_the_coverage_panel_states_why_the_features_are_null() -> None:
+    text = " ".join(m.value for m in _run().markdown).lower()
+    assert "point-in-time" in text
+    assert "not a defect" in text

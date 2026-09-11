@@ -122,6 +122,12 @@ targeting `v1.2.0`.** Design doc at
   `uv sync --all-extras --dev`, the command this repo's own CI and README
   already use; `uv run --extra demo ...` (per-invocation, not a sync) did
   not reproduce the problem once the venv was correctly synced.
+- **Task 9, the intervention queue and its coverage panel (`demo/app.py`).**
+  Ranked queue on the left, per-feature null coverage on the right, given
+  equal visual weight deliberately: 7 of 10 features null for most rows
+  (Task 4) is the governing invariant made visible rather than asserted.
+  Surrogate keys and rank only -- no login, no `owner/repo` -- asserted by
+  a test over the rendered dataframe's own columns.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
