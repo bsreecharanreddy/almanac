@@ -66,6 +66,20 @@ targeting `v1.2.0`.** Design doc at
   `tmp_path` with no prior `build_medallion` call, which `build_queue`
   depends on for its Bronze/Silver Delta input; each test now lands the
   medallion first, matching Task 3's own tests' pattern.
+- **Task 5, byte-identical regeneration
+  (`tests/integration/test_demo_artifacts_reproducible.py`).** The
+  project's governing invariant, applied to its own demo: a fresh rebuild
+  is hashed against the committed `medallion.json`, `coverage.json` and
+  `queue.parquet`. **Measured the opposite of what the plan predicted**:
+  it says a first run fails on `queue.parquet` because parquet embeds
+  writer metadata, and this repo's pyarrow 25.0.1 / pandas 2.3.3 produced
+  a byte-identical parquet footer on the first try, across two genuinely
+  separate processes (the committed copy from Task 4's `make demo-build`,
+  compared against a fresh rebuild in the test's own process) -- so
+  Step 3's engine/`store_schema` parquet rewrite was not applied; nothing
+  to fix if nothing is broken. Verified the check can still fail: mutated
+  one byte of the committed `coverage.json`, watched the test fail, and
+  restored it.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
