@@ -47,6 +47,25 @@ targeting `v1.2.0`.** Design doc at
   swallowed the committed build artifacts this task and the file
   structure table both require. Anchored to `/data/`; `demo/data/` is
   trackable and the top-level warehouse stays ignored.
+- **Task 4, features/scores/coverage (`build_queue`,
+  `demo/data/queue.parquet`, `demo/data/coverage.json`).** Measured
+  2026-09-11 over all three eras: **189** opened pull requests (up from
+  137 on the two-era fixture), and **7 of 10** features null for most
+  rows -- `prior_merge_rate` null for all 189, `events_total_to_date` /
+  `bot_events_to_date` / `prs_opened_to_date` / `bot_share_to_date` non-null
+  for 14, `prior_pr_count` for 28, `is_draft` for 80. The three
+  non-temporal features (`is_bot_author`, `opened_day_of_week`,
+  `opened_hour`) are populated for all 189, as expected -- they are not
+  "to date" aggregates. **Found two more defects by running it.** First,
+  `is_bot_author` is both a published surrogate-safe column and a model
+  feature; the plan's literal `_PUBLISHED_COLUMNS + FEATURE_COLUMNS`
+  selects it twice, which makes `pdf[FEATURE_COLUMNS]` return 11 columns
+  for 10 names -- deduplicated by dropping it from the published list
+  when it is already in `FEATURE_COLUMNS`. Second, the plan's own Task 4
+  tests called `build_queue(spark, out_dir=tmp_path)` on a fresh
+  `tmp_path` with no prior `build_medallion` call, which `build_queue`
+  depends on for its Bronze/Silver Delta input; each test now lands the
+  medallion first, matching Task 3's own tests' pattern.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

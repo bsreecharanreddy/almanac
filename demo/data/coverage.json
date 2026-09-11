@@ -1,0 +1,36 @@
+{
+  "features": {
+    "bot_events_to_date": {
+      "non_null": 14
+    },
+    "bot_share_to_date": {
+      "non_null": 14
+    },
+    "events_total_to_date": {
+      "non_null": 14
+    },
+    "is_bot_author": {
+      "non_null": 189
+    },
+    "is_draft": {
+      "non_null": 80
+    },
+    "opened_day_of_week": {
+      "non_null": 189
+    },
+    "opened_hour": {
+      "non_null": 189
+    },
+    "prior_merge_rate": {
+      "non_null": 0
+    },
+    "prior_pr_count": {
+      "non_null": 28
+    },
+    "prs_opened_to_date": {
+      "non_null": 14
+    }
+  },
+  "total_rows": 189,
+  "why": "A feature named 'to date' may read only events strictly before its own as_of. One archived hour contains almost no prior history, so most of these are null. That is point-in-time correctness working, not a defect."
+}
