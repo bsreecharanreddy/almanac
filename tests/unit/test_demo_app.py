@@ -53,3 +53,8 @@ def test_the_explain_tab_names_the_baseline_as_not_a_feature() -> None:
     """
     text = " ".join(m.value for m in _run().markdown).lower()
     assert "baseline" in text
+
+
+def test_the_agent_tab_shows_a_rejection_not_only_a_pass() -> None:
+    text = " ".join(m.value for m in _run().markdown).lower()
+    assert "ungrounded" in text

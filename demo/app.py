@@ -1,9 +1,16 @@
 """Almanac, locally. Committed artifacts, a committed champion, no cloud account."""
 
+from pathlib import Path
+
+import pandas as pd
 import streamlit as st
 
 from almanac.demo import artifacts, panels
 from almanac.demo.champion import champion_provenance, load_champion
+
+_FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "transcripts"
+_LIVE_TRANSCRIPT = _FIXTURES / "2026-09-10-live-predict-explain.json"
+_FLIPPED_TRANSCRIPT = _FIXTURES / "2026-09-10-live-predict-explain-directions-flipped.json"
 
 st.set_page_config(page_title="Almanac — local demo", layout="wide")
 
@@ -74,4 +81,36 @@ with explain_tab:
         "LightGBM returns one more column than there are features and the last "
         "is the expected value. These are the champion's own numbers, computed "
         "here, not an explanation written about them."
+    )
+
+with agent_tab:
+    st.markdown(
+        "The agent answers from tools only, and a **deterministic verifier** checks "
+        "the answer before you read it. No model call happens here: both runs below "
+        "are committed transcripts, replayed."
+    )
+    choice = st.radio(
+        "Transcript",
+        ["The live window's answer", "The same answer, one direction flipped"],
+        horizontal=True,
+    )
+    path = _LIVE_TRANSCRIPT if choice.startswith("The live") else _FLIPPED_TRANSCRIPT
+    trace = panels.grounding_for(path)
+
+    st.markdown(f"**Verdict: `{trace.verdict}`**")
+    if trace.failures:
+        for failure in trace.failures:
+            st.error(failure)
+    st.markdown(
+        "Three checks, and the second is the one that matters. Every number must "
+        "trace to a tool return. The **relationship** claimed around it must trace "
+        "to the field that claim type requires — the live window said the model was "
+        "*trained on* a Delta version the tools had only *read*, and every number in "
+        "that sentence was real. A directional statement must agree with the sign of "
+        "the contribution it names, which is what the flipped transcript violates."
+    )
+    st.dataframe(
+        pd.DataFrame([c.model_dump() for c in trace.numbers]),
+        hide_index=True,
+        width="stretch",
     )

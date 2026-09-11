@@ -137,6 +137,15 @@ targeting `v1.2.0`.** Design doc at
   2025-12-31 removal date. Replaced every occurrence with `width="stretch"`
   rather than carrying a known-past-due deprecation into new code beside
   it; confirmed the warning is gone by rerunning the app headlessly.
+- **Task 11, the agent panel (`demo/app.py`).** Replays the two committed
+  Phase 9/10 transcripts with no model call. Both verify **`ungrounded`**
+  -- the live window's own answer included the false "trained on" claim
+  Phase 10's verifier exists to catch, and the flipped-direction fixture
+  is a deliberate second failure -- so the default-selected radio option
+  already demonstrates a reject, not only the accept path. The copy leads
+  with the relationship check over the numeric one, matching what the
+  live run actually got wrong: every number in its answer was real: what
+  was false was the relationship one sentence claimed around them.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
