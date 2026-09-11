@@ -1893,17 +1893,20 @@ class ArchEdge:
 
 NODES: tuple[ArchNode, ...] = (
     ArchNode(
-        "bronze", "Bronze",
+        "bronze",
+        "Bronze",
         "Raw payload, untransformed. A new event type cannot break ingestion.",
         ("docs/limitations.md", "docs/findings/2026-09-02-bronze-is-single-threaded.md"),
     ),
     ArchNode(
-        "silver", "Silver",
+        "silver",
+        "Silver",
         "Per-type parsing and quality rules. Bad records are quarantined, never dropped.",
         ("docs/findings/2026-09-08-first-real-quarantine.md",),
     ),
     ArchNode(
-        "gold", "Gold",
+        "gold",
+        "Gold",
         "dbt-built facts and dimensions. A merge defect here was found the hard way.",
         (
             "docs/findings/2026-09-04-gold-is-a-metastore-table-not-a-path.md",
@@ -1911,12 +1914,14 @@ NODES: tuple[ArchNode, ...] = (
         ),
     ),
     ArchNode(
-        "features", "Feature Platform",
+        "features",
+        "Feature Platform",
         "As-of joins enforce point-in-time correctness -- the governing invariant.",
         ("docs/adr/0001-hand-rolled-as-of-join.md",),
     ),
     ArchNode(
-        "model", "Model",
+        "model",
+        "Model",
         "A baseline shipped first. The registered champion had a leakage bug, found and fixed.",
         (
             "docs/findings/2026-09-08-champion-rescored-temporal-split.md",
@@ -1924,7 +1929,8 @@ NODES: tuple[ArchNode, ...] = (
         ),
     ),
     ArchNode(
-        "serving", "Serving",
+        "serving",
+        "Serving",
         "A live endpoint, measured for skew against offline scoring.",
         (
             "docs/findings/2026-09-04-serving-endpoint-measured.md",
@@ -1932,7 +1938,8 @@ NODES: tuple[ArchNode, ...] = (
         ),
     ),
     ArchNode(
-        "streaming", "Streaming",
+        "streaming",
+        "Streaming",
         "A live poller and an online store. A watermark silently dropped real data once.",
         (
             "docs/postmortem-watermark-data-loss.md",
@@ -1940,12 +1947,14 @@ NODES: tuple[ArchNode, ...] = (
         ),
     ),
     ArchNode(
-        "agent", "Agent layer",
+        "agent",
+        "Agent layer",
         "Four read-only tools over MCP, bounded, and audited.",
         ("docs/findings/2026-09-11-agent-layer-window-cost.md",),
     ),
     ArchNode(
-        "grounding", "Grounding verifier",
+        "grounding",
+        "Grounding verifier",
         "Checks the relationship a claim makes, not only that its number is real.",
         ("CHANGELOG.md",),
     ),
