@@ -42,7 +42,7 @@ PUBLISHED_GLOBS: tuple[str, ...] = (
     "demo/**/*.py",
     "demo/**/*.json",
     "demo/**/*.md",
-    "demo/Dockerfile",
+    "demo/requirements.txt",
 )
 
 # Two characters is not an identity, it is a false-positive generator: a

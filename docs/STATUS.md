@@ -170,6 +170,103 @@ targeting `v1.2.0`.** Design doc at
   confirmed the JVM was actively accumulating CPU time throughout, not
   stalled; killing on a load spike without checking for forward progress
   cost more than either failure would have.
+- **Task 13, deploying the demo -- the plan's own Step 2 warning earned
+  its place, and the target changed from the plan's own choice.** Built
+  the plan's Hugging Face Spaces Dockerfile first, and it **did not
+  work**, twice, caught only by running the built container: an HTTP 200
+  from Streamlit proves the server started, not that the script ran
+  without exception, since a crashed script's traceback renders
+  client-side over the websocket. First defect: `--extra demo` alone
+  installs only Streamlit; the container served 200 while `python -c
+  "from almanac.demo.champion import champion_provenance"` threw
+  `ModuleNotFoundError: lightgbm` inside it. Second, after adding `--extra
+  ml --extra agent` and rebuilding: a real browser navigation (not curl)
+  showed a live traceback -- `panels.py` imported `load_transcript` from
+  `almanac.agent.bounded_agent`, which imports `gateway` -> `mcp_server`
+  -> `pyspark` at module level, all three first-party hops before the
+  third-party one. **The app's own Task 7 import-graph test passed
+  throughout and could not have caught this**: it walked only
+  `artifacts.py`/`panels.py`/`champion.py`'s own top-level statements, not
+  what they import transitively -- the exact "control aimed at the wrong
+  scope" failure this file's own Phase 8 pseudonymity entry already named.
+  Fixed at the root: `save_transcript`/`load_transcript` moved out of
+  `bounded_agent.py` into a new `almanac.agent.transcript` (pydantic_ai
+  message types only, no pyspark anywhere in its own or its imports'
+  source), with `bounded_agent.py` re-exporting both via `__all__` for its
+  eight existing callers. The regression test was rewritten as a
+  first-party-only transitive AST walk rather than a subprocess import
+  check -- tried the subprocess approach first and it failed on
+  `almanac.model.train` alone: bare `import mlflow` already pulls in
+  `pyspark` in this repo's single all-extras dev venv, because mlflow
+  probes for installed integrations, which would fail the test for a
+  reason with nothing to do with almanac's own code. **A second, unrelated
+  defect found the same way**: the working container measured **11.1GB**
+  (a BuildKit attestation manifest list made an early `docker images` read
+  stick to a stale per-arch layer showing 1.75GB while `docker top` inside
+  the *running* container showed the old, pre-fix CMD; rebuilding with
+  `--provenance=false --sbom=false` fixed the ambiguity). 11.1GB traced to
+  the `ml` extra's `sentence-transformers` (torch + transformers + CUDA
+  wheels) and three Databricks clients -- Phase 5-7 dependencies the demo
+  never imports, since it only scores with a committed LightGBM model.
+  Added `ml-scoring` to `pyproject.toml` (`mlflow`, `lightgbm`,
+  `scikit-learn`, `pandas` -- the strict subset, floors intentionally
+  duplicated from `ml` rather than derived; `ml` itself untouched),
+  swapped it in, and rebuilt: **2.33GB, measured**, same scoring output
+  (`0.768437` predicted risk, `-0.940807` baseline) confirmed by
+  re-running the browser check. All four tabs verified rendering with no
+  console errors, twice, via real navigation and clicks, not an HTTP
+  status code.
+
+  **Then the target changed.** Docker/Hugging Face Spaces was fully
+  working, but creating a Docker Space on a personal account requires a
+  paid PRO plan ($9/mo) -- checked directly against Hugging Face's own
+  `spaces-overview.md` rather than assumed, because the free-tier
+  exception on that page is for Gradio apps on ZeroGPU specifically, which
+  does not apply here. The user chose Streamlit Community Cloud instead:
+  free, no account tier requirement, and a better fit since this is
+  already a Streamlit app -- no Dockerfile needed at all. **This is a
+  deviation from the plan's own Step 1-4 text** (it names Hugging Face
+  Spaces specifically), made explicitly by the user after the cost
+  tradeoff was presented, not freelanced. `demo/Dockerfile`,
+  `scripts/deploy_space.py`, `almanac.demo.deploy_space`, and their tests
+  are removed -- built and fully verified for a target no longer in use,
+  and keeping unused deploy tooling around is worse than deleting it. The
+  pyspark fix and the `ml-scoring` extra carry over unchanged: both are
+  platform-independent correctness/size fixes, not Docker-specific.
+
+  Community Cloud reads a `uv.lock` at the repo root automatically, but
+  with no way to select extras that could be confirmed -- a bare `uv sync`
+  would install only the four base dependencies (`httpx`, `pydantic`,
+  `pydantic-settings`, `pyyaml`), none of which is `streamlit`. Generated
+  `demo/requirements.txt` instead via `uv export --extra demo --extra
+  ml-scoring --extra agent --no-dev --no-emit-project --no-hashes
+  --no-header --format requirements-txt` (168 packages, no torch, no
+  pyspark, no Databricks SDK beyond what mlflow itself pulls in) --
+  Community Cloud checks the entrypoint's own directory before the repo
+  root, so a `demo/requirements.txt` beside `demo/app.py` is found first.
+  `--no-emit-project` drops the `-e .` editable-install line `uv export`
+  emits by default: pip's hash-checking mode is documented as incompatible
+  with editable installs, and whether Community Cloud even runs pip from a
+  cwd where `-e .` would resolve correctly could not be verified without a
+  real account, so `demo/app.py` gets a `sys.path` insertion of `src/`
+  instead (guarded, additive, so it does not affect the existing `uv run`
+  path) -- correct regardless of Community Cloud's install-time cwd,
+  removing the whole class of uncertainty rather than guessing at it.
+  **Verified against the closest available local proxy**: a completely
+  fresh `python -m venv`, `pip install -r demo/requirements.txt` with no
+  `uv` anywhere on the system, then `streamlit run demo/app.py` from that
+  venv's interpreter -- Intervention queue and Why this score both
+  rendered with the identical scoring output (`0.768437` / `-0.940807`)
+  already measured in Docker and in `uv run`, confirming the `sys.path`
+  fallback and the trimmed dependency set both actually work outside any
+  uv-managed environment. `demo/README.md` rewritten as a plain
+  description doc (the Hugging Face Spaces YAML frontmatter no longer
+  applies -- Community Cloud's configuration is its own web UI, not a
+  README). **Not done yet**: the actual Community Cloud deploy happens
+  through its web UI (connect the GitHub repo, pick `demo/app.py` as the
+  main file) -- there is no token-based API path to automate this the way
+  `scripts/deploy_space.py` did for Hugging Face, so this step is the
+  user's to do directly.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

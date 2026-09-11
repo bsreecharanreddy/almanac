@@ -68,6 +68,10 @@ dbt/.user.yml
 dbt_packages/
 logs/
 
+# Browser-automation tool scratch (page snapshots, console logs) from manual
+# verification sessions -- not project source.
+/.playwright-mcp/
+
 # graphify — local knowledge-graph build, treated as regenerable local state.
 # The post-commit hook (`graphify hook install`) rebuilds graph.json on every
 # commit, AST-only. A tracked copy would be dirty after every commit, and the

@@ -208,6 +208,12 @@ ml = [
     { name = "scikit-learn" },
     { name = "sentence-transformers" },
 ]
+ml-scoring = [
+    { name = "lightgbm" },
+    { name = "mlflow" },
+    { name = "pandas" },
+    { name = "scikit-learn" },
+]
 spark = [
     { name = "delta-spark" },
     { name = "pyspark" },
@@ -236,20 +242,24 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "httpx2", marker = "extra == 'agent'", specifier = ">=2.12.0" },
     { name = "lightgbm", marker = "extra == 'ml'", specifier = ">=4.7.0" },
+    { name = "lightgbm", marker = "extra == 'ml-scoring'", specifier = ">=4.7.0" },
     { name = "mcp", marker = "extra == 'agent'", specifier = ">=2.2.0" },
     { name = "mlflow", marker = "extra == 'ml'", specifier = ">=3.15.2" },
+    { name = "mlflow", marker = "extra == 'ml-scoring'", specifier = ">=3.15.2" },
     { name = "openai", marker = "extra == 'agent'", specifier = ">=3.11.0" },
     { name = "pandas", marker = "extra == 'ml'", specifier = ">=2.3.3,<3" },
+    { name = "pandas", marker = "extra == 'ml-scoring'", specifier = ">=2.3.3,<3" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-ai", marker = "extra == 'agent'", specifier = ">=2.42.0" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pyspark", marker = "extra == 'spark'", specifier = ">=4.2.0,<4.3" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.9.0" },
+    { name = "scikit-learn", marker = "extra == 'ml-scoring'", specifier = ">=1.9.0" },
     { name = "sentence-transformers", marker = "extra == 'ml'", specifier = ">=6.0.1" },
     { name = "streamlit", marker = "extra == 'demo'", specifier = ">=1.63.0" },
 ]
-provides-extras = ["spark", "dbt", "ml", "agent", "demo"]
+provides-extras = ["spark", "dbt", "ml", "ml-scoring", "agent", "demo"]
 
 [package.metadata.requires-dev]
 dev = [

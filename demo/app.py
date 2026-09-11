@@ -1,12 +1,20 @@
 """Almanac, locally. Committed artifacts, a committed champion, no cloud account."""
 
+import sys
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from almanac.demo import artifacts, panels
-from almanac.demo.champion import champion_provenance, load_champion
+# Streamlit Community Cloud runs this file directly from a plain requirements.txt
+# install, never `uv run` -- so almanac is never installed into the environment,
+# editable or otherwise, and src/ is not on sys.path without this.
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from almanac.demo import artifacts, panels  # noqa: E402
+from almanac.demo.champion import champion_provenance, load_champion  # noqa: E402
 
 _FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "transcripts"
 _LIVE_TRANSCRIPT = _FIXTURES / "2026-09-10-live-predict-explain.json"

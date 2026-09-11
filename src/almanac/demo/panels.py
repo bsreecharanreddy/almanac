@@ -7,8 +7,8 @@ from typing import Any
 
 import pandas as pd
 
-from almanac.agent.bounded_agent import load_transcript
 from almanac.agent.grounding import GroundingTrace, verify
+from almanac.agent.transcript import load_transcript
 from almanac.model.contributions import BASELINE_COLUMN, contribution_frame
 from almanac.model.train import FEATURE_COLUMNS
 

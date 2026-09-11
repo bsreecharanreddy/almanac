@@ -138,7 +138,7 @@ def test_the_demo_surface_is_covered() -> None:
     The control that once passed cleanly while aimed at the wrong files is the
     reason this is a test and not a note.
     """
-    for glob in ("demo/**/*.py", "demo/**/*.json", "demo/**/*.md", "demo/Dockerfile"):
+    for glob in ("demo/**/*.py", "demo/**/*.json", "demo/**/*.md", "demo/requirements.txt"):
         assert glob in PUBLISHED_GLOBS, f"{glob} is published and unscanned"
 
 
