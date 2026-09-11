@@ -322,6 +322,29 @@ targeting `v1.2.0`.** Design doc at
   13 passed across `test_demo_app.py`/`test_demo_architecture.py`/
   `test_demo_panels.py`, `ruff`, `ruff format --check`, and
   `mypy --strict` all clean.
+- **Task 15 fix, found by the user actually using the live tab.** The
+  links under each node were never real hyperlinks -- rendered as
+  `` `{link}` ``, inline code, not `[text](url)`. Fixed to
+  `https://github.com/bsreecharanreddy/almanac/blob/main/{link}`, and the
+  node click was wired to the list below it: `selected_id` from the
+  flow's returned state now drives `st.expander(..., expanded=...)`, with
+  a small `st.components.v1.html` script reaching into `window.parent` to
+  scroll the matching section into view (custom components render in
+  same-origin iframes on Community Cloud, so this crosses the frame
+  boundary safely). **Checked directly against `origin/main` before
+  trusting the `blob/main/` links would resolve post-merge**: all 14
+  distinct link targets across the nine nodes already exist there via
+  `git ls-tree`, not assumed from "they're pre-existing docs." Verified
+  live: clicking "Bronze" in the diagram scrolled to and opened the
+  Bronze section, and its two links opened the real GitHub files in a new
+  tab (Streamlit's own markdown-link default, not something added here).
+  **A real operational risk this surfaced**: the live Community Cloud app
+  tracks the `phase-11-local-demo` branch, which this repo's own
+  convention has deleted after every previous phase's PR merged. If that
+  happens here too, the deployed app breaks outright, not just its links
+  -- Community Cloud's branch setting needs to be switched to `main`
+  after this phase's PR merges, a manual step with no API to automate,
+  carried into Task 13 Step 7 below as a closing action.
 
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and

@@ -182,8 +182,21 @@ with arch_tab:
         # regardless of whether the canvas itself can render.
         st.info("The diagram needs a live browser session; the list below carries every node.")
 
+    _selected = getattr(st.session_state.get("arch_flow_state"), "selected_id", None)
+    _GITHUB_BLOB = "https://github.com/bsreecharanreddy/almanac/blob/main/"
+
     for node in NODES:
-        with st.expander(node.label):
+        st.markdown(f'<div id="arch-node-{node.id}"></div>', unsafe_allow_html=True)
+        with st.expander(node.label, expanded=(node.id == _selected)):
             st.markdown(node.summary)
             for link in node.links:
-                st.markdown(f"- `{link}`")
+                st.markdown(f"- [{link}]({_GITHUB_BLOB}{link})")
+
+    if _selected:
+        st.components.v1.html(
+            f"""<script>
+            const el = window.parent.document.getElementById("arch-node-{_selected}");
+            if (el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
+            </script>""",
+            height=0,
+        )
