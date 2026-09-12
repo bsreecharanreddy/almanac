@@ -17,9 +17,9 @@ real schema break — not because this project is about GitHub. The same
 architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
-> **Reviewing this in 5 minutes?** Open the
-> **[live demo](https://almanac-live.streamlit.app/)** and click through
-> the ranked queue and the agent's verified answer, skim
+> **Reviewing this in 5 minutes?** Open the live demo
+> ([almanac-live.streamlit.app](https://almanac-live.streamlit.app/)) and
+> click through the ranked queue and the agent's verified answer, skim
 > [The agent layer](#the-agent-layer-and-why-it-is-verified-rather-than-trusted)
 > below, then read [`docs/decision-memo.md`](docs/decision-memo.md). No
 > account, no clone, no wait.
@@ -29,10 +29,10 @@ review queue. The domain is incidental, and that is the point.
 ## In sixty seconds
 
 **What it does.** It ingests a real event firehose, builds a
-point-in-time-correct feature store over it, trains and serves a model
-that ranks queue items by how likely they are to breach, and puts a
-bounded agent in front of the result whose every number is mechanically
-checked against the tool call it came from.
+point-in-time-correct feature store over it, and trains and serves a
+model that ranks queue items by how likely they are to breach. A bounded
+agent sits in front of the result, and every number it states is
+mechanically checked against the tool call it came from.
 
 **Built solo, start to finish** — design docs, infrastructure, pipelines,
 model, serving, dashboards, the agent layer, and the write-ups of what
@@ -76,10 +76,12 @@ cost of each teardown is measured. What runs continuously instead is a
 separate, free app — **[almanac-live.streamlit.app](https://almanac-live.streamlit.app/)**
 — scoring one archived hour per schema era against a committed snapshot of
 the real registered champion (LightGBM, MLflow model registry version 2),
-with no cloud account behind it. The evidence below is the artifact, `make
-check-fast` reproduces the local half in 5 m 6 s from a fresh clone, and
-the agent's first live transcript is committed and **replays offline for
-free**.
+with no cloud account behind it. **Stack:** Streamlit, that committed
+LightGBM snapshot, and fixture parquet standing in for the archive — no
+database, no serving endpoint, no live model call. The evidence below is
+the artifact: the local half of this project reproduces in 5 m 6 s from a
+fresh clone via `make check-fast`, and the agent's first live transcript
+is committed and **replays offline for free**.
 
 ### What it looks like
 
@@ -111,10 +113,11 @@ answered on the fifth. Full account:
 
 ---
 
-> **Status: `v1.1.0` tagged, eleven phases merged.** `v1.0` was the
-> platform, all nine phases of it. `v1.1.0` adds two more on top: Phase 9,
+> **Status: `v1.2.0` tagged, twelve phases merged.** `v1.0` was the
+> platform, all nine phases of it. `v1.1.0` added two more on top: Phase 9,
 > an agent layer (PR #20), and Phase 10, a deterministic grounding
-> verifier on its answers (PR #21). Both are additive and read-only —
+> verifier on its answers (PR #21). `v1.2.0` adds Phase 11, the local demo
+> above (PR #22). All three are additive and read-only —
 > everything below this line described `v1.0` and remains true of it.
 > Phase by phase, each led by what it *found*:
 > [`CHANGELOG.md`](CHANGELOG.md). Task granularity and the verification
