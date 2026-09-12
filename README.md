@@ -17,6 +17,13 @@ real schema break — not because this project is about GitHub. The same
 architecture serves a support-ticket queue, a claims backlog, or a fraud
 review queue. The domain is incidental, and that is the point.
 
+> **Reviewing this in 5 minutes?** Open the
+> **[live demo](https://almanac-live.streamlit.app/)** and click through
+> the ranked queue and the agent's verified answer, skim
+> [The agent layer](#the-agent-layer-and-why-it-is-verified-rather-than-trusted)
+> below, then read [`docs/decision-memo.md`](docs/decision-memo.md). No
+> account, no clone, no wait.
+
 ---
 
 ## In sixty seconds
@@ -38,7 +45,7 @@ endpoint with **measured cold start (51.96 s)** and warm **p50 263.5 ms**,
 and three AI/BI dashboards demonstrated against the real quarter.
 
 **88% coverage** on transformation and feature logic, gated at 85% in CI.
-**Clone to a green run: 4 m 28 s**, measured on a cold cache.
+**Clone to a green run: 5 m 6 s**, measured on a cold cache, 2026-09-12.
 
 Four decisions that carry the project:
 
@@ -70,7 +77,7 @@ separate, free app — **[almanac-live.streamlit.app](https://almanac-live.strea
 — scoring one archived hour per schema era against a committed snapshot of
 the real registered champion (LightGBM, MLflow model registry version 2),
 with no cloud account behind it. The evidence below is the artifact, `make
-check-fast` reproduces the local half in 4 m 28 s from a fresh clone, and
+check-fast` reproduces the local half in 5 m 6 s from a fresh clone, and
 the agent's first live transcript is committed and **replays offline for
 free**.
 
@@ -136,7 +143,7 @@ review and impossible to bluff.
 
 **What this is for.** A reader can:
 
-- clone it and get a green run in **4 m 28 s** on a cold cache;
+- clone it and get a green run in **5 m 6 s** on a cold cache;
 - read the medallion over the real 341,060,851-row GH Archive quarter,
   Bronze never transforming, Silver parsing and quarantining, Gold and a
   point-in-time feature platform reading Silver as peers rather than a
@@ -423,24 +430,27 @@ docker/             containerized Spark + Delta, matching CI
 
 ```bash
 uv sync --all-extras --dev
-make check-fast   # ruff + mypy --strict + the 467 tests that need no SparkSession
+make check-fast   # ruff + mypy --strict + the 498 tests that need no SparkSession
 ```
 
-**Clone to a green run is 4 m 28 s, measured** on a fresh clone with a
-cold `uv` cache — 1 s to clone, 75 s to sync, 192 s for `check-fast`.
-Both are against a 15-minute gate, and the cold number is the one worth
-quoting. That measurement is dated 2026-09-09 and predates Phase 10's
-tests, so it is stated as what it is rather than refreshed silently:
-`check-fast` re-timed warm on **2026-09-11 runs in 42.1 s** over the
-larger suite, with the `uv` and `mypy` caches populated.
+**Clone to a green run is 5 m 6 s, measured 2026-09-12** on a fresh
+clone with a cold `uv` cache — 1 s to clone, 75 s to sync, 229 s for
+`check-fast`. Against a 15-minute gate, and this cold number is the one
+worth quoting, since it is what a first clone actually pays. Warm and
+cache-populated is a different number, not a substitute for it:
+`check-fast` alone re-timed warm on **2026-09-11 runs in 42.1 s**, with
+the `uv` and `mypy` caches already populated — the number the inner loop
+actually feels.
 
 ### The whole medallion, locally, with no cloud account
 
-The committed fixtures carry all three schema eras, and the local run
-lands **two of them** — the modern 2025 era and the legacy 2014 one, which
-are the pair the era-handling logic differs on. One command takes Bronze
-through Silver to Gold on those, building the SparkSession with Delta and a
-persistent metastore before dbt asks for one:
+This is a separate walkthrough from the live demo above, which scores
+**all three** schema eras end to end (`make demo-build`). This one
+exercises Bronze through Gold, and by design lands only **two** of the
+three committed fixtures — the modern 2025 era and the legacy 2014 one,
+which are the pair the era-handling logic differs on. One command takes
+Bronze through Silver to Gold on those, building the SparkSession with
+Delta and a persistent metastore before dbt asks for one:
 
 ```bash
 make dbt
@@ -451,9 +461,7 @@ quality rules and a quarantine path, then the Gold dbt project: an SCD2
 repo dimension, an accumulating pull-request fact, and its data tests.
 **Measured 2026-09-11: 2 m 8.78 s wall clock, 3,997 Silver rows, 23 of 23
 dbt tests passing**, on a warm `uv` cache with the Spark jars already
-retrieved. A first run pays a one-time jar download on top. The reduced-era
-fixture is committed and exercised by the unit tests, but is not one of the
-two this run lands.
+retrieved. A first run pays a one-time jar download on top.
 
 Nothing in it touches the network, and nothing in it needs Databricks. The
 cloud is where this was proven at 341M rows; it is not where the logic
@@ -505,6 +513,10 @@ is the authoritative architecture, phasing, and scope document.
 
 ## Who should look at what
 
+- **Start here** — **[almanac-live.streamlit.app](https://almanac-live.streamlit.app/)**.
+  No account, no install, no waiting on a cold start: click through the
+  ranked queue, a per-row explanation, and the agent's verified answer,
+  right now, in a browser.
 - **ML platform / MLOps** — the feature platform (`src/almanac/features/`)
   and its leakage suite, then
   [`2026-09-08-champion-rescored-temporal-split.md`](docs/findings/2026-09-08-champion-rescored-temporal-split.md):
@@ -514,9 +526,8 @@ is the authoritative architecture, phasing, and scope document.
   three schema eras, `dbt/` for Gold, and
   [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md)
   for a real incident written up properly.
-- **Hiring managers, 5 minutes** — [In sixty seconds](#in-sixty-seconds)
-  above, then the **[live demo](https://almanac-live.streamlit.app/)** to
-  click through the actual queue and the agent's verified answer, then
+- **Hiring managers, 5 minutes** — the live demo above, then
+  [In sixty seconds](#in-sixty-seconds), then
   [`docs/decision-memo.md`](docs/decision-memo.md): a ship/don't-ship call
   with a stated confidence level and a prediction that was later scored
   against what actually happened.
