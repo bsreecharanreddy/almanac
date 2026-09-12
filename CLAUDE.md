@@ -63,7 +63,7 @@ a year later.**
 PR #22 and tagged `v1.2.0`** (annotated, on `4292efb`, 2026-09-11). A
 Streamlit app scores against a committed snapshot of the registered
 champion — no cloud account needed to run it — live at
-[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/). Found
+[almanac-live.streamlit.app](https://almanac-live.streamlit.app/). Found
 by actually running things rather than trusting a test at every stage:
 an OpenMP segfault never seen before because scoring had only run on
 Databricks (importing `mlflow` before `lightgbm` crashes with no
@@ -90,11 +90,19 @@ green: **751 passed in 1:14:55**, serial
 (the repo's own documented CI fallback — `-n 4` drove this machine's
 load average to 156 and then 365, from subprocess-spawned Spark sessions
 stacking on top of xdist workers; the Makefile already documented an
-earlier load-average-35 failure mode before this one). **One follow-up
-is still open**: the live Community Cloud app tracked the
-`phase-11-local-demo` branch, which this repo's own convention deletes
-on merge — its tracked branch needs switching to `main` by hand, since
-there is no API for it, or the deployed app breaks.
+earlier load-average-35 failure mode before this one). **The predicted
+follow-up risk materialized exactly as flagged**: the live app tracked
+`phase-11-local-demo`, this repo's own convention deleted that branch on
+merge, and Streamlit Community Cloud's settings UI has no branch field to
+retarget an existing app to `main` — only App URL and Python version.
+Deleting and recreating the app on the same `almanac-demo` subdomain then
+failed at deploy time with a GitHub-access error traced through three
+layers: a revoked OAuth grant, a missing GitHub App install, and finally
+a stale subdomain reservation from the deleted app that a fresh name
+sidestepped. Redeployed at
+[almanac-live.streamlit.app](https://almanac-live.streamlit.app/),
+tracking `main` directly, and reverified live — node click, real
+hyperlinks, all five tabs — before trusting it.
 
 **Phase 9, the agent layer, and Phase 10, its grounding verifier, are both
 merged to `main` and tagged together as `v1.1.0`** (annotated, on

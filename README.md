@@ -5,7 +5,7 @@
 ![coverage gate](https://img.shields.io/badge/gate-%E2%89%A585%25%20enforced-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![mypy](https://img.shields.io/badge/mypy-strict-blue)
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://almanac-demo.streamlit.app/)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://almanac-live.streamlit.app/)
 
 An **ML platform for work-queue risk**: work items arrive in a queue, some
 breach their service expectation, and a model predicts which ones early
@@ -66,7 +66,7 @@ Four decisions that carry the project:
 production serving endpoint scales to zero and needs Databricks auth —
 everything billable is torn down between sessions on purpose, and the
 cost of each teardown is measured. What runs continuously instead is a
-separate, free app — **[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/)**
+separate, free app — **[almanac-live.streamlit.app](https://almanac-live.streamlit.app/)**
 — scoring one archived hour per schema era against a committed snapshot of
 the real registered champion (LightGBM, MLflow model registry version 2),
 with no cloud account behind it. The evidence below is the artifact, `make
@@ -515,7 +515,7 @@ is the authoritative architecture, phasing, and scope document.
   [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md)
   for a real incident written up properly.
 - **Hiring managers, 5 minutes** — [In sixty seconds](#in-sixty-seconds)
-  above, then the **[live demo](https://almanac-demo.streamlit.app/)** to
+  above, then the **[live demo](https://almanac-live.streamlit.app/)** to
   click through the actual queue and the agent's verified answer, then
   [`docs/decision-memo.md`](docs/decision-memo.md): a ship/don't-ship call
   with a stated confidence level and a prediction that was later scored

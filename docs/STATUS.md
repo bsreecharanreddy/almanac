@@ -265,7 +265,7 @@ commit as the work it describes**, never as a follow-up.
   README). **Deployed and verified live**: the user connected the GitHub
   repo through Community Cloud's web UI (no token-based API path exists
   for this, unlike the removed Hugging Face script) and deployed
-  `demo/app.py` at **[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/)**. All four tabs
+  `demo/app.py` at **[almanac-live.streamlit.app](https://almanac-live.streamlit.app/)**. All four tabs
   checked directly in a real browser against the live URL, not just the
   deploy log -- identical output to every prior local check
   (`0.768437` / `-0.940807` on Why this score, `189` rows on the queue,
@@ -365,6 +365,27 @@ commit as the work it describes**, never as a follow-up.
   `(repo_id, pr_number)` is a real unique key over the fixture population
   -- then rebuilt and recommitted `queue.parquet` and reran all 24 demo
   tests green locally (`src/almanac/demo/build.py`).
+- **The predicted post-merge risk materialized, and the fix needed three
+  more layers than expected.** PR #22 merged, `phase-11-local-demo` was
+  deleted per this repo's own convention, and the live app broke exactly
+  as flagged above. Community Cloud's app settings carry no branch field
+  at all -- only App URL and Python version -- so an existing app cannot
+  be retargeted to `main` in place. Deleting and recreating an app on the
+  same `almanac-demo` subdomain then failed at deploy time with a generic
+  GitHub-access error, traced through three separate causes before it
+  resolved: a fully revoked GitHub OAuth grant for Streamlit (neither an
+  installed GitHub App nor an authorized OAuth app showed up under the
+  account's GitHub settings), then, after re-authorizing, a stale
+  subdomain reservation from the just-deleted app that a fresh name
+  (`almanac-live`) sidestepped entirely -- confirmed by deploying under a
+  throwaway name first, which worked immediately, before committing to
+  the permanent one. Redeployed at
+  [almanac-live.streamlit.app](https://almanac-live.streamlit.app/),
+  tracking `main` directly, and reverified with a real browser rather
+  than trusted on the strength of the earlier verification: node click
+  still auto-expands and scrolls to Bronze, its two links still resolve
+  to real GitHub files, and all five tabs render with no console errors
+  beyond Streamlit's own platform-level warnings.
 
 **Phase 11 is complete. Every exit-gate row from the design doc's §10,
 marked against its actual evidence:**
@@ -400,7 +421,7 @@ marked against its actual evidence:**
   failures, 2026-09-11.
 - [x] The app is live and its URL is in the README -- adapted from "the
   Space" (Hugging Face terminology) to Streamlit Community Cloud, live at
-  [almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/), linked
+  [almanac-live.streamlit.app](https://almanac-live.streamlit.app/), linked
   from the README's badges, its "No persistent public demo" paragraph, and
   its "Hiring managers" bullet.
 - [x] The README's "No persistent public demo" paragraph is rewritten to

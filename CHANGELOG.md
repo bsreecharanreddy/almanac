@@ -11,7 +11,7 @@ deletes its own evidence is not a retraction.
 
 A Streamlit app scoring against a committed snapshot of the registered
 champion, no cloud account needed to run it, deployed publicly at
-[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/) for
+[almanac-live.streamlit.app](https://almanac-live.streamlit.app/) for
 anyone to click through.
 
 - **The OpenMP segfault, never seen before because scoring had only ever
