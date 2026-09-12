@@ -59,11 +59,10 @@ a year later.**
 
 ## Current status
 
-**Phase 11, a local demo deployed publicly, is complete on branch
-`phase-11-local-demo`, open as PR #22, targeting `v1.2.0`; not yet
-merged as this line is written.** A Streamlit app scores
-against a committed snapshot of the registered champion — no cloud
-account needed to run it — live at
+**Phase 11, a local demo deployed publicly, is merged to `main` via
+PR #22 and tagged `v1.2.0`** (annotated, on `4292efb`, 2026-09-11). A
+Streamlit app scores against a committed snapshot of the registered
+champion — no cloud account needed to run it — live at
 [almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/). Found
 by actually running things rather than trusting a test at every stage:
 an OpenMP segfault never seen before because scoring had only run on
@@ -78,12 +77,24 @@ cost alone, once Docker Spaces turned out to need a paid personal plan;
 and, on a fifth tab added after the deploy work, `AppTest`'s inability to
 execute a third-party component at all, a `session_state` key collision
 that only broke in a real browser, and a dead-links bug caught only by a
-person clicking the actual deployed page. Full suite green: **751 passed
-in 1:14:55**, serial (the repo's own documented CI fallback — `-n 4`
-drove this machine's load average to 156 and then 365, from
-subprocess-spawned Spark sessions stacking on top of xdist workers; the
-Makefile already documented an earlier load-average-35 failure mode
-before this one).
+person clicking the actual deployed page. **The reproducibility test
+itself was the same shape as the pseudonymity-guard incident below**:
+every line of it worked, and it had simply never run anywhere but the
+one laptop that also built the artifact it checked, until CI ran this
+diff on a different machine and found that 180 of 189 fixture rows tie
+exactly on one predicted score with no tiebreak in the rank — the
+queue's row order had silently followed Spark's collection order,
+stable on that one machine, never guaranteed across others. Fixed with a
+deterministic secondary sort key before merging, not after. Full suite
+green: **751 passed in 1:14:55**, serial
+(the repo's own documented CI fallback — `-n 4` drove this machine's
+load average to 156 and then 365, from subprocess-spawned Spark sessions
+stacking on top of xdist workers; the Makefile already documented an
+earlier load-average-35 failure mode before this one). **One follow-up
+is still open**: the live Community Cloud app tracked the
+`phase-11-local-demo` branch, which this repo's own convention deletes
+on merge — its tracked branch needs switching to `main` by hand, since
+there is no API for it, or the deployed app breaks.
 
 **Phase 9, the agent layer, and Phase 10, its grounding verifier, are both
 merged to `main` and tagged together as `v1.1.0`** (annotated, on

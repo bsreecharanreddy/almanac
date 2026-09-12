@@ -7,7 +7,7 @@ Every number here is measured. Where one was later found wrong, it is
 corrected **in place with the original kept**, because a retraction that
 deletes its own evidence is not a retraction.
 
-## v1.2.0 — Phase 11, the local demo (branch `phase-11-local-demo`)
+## v1.2.0 — Phase 11, the local demo, 2026-09-11
 
 A Streamlit app scoring against a committed snapshot of the registered
 champion, no cloud account needed to run it, deployed publicly at
@@ -67,6 +67,16 @@ anyone to click through.
   deployed page: the walkthrough's links rendered as inline code, never
   real hyperlinks, and a node click did nothing. All three fixed and
   reverified against the live site, not only locally.
+- **CI found a defect the local suite could not, because it was the first
+  run on a machine other than the one that built the committed
+  artifacts.** 180 of the demo's 189 fixture rows tie exactly on
+  predicted `breach_risk` (a sparse-feature hour scores most rows
+  identically), and the queue's sort had no tiebreak — rank among tied
+  rows silently followed whatever order Spark's `toPandas()` collected
+  them in, stable on any one machine and never guaranteed across
+  machines with different core counts. Fixed with a deterministic
+  secondary sort on `(repo_id, pr_number)`, a real unique key over the
+  fixture population.
 - **Real, not staged.** No feature phase changed; nothing here re-trains
   or re-registers a model. The demo scores the same registered champion
   (version 2) that Phase 4 rescored and Phase 8 shipped.

@@ -6,8 +6,8 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
-**Phase 11 (local demo) is underway on branch `phase-11-local-demo`,
-targeting `v1.2.0`.** Design doc at
+**Phase 11 (local demo) is merged to `main` via PR #22 and tagged
+`v1.2.0`** (annotated, on `4292efb`, 2026-09-11). Design doc at
 `docs/design/2026-09-11-almanac-local-demo-design.md`, plan at
 `docs/plans/2026-09-11-phase-11-local-demo-plan.md`.
 
@@ -373,7 +373,9 @@ marked against its actual evidence:**
   -- `test_demo_artifacts_reproducible.py`. Locally green from the first
   build; the claim was not actually cross-machine-true until the tiebreak
   fix above, and CI -- a different machine than every prior local run --
-  is what caught the gap and is what this row now actually rests on.
+  is what caught the gap. Green on GitHub Actions after the fix, both
+  jobs, before PR #22 merged: this row rests on that run, not the
+  same-machine one that preceded it.
 - [x] `make demo` opens all panels with no SparkSession and no network call
   -- now five, not four (Tasks 14-15 added the architecture walkthrough
   after this gate was written); confirmed via `AppTest`, a real local
