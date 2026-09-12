@@ -78,6 +78,26 @@ ml = [
     "databricks-sdk>=0.136.0",
 ]
 
+# Phase 11 (design doc 2026-09-11-almanac-local-demo-design.md): the local
+# demo scores with the champion model and never touches embeddings or a
+# Databricks client. Measured in a Docker build against the full `ml` extra
+# above at 11.1GB, almost all of it sentence-transformers'
+# torch+transformers+CUDA wheels, which the demo never imports. This is the
+# exact subset it does need; `ml` itself is untouched. Also what
+# `demo/requirements.txt` is exported from (`uv export --extra demo --extra
+# ml-scoring --extra agent`) for Streamlit Community Cloud, which installs
+# via plain pip rather than uv and cannot select extras from `uv.lock`
+# itself. The four floors are intentionally duplicated rather than derived,
+# so they can drift from `ml`'s if one changes without the other --
+# accepted because the alternative is coupling the demo's install size to
+# Phase 5-7 dependencies it has no other reason to carry.
+ml-scoring = [
+    "mlflow>=3.15.2",
+    "lightgbm>=4.7.0",
+    "scikit-learn>=1.9.0",
+    "pandas>=2.3.3,<3",
+]
+
 # Phase 9 (design doc 2026-09-09-almanac-agent-layer-design.md): the agent
 # layer. Both floors checked live against pypi.org's JSON API on 2026-09-09,
 # and both are the current release.
@@ -100,6 +120,19 @@ agent = [
     "mcp>=2.2.0",
     "openai>=3.11.0",
     "pydantic-ai>=2.42.0",
+]
+
+# Phase 11 (design doc 2026-09-11-almanac-local-demo-design.md): the local
+# demo app. Floor checked live against pypi.org's JSON API on 2026-09-11 --
+# 1.63.0 is the current release.
+#
+# streamlit-flow-component (Task 15, design doc
+# 2026-09-11-almanac-architecture-walkthrough-design.md): the fifth tab's
+# node/edge diagram. Floor checked live against pypi.org's JSON API on
+# 2026-09-11 -- 1.6.1 is the current release.
+demo = [
+    "streamlit>=1.63.0",
+    "streamlit-flow-component>=1.6.1",
 ]
 
 [build-system]

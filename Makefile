@@ -1,5 +1,6 @@
 .PHONY: test test-fast test-all lint fmt typecheck check check-fast fixtures dbt \
-	silver-fixture lineage window-up window-down lakebase-up lakebase-down coverage
+	silver-fixture lineage window-up window-down lakebase-up lakebase-down coverage \
+	demo-build demo
 
 # -n 4: four xdist workers, each with its own SparkSession. Tuned for a
 # local 8-core / 16 GB machine -- four Spark JVMs fit, eight would thrash.
@@ -59,6 +60,16 @@ check-fast:
 
 fixtures:
 	uv run python scripts/build_fixtures.py
+
+# Fixtures -> Silver -> the committed artifacts the demo reads. Spark runs
+# HERE and nowhere else: `make demo` never starts a JVM.
+demo-build:
+	uv run python -m almanac.demo.build
+
+# The app. Reads demo/data/ and demo/model/ -- no SparkSession, no JVM, no
+# network. Run `make demo-build` first if the artifacts are missing.
+demo:
+	uv run --extra demo streamlit run demo/app.py
 
 # Bronze -> Silver on the committed fixtures, so Gold has real Delta tables
 # to select from. Ephemeral output under data/, gitignored like the

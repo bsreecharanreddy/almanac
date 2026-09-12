@@ -1,0 +1,202 @@
+"""Almanac, locally. Committed artifacts, a committed champion, no cloud account."""
+
+import sys
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+# Streamlit Community Cloud runs this file directly from a plain requirements.txt
+# install, never `uv run` -- so almanac is never installed into the environment,
+# editable or otherwise, and src/ is not on sys.path without this.
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from almanac.demo import artifacts, panels  # noqa: E402
+from almanac.demo.architecture import EDGES, NODES  # noqa: E402
+from almanac.demo.champion import champion_provenance, load_champion  # noqa: E402
+
+_FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "transcripts"
+_LIVE_TRANSCRIPT = _FIXTURES / "2026-09-10-live-predict-explain.json"
+_FLIPPED_TRANSCRIPT = _FIXTURES / "2026-09-10-live-predict-explain-directions-flipped.json"
+
+st.set_page_config(page_title="Almanac — local demo", layout="wide")
+
+st.title("Almanac — work-queue risk, running locally")
+
+_medallion = artifacts.load_medallion()
+_provenance = champion_provenance()
+
+st.markdown(
+    f"""
+This runs **one archived hour per schema era** from GH Archive, scored by the
+real registered champion (version `{_provenance["model_version"]}`, run
+`{_provenance["run_id"]}`).
+
+**It is not the full dataset.** The platform's measured backfill is
+**341,060,851** rows over Q3 2025, for a measured $11.96. Every count below is
+computed from the fixture hours, not from that quarter.
+"""
+)
+
+queue_tab, explain_tab, agent_tab, lake_tab, arch_tab = st.tabs(
+    [
+        "Intervention queue",
+        "Why this score",
+        "Agent, verified",
+        "The medallion",
+        "How this was built",
+    ]
+)
+
+with queue_tab:
+    queue = artifacts.load_queue()
+    coverage = artifacts.load_coverage()
+    left, right = st.columns([3, 2])
+
+    with left:
+        st.subheader(f"Ranked by predicted breach risk — {len(queue)} pull requests")
+        st.dataframe(
+            queue[["rank", "repo_id", "pr_number", "breach_risk", "is_bot_author"]],
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption(
+            "Surrogate keys and rank position only. Logins and `owner/repo` names "
+            "identify real people who never opted into this project, so they are "
+            "never rendered — see `docs/pseudonymization.md`."
+        )
+
+    with right:
+        st.subheader("How many features actually have a value")
+        rows = panels.coverage_rows(coverage)
+        st.dataframe(rows, hide_index=True, width="stretch")
+        st.markdown(
+            "**This is point-in-time correctness, and it is not a defect.** A "
+            "feature named *to date* may read only events strictly before its own "
+            "`as_of`. One archived hour contains almost no prior history, so most "
+            "of these are null and the queue is ranking on the few that are not. "
+            "At the measured quarter's scale they populate; here you can see "
+            "exactly why they do not."
+        )
+
+with explain_tab:
+    queue = artifacts.load_queue()
+    model = st.cache_resource(load_champion)()
+
+    rank = st.number_input("Rank", min_value=1, max_value=int(queue["rank"].max()), value=1, step=1)
+    row = queue.loc[queue["rank"] == rank].iloc[0]
+
+    st.metric("Predicted breach risk", f"{row['breach_risk']:.6f}")
+    st.dataframe(panels.contributions_for(model, row), hide_index=True, width="stretch")
+    st.markdown(
+        f"Contributions move from the model's own **baseline** of "
+        f"`{panels.baseline_for(model, row):.6f}`, which is *not* a feature — "
+        "LightGBM returns one more column than there are features and the last "
+        "is the expected value. These are the champion's own numbers, computed "
+        "here, not an explanation written about them."
+    )
+
+with agent_tab:
+    st.markdown(
+        "The agent answers from tools only, and a **deterministic verifier** checks "
+        "the answer before you read it. No model call happens here: both runs below "
+        "are committed transcripts, replayed."
+    )
+    choice = st.radio(
+        "Transcript",
+        ["The live window's answer", "The same answer, one direction flipped"],
+        horizontal=True,
+    )
+    path = _LIVE_TRANSCRIPT if choice.startswith("The live") else _FLIPPED_TRANSCRIPT
+    trace = panels.grounding_for(path)
+
+    st.markdown(f"**Verdict: `{trace.verdict}`**")
+    if trace.failures:
+        for failure in trace.failures:
+            st.error(failure)
+    st.markdown(
+        "Three checks, and the second is the one that matters. Every number must "
+        "trace to a tool return. The **relationship** claimed around it must trace "
+        "to the field that claim type requires — the live window said the model was "
+        "*trained on* a Delta version the tools had only *read*, and every number in "
+        "that sentence was real. A directional statement must agree with the sign of "
+        "the contribution it names, which is what the flipped transcript violates."
+    )
+    st.dataframe(
+        pd.DataFrame([c.model_dump() for c in trace.numbers]),
+        hide_index=True,
+        width="stretch",
+    )
+
+with lake_tab:
+    medallion = artifacts.load_medallion()
+    st.subheader("Bronze, Silver, and what got quarantined")
+    st.dataframe(pd.DataFrame(medallion["eras"]), hide_index=True, width="stretch")
+    dates = ", ".join(era["event_date"] for era in medallion["eras"])
+    st.markdown(
+        f"One hour per schema era — {dates}. Bronze never transforms; the payload "
+        "stays a JSON string and parsing is per-type in Silver, so a new event type "
+        "cannot break ingestion. Bad records are **quarantined, never dropped**, and "
+        "carry an array of the rules they failed rather than a boolean, so the "
+        "quarantine is analyzable by rule. `silver + quarantine == scored` is "
+        "asserted on every build.\n\n"
+        "Run it yourself with `make demo-build`, or the full Gold path with "
+        "`make dbt`."
+    )
+
+with arch_tab:
+    st.markdown(
+        "Bronze through the grounding verifier. Each node names what the stage "
+        "found, once, and links to where it was actually measured -- the "
+        "diagram never repeats a number the linked source already states."
+    )
+    try:
+        from streamlit_flow import streamlit_flow
+        from streamlit_flow.elements import StreamlitFlowEdge, StreamlitFlowNode
+        from streamlit_flow.layouts import LayeredLayout
+        from streamlit_flow.state import StreamlitFlowState
+
+        # "arch_flow_state" (ours) must differ from the component's own
+        # widget key below -- Streamlit silently overwrites session_state
+        # under the widget's key with the component's raw dict return value
+        # on rerun, clobbering a StreamlitFlowState stored under the same name.
+        if "arch_flow_state" not in st.session_state:
+            st.session_state.arch_flow_state = StreamlitFlowState(
+                [StreamlitFlowNode(n.id, (0, 0), {"content": n.label}) for n in NODES],
+                [StreamlitFlowEdge(f"{e.source}-{e.target}", e.source, e.target) for e in EDGES],
+            )
+        st.session_state.arch_flow_state = streamlit_flow(
+            "arch_flow_widget",
+            st.session_state.arch_flow_state,
+            layout=LayeredLayout(direction="right", node_node_spacing=60, node_layer_spacing=140),
+            height=360,
+            fit_view=True,
+            get_node_on_click=True,
+        )
+    except Exception:
+        # Custom Streamlit components need a real browser round-trip and do
+        # not function under AppTest's headless simulation. The expander
+        # list below is independently tested and carries every node
+        # regardless of whether the canvas itself can render.
+        st.info("The diagram needs a live browser session; the list below carries every node.")
+
+    _selected = getattr(st.session_state.get("arch_flow_state"), "selected_id", None)
+    _GITHUB_BLOB = "https://github.com/bsreecharanreddy/almanac/blob/main/"
+
+    for node in NODES:
+        st.markdown(f'<div id="arch-node-{node.id}"></div>', unsafe_allow_html=True)
+        with st.expander(node.label, expanded=(node.id == _selected)):
+            st.markdown(node.summary)
+            for link in node.links:
+                st.markdown(f"- [{link}]({_GITHUB_BLOB}{link})")
+
+    if _selected:
+        st.components.v1.html(
+            f"""<script>
+            const el = window.parent.document.getElementById("arch-node-{_selected}");
+            if (el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
+            </script>""",
+            height=0,
+        )

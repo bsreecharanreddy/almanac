@@ -35,6 +35,14 @@ PUBLISHED_GLOBS: tuple[str, ...] = (
     ".claude/**/*.md",
     ".claude/**/*.sh",
     ".claude/**/*.json",
+    # The demo is deployed publicly, which makes it the highest-exposure
+    # surface this repo has. Added with the demo itself rather than after it,
+    # because the one time this check missed a leak it was not broken -- it
+    # was aimed at the wrong files, and passed cleanly forever.
+    "demo/**/*.py",
+    "demo/**/*.json",
+    "demo/**/*.md",
+    "demo/requirements.txt",
 )
 
 # Two characters is not an identity, it is a false-positive generator: a
@@ -129,9 +137,38 @@ def scan_text(text: str, *, identifiers: Sequence[str], path: str = "<text>") ->
     return found
 
 
+def _git_ignored(paths: Sequence[Path], *, root: Path) -> set[Path]:
+    """Paths git will never publish, however a glob reads.
+
+    Found 2026-09-11: `demo/**/*.json` (added for the local demo) also
+    matches `demo/data/lake/`, the build step's gitignored Bronze/Silver
+    Delta scratch -- and Delta's own column statistics bake in the local
+    absolute path of whatever fixture was ingested, which reads as a local
+    identifier on the machine that built it. That scratch is never
+    committed, so it is not a publication surface regardless of what glob
+    happens to reach it.
+    """
+    if not paths:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            input="\n".join(str(p.relative_to(root)) for p in paths),
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:  # pragma: no cover - platform guard
+        return set()
+    return {root / line for line in result.stdout.splitlines() if line}
+
+
 def published_files(root: Path, globs: Iterable[str] = PUBLISHED_GLOBS) -> list[Path]:
     """Every published artifact under `root`, in a stable order."""
-    return sorted({path for glob in globs for path in root.glob(glob) if path.is_file()})
+    candidates = sorted({path for glob in globs for path in root.glob(glob) if path.is_file()})
+    ignored = _git_ignored(candidates, root=root)
+    return [path for path in candidates if path not in ignored]
 
 
 def scan(root: Path, *, identifiers: Sequence[str]) -> list[Finding]:

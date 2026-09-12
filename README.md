@@ -5,6 +5,7 @@
 ![coverage gate](https://img.shields.io/badge/gate-%E2%89%A585%25%20enforced-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![mypy](https://img.shields.io/badge/mypy-strict-blue)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://almanac-demo.streamlit.app/)
 
 An **ML platform for work-queue risk**: work items arrive in a queue, some
 breach their service expectation, and a model predicts which ones early
@@ -61,12 +62,17 @@ Four decisions that carry the project:
   sign of the contribution it names. A run that fails is retried once,
   then abstains. See [The agent layer](#the-agent-layer-and-why-it-is-verified-rather-than-trusted).
 
-**No persistent public demo.** The serving endpoint scales to zero and
-needs Databricks auth; everything billable is torn down between sessions
-on purpose, and the cost of each teardown is measured. The evidence below
-is the artifact, `make check-fast` reproduces the local half in 4 m 28 s
-from a fresh clone, and the agent's first live transcript is committed and
-**replays offline for free**.
+**A persistent public demo, not the live serving endpoint.** The
+production serving endpoint scales to zero and needs Databricks auth —
+everything billable is torn down between sessions on purpose, and the
+cost of each teardown is measured. What runs continuously instead is a
+separate, free app — **[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/)**
+— scoring one archived hour per schema era against a committed snapshot of
+the real registered champion (LightGBM, MLflow model registry version 2),
+with no cloud account behind it. The evidence below is the artifact, `make
+check-fast` reproduces the local half in 4 m 28 s from a fresh clone, and
+the agent's first live transcript is committed and **replays offline for
+free**.
 
 ### What it looks like
 
@@ -430,10 +436,11 @@ larger suite, with the `uv` and `mypy` caches populated.
 
 ### The whole medallion, locally, with no cloud account
 
-The committed fixtures carry **all three schema eras**, so the pipeline can
-be run end to end on a laptop against real archived events. One command
-takes Bronze through Silver to Gold, building the SparkSession with Delta
-and a persistent metastore before dbt asks for one:
+The committed fixtures carry all three schema eras, and the local run
+lands **two of them** — the modern 2025 era and the legacy 2014 one, which
+are the pair the era-handling logic differs on. One command takes Bronze
+through Silver to Gold on those, building the SparkSession with Delta and a
+persistent metastore before dbt asks for one:
 
 ```bash
 make dbt
@@ -442,9 +449,11 @@ make dbt
 That is Bronze read without transformation, Silver parsing per era with
 quality rules and a quarantine path, then the Gold dbt project: an SCD2
 repo dimension, an accumulating pull-request fact, and its data tests.
-**Measured 2026-09-11: 2 m 8.78 s wall clock, 23 of 23 dbt tests passing**,
-on a warm `uv` cache with the Spark jars already retrieved. A first run
-pays a one-time jar download on top.
+**Measured 2026-09-11: 2 m 8.78 s wall clock, 3,997 Silver rows, 23 of 23
+dbt tests passing**, on a warm `uv` cache with the Spark jars already
+retrieved. A first run pays a one-time jar download on top. The reduced-era
+fixture is committed and exercised by the unit tests, but is not one of the
+two this run lands.
 
 Nothing in it touches the network, and nothing in it needs Databricks. The
 cloud is where this was proven at 341M rows; it is not where the logic
@@ -506,9 +515,11 @@ is the authoritative architecture, phasing, and scope document.
   [`docs/postmortem-watermark-data-loss.md`](docs/postmortem-watermark-data-loss.md)
   for a real incident written up properly.
 - **Hiring managers, 5 minutes** — [In sixty seconds](#in-sixty-seconds)
-  above, then [`docs/decision-memo.md`](docs/decision-memo.md): a
-  ship/don't-ship call with a stated confidence level and a prediction that
-  was later scored against what actually happened.
+  above, then the **[live demo](https://almanac-demo.streamlit.app/)** to
+  click through the actual queue and the agent's verified answer, then
+  [`docs/decision-memo.md`](docs/decision-memo.md): a ship/don't-ship call
+  with a stated confidence level and a prediction that was later scored
+  against what actually happened.
 - **Anyone checking whether the claims hold** —
   [`docs/goal-reconciliation.md`](docs/goal-reconciliation.md) marks every
   stated goal done / partly / not done against the artifact that would

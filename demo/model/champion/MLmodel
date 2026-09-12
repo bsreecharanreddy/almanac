@@ -1,0 +1,41 @@
+artifact_path: dbfs:/databricks/mlflow-tracking/3479548709615268/logged_models/m-b515f4f5f0624b94a7da4a50ea2bbd9f/artifacts
+databricks_runtime: '17.3'
+flavors:
+  lightgbm:
+    code: null
+    data: model.skops
+    lgb_version: 4.7.0
+    model_class: lightgbm.sklearn.LGBMClassifier
+    serialization_format: skops
+    skops_trusted_types:
+    - lightgbm.basic.Booster
+    - lightgbm.sklearn.LGBMClassifier
+    - lightgbm.sklearn.LGBMRegressor
+    - collections.OrderedDict
+  python_function:
+    data: model.skops
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.lightgbm
+    python_version: 3.12.3
+is_signature_from_type_hint: false
+mlflow_version: 3.16.0
+model_id: m-b515f4f5f0624b94a7da4a50ea2bbd9f
+model_size_bytes: 404577
+model_uuid: m-b515f4f5f0624b94a7da4a50ea2bbd9f
+prompts: null
+run_id: 5f6a71bd9e4f4b6d8f7ea0a6454c0ca5
+signature:
+  inputs: '[{"type": "double", "name": "prior_pr_count", "required": false}, {"type":
+    "double", "name": "prior_merge_rate", "required": false}, {"type": "double", "name":
+    "events_total_to_date", "required": false}, {"type": "double", "name": "bot_events_to_date",
+    "required": false}, {"type": "double", "name": "prs_opened_to_date", "required":
+    false}, {"type": "double", "name": "bot_share_to_date", "required": false}, {"type":
+    "double", "name": "is_draft", "required": false}, {"type": "double", "name": "is_bot_author",
+    "required": true}, {"type": "double", "name": "opened_day_of_week", "required":
+    true}, {"type": "double", "name": "opened_hour", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "bool", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-09-08 21:36:02.462076'

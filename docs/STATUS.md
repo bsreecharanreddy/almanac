@@ -6,6 +6,413 @@ commit as the work it describes**, never as a follow-up.
 
 ## Current position
 
+**Phase 11 (local demo) is underway on branch `phase-11-local-demo`,
+targeting `v1.2.0`.** Design doc at
+`docs/design/2026-09-11-almanac-local-demo-design.md`, plan at
+`docs/plans/2026-09-11-phase-11-local-demo-plan.md`.
+
+- **Task 1, the import-order guard (`src/almanac/model/native.py`).**
+  Measured 2026-09-11 on macOS arm64, Python 3.12, lightgbm 4.7.0, mlflow
+  3.16.0: importing `lightgbm` before `mlflow` succeeds **10 of 10** runs;
+  pandas-then-numpy-then-`mlflow` fails **10 of 10**; numpy-then-`mlflow`
+  with no explicit `lightgbm` fails **3 of 3** -- all as a SIGSEGV with no
+  traceback. Never seen before because scoring had only ever run on
+  Databricks runtime; Phase 11 is the first thing here to score on a
+  laptop. The guard is an AST test, not a comment, and it was verified by
+  reversal: reordering the two imports made
+  `tests/unit/test_model_native.py` fail, and restoring them made it pass
+  again.
+- **Task 2, the committed champion (`src/almanac/demo/champion.py`,
+  `demo/model/champion/`).** Version 2 under the `@champion` alias, run
+  `5f6a71bd9e4f4b6d8f7ea0a6454c0ca5` -- fetched from the registry once (a
+  free read, no compute) and committed: 432 KB, 10 files. Loads and scores
+  with no network (`DATABRICKS_HOST=` `DATABRICKS_TOKEN=` and the suite
+  still passes); a pinned vector scores `0.6937982497227584`, measured
+  against this exact artifact. **Found the plan's own signature test was
+  wrong against the real artifact**: MLflow wraps the long `inputs` scalar
+  in `MLmodel` across YAML lines, so the plan's plain
+  `'"name": "..."' in text` substring check broke on
+  `events_total_to_date`, which the wrap happens to split, even though the
+  signature does name it. Fixed by parsing the YAML and the embedded JSON
+  signature instead of substring-matching the raw text.
+- **Task 3, the build step's medallion counts (`src/almanac/demo/build.py`,
+  `demo/data/medallion.json`).** Lands all three fixture eras through
+  Bronze and Silver, `silver + quarantine == scored` asserted on each.
+  Measured 2026-09-11: modern (2025-08-13) 2,000 bronze / 2,000 silver / 0
+  quarantine; legacy (2014-06-12) 2,000 bronze / 1,997 silver / 3
+  quarantine; reduced (2025-11-03) 2,000 bronze / 2,000 silver / 0
+  quarantine. **Found a second defect, this time in `.gitignore`**: its
+  bare `data/` pattern (for the ephemeral top-level warehouse) is
+  unanchored, so it also matched `demo/data/` at depth and silently
+  swallowed the committed build artifacts this task and the file
+  structure table both require. Anchored to `/data/`; `demo/data/` is
+  trackable and the top-level warehouse stays ignored.
+- **Task 4, features/scores/coverage (`build_queue`,
+  `demo/data/queue.parquet`, `demo/data/coverage.json`).** Measured
+  2026-09-11 over all three eras: **189** opened pull requests (up from
+  137 on the two-era fixture), and **7 of 10** features null for most
+  rows -- `prior_merge_rate` null for all 189, `events_total_to_date` /
+  `bot_events_to_date` / `prs_opened_to_date` / `bot_share_to_date` non-null
+  for 14, `prior_pr_count` for 28, `is_draft` for 80. The three
+  non-temporal features (`is_bot_author`, `opened_day_of_week`,
+  `opened_hour`) are populated for all 189, as expected -- they are not
+  "to date" aggregates. **Found two more defects by running it.** First,
+  `is_bot_author` is both a published surrogate-safe column and a model
+  feature; the plan's literal `_PUBLISHED_COLUMNS + FEATURE_COLUMNS`
+  selects it twice, which makes `pdf[FEATURE_COLUMNS]` return 11 columns
+  for 10 names -- deduplicated by dropping it from the published list
+  when it is already in `FEATURE_COLUMNS`. Second, the plan's own Task 4
+  tests called `build_queue(spark, out_dir=tmp_path)` on a fresh
+  `tmp_path` with no prior `build_medallion` call, which `build_queue`
+  depends on for its Bronze/Silver Delta input; each test now lands the
+  medallion first, matching Task 3's own tests' pattern.
+- **Task 5, byte-identical regeneration
+  (`tests/integration/test_demo_artifacts_reproducible.py`).** The
+  project's governing invariant, applied to its own demo: a fresh rebuild
+  is hashed against the committed `medallion.json`, `coverage.json` and
+  `queue.parquet`. **Measured the opposite of what the plan predicted**:
+  it says a first run fails on `queue.parquet` because parquet embeds
+  writer metadata, and this repo's pyarrow 25.0.1 / pandas 2.3.3 produced
+  a byte-identical parquet footer on the first try, across two genuinely
+  separate processes (the committed copy from Task 4's `make demo-build`,
+  compared against a fresh rebuild in the test's own process) -- so
+  Step 3's engine/`store_schema` parquet rewrite was not applied; nothing
+  to fix if nothing is broken. Verified the check can still fail: mutated
+  one byte of the committed `coverage.json`, watched the test fail, and
+  restored it.
+- **Task 6, the pseudonymity guard extended to `demo/`
+  (`src/almanac/governance/pseudonymity.py`).** `PUBLISHED_GLOBS` gains
+  `demo/**/*.py`, `demo/**/*.json`, `demo/**/*.md`, `demo/Dockerfile`.
+  **Immediately found a real gap this widening exposed**, not in a
+  committed artifact but in what the check itself scans: `demo/**/*.json`
+  also matches `demo/data/lake/`, the build step's gitignored Bronze/Silver
+  Delta scratch, and Delta's own column statistics baked in the local
+  absolute fixture path (`/Users/<login>/...`) -- a local identifier, on a
+  file that will never be published. `published_files` now excludes
+  gitignored matches (`git check-ignore --stdin`), with a dedicated
+  regression test using a throwaway `git init` repo, independent of
+  whatever scratch state happens to be on a given machine. The committed
+  artifacts themselves (`medallion.json`, `coverage.json`, `queue.parquet`)
+  were already clean; the fix is in the check's own surface, not the build
+  step's output.
+- **Task 7, panel data prep (`src/almanac/demo/artifacts.py`,
+  `src/almanac/demo/panels.py`).** Pure functions: coverage rows that
+  report the null side, contributions sorted by strength with a direction
+  label, a grounding verdict replayed from a committed transcript with no
+  model call. `DEMO_DATA_DIR` moved from `build.py` into `artifacts.py`
+  per the plan's own note, so the app's import graph never reaches
+  `pyspark`; a test asserts that directly over the AST. Fixing that
+  required also repointing Task 5's reproducibility test at the new
+  location (`mypy --strict` refuses an implicit re-export through
+  `build.py`), which the plan's note did not call out but follows the
+  same move.
+- **Task 8, the app shell (`demo/app.py`).** Streamlit enters as a new
+  `demo` optional-dependency group, floor checked live against pypi.org's
+  JSON API on 2026-09-11: **1.63.0** is the current release. The app
+  declares its scale on load -- "one archived hour per schema era" and
+  the measured **341,060,851**-row backfill, both asserted by a headless
+  `AppTest` run rather than a screenshot, per Phase 8's most expensive
+  recorded finding (a dashboard that rendered 200 healthy-looking rows
+  against a horizon 340 days wrong). Ran `make demo` for real: served
+  HTTP 200 and a healthy `/_stcore/health`, then stopped. **One
+  environment hazard hit and avoided**: `uv sync --extra demo` (bare, one
+  extra) silently dropped `pyspark`, `mlflow`, `lightgbm` and every other
+  previously-synced extra from `.venv` -- uv treats a bare `--extra` sync
+  as declaring the *complete* desired set, not adding to it. Restored with
+  `uv sync --all-extras --dev`, the command this repo's own CI and README
+  already use; `uv run --extra demo ...` (per-invocation, not a sync) did
+  not reproduce the problem once the venv was correctly synced.
+- **Task 9, the intervention queue and its coverage panel (`demo/app.py`).**
+  Ranked queue on the left, per-feature null coverage on the right, given
+  equal visual weight deliberately: 7 of 10 features null for most rows
+  (Task 4) is the governing invariant made visible rather than asserted.
+  Surrogate keys and rank only -- no login, no `owner/repo` -- asserted by
+  a test over the rendered dataframe's own columns.
+- **Task 10, the contributions panel (`demo/app.py`).** Reuses
+  `contribution_frame` rather than adding scoring logic. The baseline is
+  labelled as not a feature -- LightGBM returns `n_features + 1` columns
+  and the last is the expected value, a silent off-by-one if left
+  unlabelled. **Found live**: Streamlit 1.63.0 flags `use_container_width`
+  (used in Task 9's own panels) as deprecated, already past its stated
+  2025-12-31 removal date. Replaced every occurrence with `width="stretch"`
+  rather than carrying a known-past-due deprecation into new code beside
+  it; confirmed the warning is gone by rerunning the app headlessly.
+- **Task 11, the agent panel (`demo/app.py`).** Replays the two committed
+  Phase 9/10 transcripts with no model call. Both verify **`ungrounded`**
+  -- the live window's own answer included the false "trained on" claim
+  Phase 10's verifier exists to catch, and the flipped-direction fixture
+  is a deliberate second failure -- so the default-selected radio option
+  already demonstrates a reject, not only the accept path. The copy leads
+  with the relationship check over the numeric one, matching what the
+  live run actually got wrong: every number in its answer was real: what
+  was false was the relationship one sentence claimed around them.
+- **Task 12, the medallion panel (`demo/app.py`).** Bronze/Silver/quarantine
+  counts per era, read from the artifact Task 3's build step already
+  writes, with the two rules a row count alone doesn't show -- Bronze
+  never transforms, and quarantine carries the array of rules failed
+  rather than a boolean. **Full suite run measured**: `uv run pytest -m
+  "not network"` (the `make check`/`test` target) -- **751 passed in
+  4660.46s (1:17:40)**, serial, zero failures. Not this project's usual
+  fast number, and it took two aborted attempts to get: `-n 4` (the
+  Makefile's documented default) drove this machine's load average to
+  **156**, then **365**, on two separate tries -- several `test_gold_*`
+  and `test_model_dataset_versions.py` tests spawn `almanac.gold.runner`
+  as a *subprocess*, which builds its own SparkSession on top of the
+  xdist worker's own session, so under `-n 4` up to 8 concurrent JVMs
+  compete for `local[*]` at once. This repo's own Makefile documents `-n
+  4` as tuned for "an 8-core/16GB machine, on an otherwise idle machine"
+  and already records a load-average-35 failure mode; today's session
+  saw both other Claude Code sessions and ordinary desktop apps sharing
+  this machine, which is exactly "not idle." Killing and rerunning
+  serially reproduces this repo's own stated CI fallback and finished
+  clean. First attempt was killed at ~95% complete on the load-average
+  signal alone, before checking whether it was progressing -- the second
+  confirmed the JVM was actively accumulating CPU time throughout, not
+  stalled; killing on a load spike without checking for forward progress
+  cost more than either failure would have.
+- **Task 13, deploying the demo -- the plan's own Step 2 warning earned
+  its place, and the target changed from the plan's own choice.** Built
+  the plan's Hugging Face Spaces Dockerfile first, and it **did not
+  work**, twice, caught only by running the built container: an HTTP 200
+  from Streamlit proves the server started, not that the script ran
+  without exception, since a crashed script's traceback renders
+  client-side over the websocket. First defect: `--extra demo` alone
+  installs only Streamlit; the container served 200 while `python -c
+  "from almanac.demo.champion import champion_provenance"` threw
+  `ModuleNotFoundError: lightgbm` inside it. Second, after adding `--extra
+  ml --extra agent` and rebuilding: a real browser navigation (not curl)
+  showed a live traceback -- `panels.py` imported `load_transcript` from
+  `almanac.agent.bounded_agent`, which imports `gateway` -> `mcp_server`
+  -> `pyspark` at module level, all three first-party hops before the
+  third-party one. **The app's own Task 7 import-graph test passed
+  throughout and could not have caught this**: it walked only
+  `artifacts.py`/`panels.py`/`champion.py`'s own top-level statements, not
+  what they import transitively -- the exact "control aimed at the wrong
+  scope" failure this file's own Phase 8 pseudonymity entry already named.
+  Fixed at the root: `save_transcript`/`load_transcript` moved out of
+  `bounded_agent.py` into a new `almanac.agent.transcript` (pydantic_ai
+  message types only, no pyspark anywhere in its own or its imports'
+  source), with `bounded_agent.py` re-exporting both via `__all__` for its
+  eight existing callers. The regression test was rewritten as a
+  first-party-only transitive AST walk rather than a subprocess import
+  check -- tried the subprocess approach first and it failed on
+  `almanac.model.train` alone: bare `import mlflow` already pulls in
+  `pyspark` in this repo's single all-extras dev venv, because mlflow
+  probes for installed integrations, which would fail the test for a
+  reason with nothing to do with almanac's own code. **A second, unrelated
+  defect found the same way**: the working container measured **11.1GB**
+  (a BuildKit attestation manifest list made an early `docker images` read
+  stick to a stale per-arch layer showing 1.75GB while `docker top` inside
+  the *running* container showed the old, pre-fix CMD; rebuilding with
+  `--provenance=false --sbom=false` fixed the ambiguity). 11.1GB traced to
+  the `ml` extra's `sentence-transformers` (torch + transformers + CUDA
+  wheels) and three Databricks clients -- Phase 5-7 dependencies the demo
+  never imports, since it only scores with a committed LightGBM model.
+  Added `ml-scoring` to `pyproject.toml` (`mlflow`, `lightgbm`,
+  `scikit-learn`, `pandas` -- the strict subset, floors intentionally
+  duplicated from `ml` rather than derived; `ml` itself untouched),
+  swapped it in, and rebuilt: **2.33GB, measured**, same scoring output
+  (`0.768437` predicted risk, `-0.940807` baseline) confirmed by
+  re-running the browser check. All four tabs verified rendering with no
+  console errors, twice, via real navigation and clicks, not an HTTP
+  status code.
+
+  **Then the target changed.** Docker/Hugging Face Spaces was fully
+  working, but creating a Docker Space on a personal account requires a
+  paid PRO plan ($9/mo) -- checked directly against Hugging Face's own
+  `spaces-overview.md` rather than assumed, because the free-tier
+  exception on that page is for Gradio apps on ZeroGPU specifically, which
+  does not apply here. The user chose Streamlit Community Cloud instead:
+  free, no account tier requirement, and a better fit since this is
+  already a Streamlit app -- no Dockerfile needed at all. **This is a
+  deviation from the plan's own Step 1-4 text** (it names Hugging Face
+  Spaces specifically), made explicitly by the user after the cost
+  tradeoff was presented, not freelanced. `demo/Dockerfile`,
+  `scripts/deploy_space.py`, `almanac.demo.deploy_space`, and their tests
+  are removed -- built and fully verified for a target no longer in use,
+  and keeping unused deploy tooling around is worse than deleting it. The
+  pyspark fix and the `ml-scoring` extra carry over unchanged: both are
+  platform-independent correctness/size fixes, not Docker-specific.
+
+  Community Cloud reads a `uv.lock` at the repo root automatically, but
+  with no way to select extras that could be confirmed -- a bare `uv sync`
+  would install only the four base dependencies (`httpx`, `pydantic`,
+  `pydantic-settings`, `pyyaml`), none of which is `streamlit`. Generated
+  `demo/requirements.txt` instead via `uv export --extra demo --extra
+  ml-scoring --extra agent --no-dev --no-emit-project --no-hashes
+  --no-header --format requirements-txt` (168 packages, no torch, no
+  pyspark, no Databricks SDK beyond what mlflow itself pulls in) --
+  Community Cloud checks the entrypoint's own directory before the repo
+  root, so a `demo/requirements.txt` beside `demo/app.py` is found first.
+  `--no-emit-project` drops the `-e .` editable-install line `uv export`
+  emits by default: pip's hash-checking mode is documented as incompatible
+  with editable installs, and whether Community Cloud even runs pip from a
+  cwd where `-e .` would resolve correctly could not be verified without a
+  real account, so `demo/app.py` gets a `sys.path` insertion of `src/`
+  instead (guarded, additive, so it does not affect the existing `uv run`
+  path) -- correct regardless of Community Cloud's install-time cwd,
+  removing the whole class of uncertainty rather than guessing at it.
+  **Verified against the closest available local proxy**: a completely
+  fresh `python -m venv`, `pip install -r demo/requirements.txt` with no
+  `uv` anywhere on the system, then `streamlit run demo/app.py` from that
+  venv's interpreter -- Intervention queue and Why this score both
+  rendered with the identical scoring output (`0.768437` / `-0.940807`)
+  already measured in Docker and in `uv run`, confirming the `sys.path`
+  fallback and the trimmed dependency set both actually work outside any
+  uv-managed environment. `demo/README.md` rewritten as a plain
+  description doc (the Hugging Face Spaces YAML frontmatter no longer
+  applies -- Community Cloud's configuration is its own web UI, not a
+  README). **Deployed and verified live**: the user connected the GitHub
+  repo through Community Cloud's web UI (no token-based API path exists
+  for this, unlike the removed Hugging Face script) and deployed
+  `demo/app.py` at **[almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/)**. All four tabs
+  checked directly in a real browser against the live URL, not just the
+  deploy log -- identical output to every prior local check
+  (`0.768437` / `-0.940807` on Why this score, `189` rows on the queue,
+  `ungrounded` on Agent verified with the correct rejection reason, all
+  three eras and the quarantine invariant on the medallion). One console
+  error is Community Cloud's own platform chrome (an anonymous-viewer
+  account-details call), unrelated to this app's code. README's "No
+  persistent public demo" paragraph retired with the live link, and the
+  badge and "Hiring managers" bullet both point at it now.
+- **Tasks 14-15, the architecture walkthrough -- a fifth tab, added after
+  Task 13 at the user's request.** Design at
+  `docs/design/2026-09-11-almanac-architecture-walkthrough-design.md`;
+  explicitly revisits and supersedes the original local-demo design doc's
+  §11 row rejecting a fifth panel, rather than quietly overriding it --
+  weighed a separate `st.navigation` page against a fifth tab directly,
+  and picked the tab for immediate visibility to a hiring-manager-facing
+  visitor. **Task 14 done**: `src/almanac/demo/architecture.py`, nine
+  nodes (Bronze through the grounding verifier) each carrying a link to
+  the real ADR/finding where its claim was actually measured, never a
+  restated number -- the design doc's governing rule enforced as a test
+  (`test_no_summary_or_label_contains_a_digit`) rather than left as a
+  convention. A second test walks every node's links against the real
+  filesystem (`test_every_link_resolves_to_a_real_file`); all nine
+  resolved on the first attempt, checked directly against `ls docs/adr/
+  docs/findings/` rather than guessed. 5 passed, `mypy --strict` and
+  `ruff` both clean. **Task 15 done -- and it found a real, subtle
+  Streamlit bug the same way Task 13 found the pyspark one: by actually
+  running it in a browser, not trusting `AppTest`.** `streamlit-flow-
+  component` (1.6.1, checked live against pypi.org's JSON API) added to
+  the `demo` extra; `demo/requirements.txt` regenerated. `AppTest` cannot
+  execute a custom component's frontend canvas at all -- the first real
+  attempt raised inside the library itself (`'StreamlitFlowState' object
+  is not subscriptable`), caught and shown as a graceful fallback rather
+  than crashing the tab, with an expander list underneath carrying every
+  node's summary and links independently of whether the canvas renders.
+  **A second, separate bug surfaced only in a real browser, past what
+  `AppTest` could ever have caught**: the diagram silently failed there
+  too, with a different underlying cause -- `st.session_state["arch_flow"]`
+  used the same name as the component's own widget `key`, so Streamlit's
+  widget-state mechanism overwrote the stored `StreamlitFlowState` object
+  with the component's raw dict return value on rerun
+  (`AttributeError: 'dict' object has no attribute 'nodes'`), traced by
+  temporarily writing the caught traceback to a file since the browser
+  console itself showed nothing (the exception is server-side Python, not
+  frontend JS). Fixed by giving the two names deliberately different
+  values, matching the library's own documented pattern. Verified for
+  real afterward: all nine nodes and all eight edges render in the
+  correct `LayeredLayout` positions, a node click produces no console
+  error, and every expander opens to the exact summary and link text
+  `architecture.py` defines. `test_the_architecture_tab_renders_every_node_with_no_exception`
+  checks expander labels via `app.expander` (not `app.markdown` --
+  `st.expander`'s own title is a distinct AppTest element, found only
+  after the first version of this test failed against real output).
+  13 passed across `test_demo_app.py`/`test_demo_architecture.py`/
+  `test_demo_panels.py`, `ruff`, `ruff format --check`, and
+  `mypy --strict` all clean.
+- **Task 15 fix, found by the user actually using the live tab.** The
+  links under each node were never real hyperlinks -- rendered as
+  `` `{link}` ``, inline code, not `[text](url)`. Fixed to
+  `https://github.com/bsreecharanreddy/almanac/blob/main/{link}`, and the
+  node click was wired to the list below it: `selected_id` from the
+  flow's returned state now drives `st.expander(..., expanded=...)`, with
+  a small `st.components.v1.html` script reaching into `window.parent` to
+  scroll the matching section into view (custom components render in
+  same-origin iframes on Community Cloud, so this crosses the frame
+  boundary safely). **Checked directly against `origin/main` before
+  trusting the `blob/main/` links would resolve post-merge**: all 14
+  distinct link targets across the nine nodes already exist there via
+  `git ls-tree`, not assumed from "they're pre-existing docs." Verified
+  live: clicking "Bronze" in the diagram scrolled to and opened the
+  Bronze section, and its two links opened the real GitHub files in a new
+  tab (Streamlit's own markdown-link default, not something added here).
+  **A real operational risk this surfaced**: the live Community Cloud app
+  tracks the `phase-11-local-demo` branch, which this repo's own
+  convention has deleted after every previous phase's PR merged. If that
+  happens here too, the deployed app breaks outright, not just its links
+  -- Community Cloud's branch setting needs to be switched to `main`
+  after this phase's PR merges, a manual step with no API to automate,
+  carried into Task 13 Step 7 below as a closing action.
+- **A defect CI found that the local suite could not, after PR #22 was
+  already open.** The first `pytest` run of this diff on a machine other
+  than the one that built the committed artifacts failed:
+  `test_a_rebuild_reproduces_every_committed_artifact` reported a different
+  SHA-256 for `queue.parquet` on GitHub Actions' Linux runner than the one
+  committed from macOS -- `medallion.json` and `coverage.json` matched;
+  only the row-order-sensitive file did not. Cause: **180 of the 189**
+  fixture rows tie exactly on `breach_risk` (the sparse-feature hour scores
+  most rows identically), and `build_queue`'s `pdf.sort_values("breach_risk")`
+  carried no tiebreak, so rank among tied rows silently followed whatever
+  order Spark's `toPandas()` happened to collect them in -- stable on any
+  one machine, never guaranteed across machines with different core counts.
+  The local suite had been green every time, including the run that
+  produced the committed file, because every run before this one was on
+  the same laptop; the exit-gate row below had asserted reproducibility on
+  the strength of that same-machine run. Fixed with a deterministic
+  secondary sort key, `["breach_risk", "repo_id", "pr_number"]` --
+  `(repo_id, pr_number)` is a real unique key over the fixture population
+  -- then rebuilt and recommitted `queue.parquet` and reran all 24 demo
+  tests green locally (`src/almanac/demo/build.py`).
+
+**Phase 11 is complete. Every exit-gate row from the design doc's §10,
+marked against its actual evidence:**
+
+- [x] `make demo-build` regenerates the committed artifacts byte-identically
+  -- `test_demo_artifacts_reproducible.py`. Locally green from the first
+  build; the claim was not actually cross-machine-true until the tiebreak
+  fix above, and CI -- a different machine than every prior local run --
+  is what caught the gap and is what this row now actually rests on.
+- [x] `make demo` opens all panels with no SparkSession and no network call
+  -- now five, not four (Tasks 14-15 added the architecture walkthrough
+  after this gate was written); confirmed via `AppTest`, a real local
+  browser, and the live production site; the transitive-import test
+  (Task 13's fix) guarantees no `pyspark` reachable from any of them.
+- [x] The champion scores a pinned vector to a pinned value, offline --
+  `0.6937982497227584`, Task 2, with `DATABRICKS_HOST=` `DATABRICKS_TOKEN=`
+  unset and the suite still green.
+- [x] The import-order regression test fails when the order is reversed --
+  Task 1, verified by reversal (swapping the imports turns the test red).
+- [x] The grounding panel shows the flipped-direction transcript being
+  **rejected** -- confirmed on the live site (`ungrounded` verdict,
+  correct rejection reason) and in `test_the_flipped_transcript_is_rejected`.
+- [x] No login and no `owner/repo` appears in any committed demo artifact --
+  13 pseudonymity tests green, including the two Task 6 added specifically
+  for the demo surface.
+- [x] `pseudonymity.py` covers `demo/` and the deploy folder -- adapted
+  during the platform pivot: `demo/Dockerfile` (Hugging Face-specific, now
+  removed) replaced in `PUBLISHED_GLOBS` by `demo/requirements.txt`, the
+  actual artifact the current deploy path publishes.
+- [x] Full `make check` green -- **751 passed in 1:14:55**, serial, zero
+  failures, 2026-09-11.
+- [x] The app is live and its URL is in the README -- adapted from "the
+  Space" (Hugging Face terminology) to Streamlit Community Cloud, live at
+  [almanac-demo.streamlit.app](https://almanac-demo.streamlit.app/), linked
+  from the README's badges, its "No persistent public demo" paragraph, and
+  its "Hiring managers" bullet.
+- [x] The README's "No persistent public demo" paragraph is rewritten to
+  match -- states what actually runs continuously now and distinguishes it
+  clearly from the production serving endpoint, which is still torn down
+  between sessions exactly as before.
+
+Two deviations from the plan's own text, both explicit rather than silent:
+the deploy target itself (Hugging Face Spaces -> Streamlit Community
+Cloud, on cost, documented in Task 13's own entry above and in
+`CHANGELOG.md`), and two tasks added mid-phase at the user's request
+(14-15, the architecture walkthrough) that the original 13-task plan does
+not mention because they postdate it.
+
 **`v1.1.0` is tagged (`762a330`), on top of `v1.0`.** Phase 9 (agent
 layer) and Phase 10 (grounding verifier) are both merged to `main` and
 tagged together, per the phase plan's own rule that the two ship as one

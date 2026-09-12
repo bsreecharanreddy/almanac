@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
@@ -12,7 +11,6 @@ from pydantic_ai import Agent, capture_run_messages
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelResponse,
     ToolCallPart,
 )
@@ -25,6 +23,13 @@ from almanac.agent.gateway import AuditLog, ToolGateway
 from almanac.agent.grounding import GroundingTrace, verify
 from almanac.agent.model_gateway import AuditedModel, answering_model
 from almanac.agent.schemas import Strict
+from almanac.agent.transcript import load_transcript, save_transcript
+
+# Re-exported for the many existing callers (window.py, the grounding test
+# suite) that import these from here rather than from almanac.agent.transcript,
+# where they actually live now -- moved out so panels.py can reach
+# load_transcript without also importing this module's pyspark-backed chain.
+__all__ = ["load_transcript", "save_transcript"]
 
 # Six model requests is room for two or three tool calls and an answer. The
 # number matters less than that it is one number, in one place, that a run
@@ -235,17 +240,6 @@ def tools_called(messages: Sequence[ModelMessage]) -> list[str]:
         for part in message.parts
         if isinstance(part, ToolCallPart)
     ]
-
-
-def save_transcript(path: Path, transcript: Sequence[ModelMessage]) -> None:
-    """The run's messages as JSON, so no later run has to pay for the same answer."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(ModelMessagesTypeAdapter.dump_json(list(transcript), indent=2))
-
-
-def load_transcript(path: Path) -> list[ModelMessage]:
-    """A recorded run, back as messages."""
-    return ModelMessagesTypeAdapter.validate_json(path.read_bytes())
 
 
 def replay_model(transcript: Sequence[ModelMessage]) -> FunctionModel:
