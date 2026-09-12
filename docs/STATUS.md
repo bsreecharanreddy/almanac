@@ -345,12 +345,35 @@ targeting `v1.2.0`.** Design doc at
   -- Community Cloud's branch setting needs to be switched to `main`
   after this phase's PR merges, a manual step with no API to automate,
   carried into Task 13 Step 7 below as a closing action.
+- **A defect CI found that the local suite could not, after PR #22 was
+  already open.** The first `pytest` run of this diff on a machine other
+  than the one that built the committed artifacts failed:
+  `test_a_rebuild_reproduces_every_committed_artifact` reported a different
+  SHA-256 for `queue.parquet` on GitHub Actions' Linux runner than the one
+  committed from macOS -- `medallion.json` and `coverage.json` matched;
+  only the row-order-sensitive file did not. Cause: **180 of the 189**
+  fixture rows tie exactly on `breach_risk` (the sparse-feature hour scores
+  most rows identically), and `build_queue`'s `pdf.sort_values("breach_risk")`
+  carried no tiebreak, so rank among tied rows silently followed whatever
+  order Spark's `toPandas()` happened to collect them in -- stable on any
+  one machine, never guaranteed across machines with different core counts.
+  The local suite had been green every time, including the run that
+  produced the committed file, because every run before this one was on
+  the same laptop; the exit-gate row below had asserted reproducibility on
+  the strength of that same-machine run. Fixed with a deterministic
+  secondary sort key, `["breach_risk", "repo_id", "pr_number"]` --
+  `(repo_id, pr_number)` is a real unique key over the fixture population
+  -- then rebuilt and recommitted `queue.parquet` and reran all 24 demo
+  tests green locally (`src/almanac/demo/build.py`).
 
 **Phase 11 is complete. Every exit-gate row from the design doc's §10,
 marked against its actual evidence:**
 
 - [x] `make demo-build` regenerates the committed artifacts byte-identically
-  -- `test_demo_artifacts_reproducible.py`, green in the 751-passed full run.
+  -- `test_demo_artifacts_reproducible.py`. Locally green from the first
+  build; the claim was not actually cross-machine-true until the tiebreak
+  fix above, and CI -- a different machine than every prior local run --
+  is what caught the gap and is what this row now actually rests on.
 - [x] `make demo` opens all panels with no SparkSession and no network call
   -- now five, not four (Tasks 14-15 added the architecture walkthrough
   after this gate was written); confirmed via `AppTest`, a real local

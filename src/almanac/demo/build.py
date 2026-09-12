@@ -133,7 +133,15 @@ def build_queue(spark: SparkSession, *, out_dir: Path) -> dict[str, Any]:
 
     model = load_champion()
     pdf["breach_risk"] = model.booster_.predict(pdf[FEATURE_COLUMNS].astype("float64").to_numpy())
-    pdf = pdf.sort_values("breach_risk", ascending=False).reset_index(drop=True)
+    # toPandas() does not guarantee row order across environments (partition
+    # count tracks core count, which differs machine to machine), and most
+    # rows tie on breach_risk here -- an hour of fixture data carries almost
+    # no prior history, so most features are null and score identically.
+    # Without a deterministic tiebreak, rank among tied rows silently follows
+    # whatever order Spark happened to collect them in.
+    pdf = pdf.sort_values(
+        ["breach_risk", "repo_id", "pr_number"], ascending=[False, True, True]
+    ).reset_index(drop=True)
     pdf.insert(0, "rank", pdf.index + 1)
     pdf.to_parquet(out_dir / "queue.parquet", index=False)
 
