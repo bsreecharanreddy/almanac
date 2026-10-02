@@ -414,7 +414,7 @@ pydeck==0.9.3
     # via streamlit
 pygments==2.21.0
     # via rich
-pyjwt==2.13.0
+pyjwt==2.15.0
     # via mcp
 pyparsing==3.3.2
     # via matplotlib
