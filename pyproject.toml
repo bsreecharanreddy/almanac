@@ -47,7 +47,7 @@ dbt = [
 # against mlflow) is unsatisfiable. 2.3.3 is the current 2.x. Revisit when
 # mlflow raises its own ceiling.
 ml = [
-    "mlflow>=3.15.2",
+    "mlflow>=3.17.2",
     "lightgbm>=4.7.0",
     "scikit-learn>=1.9.0",
     "pandas>=2.3.3,<3",
@@ -92,7 +92,7 @@ ml = [
 # accepted because the alternative is coupling the demo's install size to
 # Phase 5-7 dependencies it has no other reason to carry.
 ml-scoring = [
-    "mlflow>=3.15.2",
+    "mlflow>=3.17.2",
     "lightgbm>=4.7.0",
     "scikit-learn>=1.9.0",
     "pandas>=2.3.3,<3",
