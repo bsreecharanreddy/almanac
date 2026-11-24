@@ -250,7 +250,7 @@ mcp-types==2.2.0
     #   mcp
 mdurl==0.1.2
     # via markdown-it-py
-mlflow==3.16.0
+mlflow==3.17.2
     # via almanac
 mlflow-skinny==3.16.0
     # via mlflow
